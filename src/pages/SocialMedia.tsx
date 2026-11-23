@@ -11,6 +11,10 @@ import { createSocialAccount, createSocialCampaign, createSocialContent, deleteS
 import { SocialComposer } from '@/components/social/SocialComposer';
 import { ConnectAccounts } from '@/components/social/ConnectAccounts';
 import { PostsTable } from '@/components/social/PostsTable';
+import { SocialCalendar } from '@/components/social/SocialCalendar';
+import { CampaignsTable } from '@/components/social/CampaignsTable';
+import { SocialAnalytics } from '@/components/social/SocialAnalytics';
+import type { PostFilters } from '@/lib/socialPosts';
 import { CONNECT_FAILED, SERVICE_CONNECTED, SERVICE_NOT_CONNECTED, connectReturnMessage, readConnectReturn, readServiceReturn } from '@/lib/socialConnect';
 import { syncSocialAccounts } from '@/services/social/connect';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
@@ -22,7 +26,7 @@ import { listContacts } from '@/services/supabase/crmHub/contacts';
 import { listCompanies } from '@/services/supabase/crmHub/companies';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -62,6 +66,13 @@ export const SocialMedia: React.FC = () => {
   const [tab, setTab] = useState('library');
   // The posts as a table (every platform a row), or as cards (one for each press). The choice is remembered.
   const [postsView, setPostsView] = useState<PostsView>(readPostsView);
+  /** Opens the posts table on some filters, from another tab. */
+  const [jump, setJump] = useState<{ filters: Partial<PostFilters>; at: number } | null>(null);
+  const openPosts = (filters: Partial<PostFilters>) => {
+    setJump({ filters, at: Date.now() });
+    setPostsView('table');
+    setTab('library');
+  };
   const choosePostsView = (next: PostsView) => {
     setPostsView(next);
     try { window.localStorage.setItem(POSTS_VIEW_KEY, next); } catch { /* not remembered, that is all */ }
@@ -175,12 +186,6 @@ export const SocialMedia: React.FC = () => {
       await load(true);
     } catch (error) { toast.error(publicMessage(error, 'Could not delete. Please try again.')); }
   };
-  const totals = metrics.reduce((sum, row) => ({ impressions: sum.impressions + row.impressions, clicks: sum.clicks + row.clicks, reactions: sum.reactions + row.reactions }), { impressions: 0, clicks: 0, reactions: 0 });
-  const metricsByContent = useMemo(() => new Map(metrics.map((item) => [item.contentId, item])), [metrics]);
-  const campaignAnalytics = useMemo(() => campaigns.map((campaign) => {
-    const rows = content.filter((item) => item.campaignId === campaign.id).map((item) => metricsByContent.get(item.id)).filter((item): item is SocialMetric => Boolean(item));
-    return { campaign, posts: content.filter((item) => item.campaignId === campaign.id).length, impressions: rows.reduce((sum, item) => sum + item.impressions, 0), clicks: rows.reduce((sum, item) => sum + item.clicks, 0), reactions: rows.reduce((sum, item) => sum + item.reactions, 0) };
-  }), [campaigns, content, metricsByContent]);
 
   if (workspaceLoading || projectsLoading || !selected) return <main className="flex-1 grid place-items-center"><div className="text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-7 w-7 animate-spin" /><p>{workspaces.length ? 'Opening workspace social marketing…' : 'Create a workspace to use social marketing.'}</p></div></main>;
   if (workspaceProjects.length === 0) return <main className="flex-1 grid place-items-center p-6"><div className="max-w-md text-center"><Share2 className="mx-auto mb-3 h-10 w-10 text-muted-foreground" /><h2 className="text-xl font-semibold">Create this workspace’s first project</h2><p className="mt-2 text-sm text-muted-foreground">Social campaigns unlock once there is a project to connect content and tasks to.</p></div></main>;
@@ -196,15 +201,29 @@ export const SocialMedia: React.FC = () => {
           </div>
         </div>
         {postsView === 'table'
-          ? <PostsTable content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onRetry={retryAll} onStatus={setStatus} onDelete={removePosts} />
+          ? <PostsTable content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onRetry={retryAll} onStatus={setStatus} onDelete={removePosts} jump={jump} />
           : <><SectionHeader title="Posts" action="New post" onClick={() => setComposing(true)} />{groups.length === 0 ? <Empty text="No posts yet. Press New post to upload once and post everywhere." /> : groups.map((group) => (group.posts.length === 1 && !group.posts[0].postGroupId
             ? <ContentCard key={group.id} item={group.posts[0]} onStatus={setStatus} />
             : <GroupCard key={group.id} group={group} accountName={(id) => accountsById.get(id ?? '')} onRetry={retry} />))}</>}
       </TabsContent>
-      <TabsContent value="calendar"><SectionHeader title="Content calendar" /> <div className="mt-3 space-y-2">{content.filter((item) => item.scheduledAt).sort((a,b) => a.scheduledAt!.getTime() - b.scheduledAt!.getTime()).map((item) => <ContentCard key={item.id} item={item} onStatus={setStatus} />)}{content.every((item) => !item.scheduledAt) && <Empty text="Nothing scheduled." />}</div></TabsContent>
-      <TabsContent value="campaigns" className="space-y-3"><SectionHeader title="Campaigns" action="New campaign" onClick={() => setCreateKind('campaign')} />{campaigns.length === 0 ? <Empty text="No campaigns yet." /> : campaigns.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between gap-3 p-4"><div><p className="font-semibold">{item.name}</p><p className="text-sm text-muted-foreground">{item.objective || 'No objective'} · {workspaceProjects.find((p) => p.projectId === item.projectId)?.name || 'No linked project'}</p></div><div className="flex items-center gap-2"><Badge>{item.status}</Badge>{item.status !== 'finished' && <Button size="sm" variant="outline" onClick={async () => { await updateSocialCampaignStatus(item.id, item.status === 'active' ? 'paused' : 'active'); await load(); }}>{item.status === 'active' ? 'Pause' : 'Activate'}</Button>}</div></CardContent></Card>)}</TabsContent>
+      <TabsContent value="calendar">
+        <SocialCalendar content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onSeeDrafts={() => openPosts({ tab: 'drafts' })} />
+      </TabsContent>
+      <TabsContent value="campaigns">
+        <CampaignsTable
+          campaigns={campaigns} content={content} metrics={metrics} projects={workspaceProjects}
+          onNew={() => setCreateKind('campaign')}
+          onSetStatus={async (campaign, status) => {
+            try { await updateSocialCampaignStatus(campaign.id, status); await load(true); }
+            catch (error) { toast.error(publicMessage(error, 'Could not change the campaign. Please try again.')); }
+          }}
+          onSeePosts={(campaignId) => openPosts({ campaignId })}
+        />
+      </TabsContent>
       <TabsContent value="accounts" className="space-y-3"><ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} onChanged={() => void load(true)} /><SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />{accounts.length === 0 ? <Empty text="No account connected yet. Press Connect above." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
-      <TabsContent value="analytics" className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Metric label="Impressions" value={totals.impressions} /><Metric label="Clicks" value={totals.clicks} /><Metric label="Reactions" value={totals.reactions} /></div><Card><CardHeader><CardTitle>Campaign analytics</CardTitle></CardHeader><CardContent className="space-y-2">{campaignAnalytics.length === 0 ? <p className="text-sm text-muted-foreground">No campaigns to measure yet.</p> : campaignAnalytics.map(({ campaign, posts, impressions, clicks, reactions }) => <div key={campaign.id} className="grid grid-cols-[minmax(0,1fr)_repeat(4,auto)] gap-4 rounded-lg border p-3 text-sm"><b className="truncate">{campaign.name}</b><span>{posts} posts</span><span>{impressions.toLocaleString()} views</span><span>{clicks.toLocaleString()} clicks</span><span>{reactions.toLocaleString()} reactions</span></div>)}</CardContent></Card></TabsContent>
+      <TabsContent value="analytics">
+        <SocialAnalytics content={content} accounts={accounts} campaigns={campaigns} metrics={metrics} />
+      </TabsContent>
     </Tabs>}
 
     <Dialog open={Boolean(createKind)} onOpenChange={(open) => { if (!open) reset(); }}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{createKind === 'account' ? 'Add social account' : createKind === 'campaign' ? 'New campaign' : 'New content'}</DialogTitle></DialogHeader><div className="space-y-3">
@@ -281,7 +300,6 @@ const GroupCard: React.FC<{ group: PostGroup; accountName: (id: string | null) =
 const ContentCard: React.FC<{ item: SocialContent; onStatus: (item: SocialContent, status: SocialContent['status']) => void }> = ({ item, onStatus }) => <Card><CardContent className="p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{item.title}</p><p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{item.body}</p>{item.scheduledAt && <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground"><Clock className="h-3 w-3" />{item.scheduledAt.toLocaleString()}</p>}</div><div className="flex items-center gap-2"><Badge variant="outline">{item.status.replace('_', ' ')}</Badge>{item.status === 'in_review' && <Button size="sm" onClick={() => onStatus(item, item.scheduledAt ? 'scheduled' : 'approved')}><Check className="mr-1 h-4 w-4" />Approve</Button>}{item.status === 'draft' && <Button size="sm" variant="outline" onClick={() => onStatus(item, 'in_review')}>Request approval</Button>}{item.status === 'approved' && <Button size="sm" onClick={() => onStatus(item, 'scheduled')}>Publish now</Button>}{item.status === 'failed' && <Button size="sm" variant="outline" onClick={() => onStatus(item, 'scheduled')}>Retry</Button>}</div></div></CardContent></Card>;
 const SectionHeader: React.FC<{ title: string; action?: string; onClick?: () => void }> = ({ title, action, onClick }) => <div className="flex items-center justify-between pt-3"><h2 className="text-lg font-semibold">{title}</h2>{action && <Button size="sm" variant="outline" onClick={onClick}><Plus className="mr-1 h-4 w-4" />{action}</Button>}</div>;
 const Empty: React.FC<{ text: string }> = ({ text }) => <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">{text}</div>;
-const Metric: React.FC<{ label: string; value: number }> = ({ label, value }) => <Card><CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">{label}</CardTitle></CardHeader><CardContent><p className="text-3xl font-bold">{value.toLocaleString()}</p></CardContent></Card>;
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => <div className="space-y-1"><Label>{label}</Label>{children}</div>;
 
 export default SocialMedia;

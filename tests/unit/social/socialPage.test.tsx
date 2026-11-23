@@ -235,3 +235,44 @@ describe('the posts as a table', () => {
     window.localStorage.removeItem('social.postsView');
   });
 });
+
+describe('the other tabs', () => {
+  const open = (name: string) => {
+    const tab = screen.getByRole('tab', { name });
+    fireEvent.mouseDown(tab);
+    fireEvent.click(tab);
+  };
+  beforeEach(() => {
+    window.localStorage.removeItem('social.postsView');
+    h.data = {
+      ...h.data,
+      campaigns: [{ id: 'c1', organizationId: 'org-1', workspaceId: 'ws-1', name: 'Winter offer', objective: null, crmContactId: null, crmCompanyId: null, projectId: 'p1', taskId: null, status: 'active', createdAt: new Date('2026-11-01') }],
+      content: [post('1', 'yt', 'published', { campaignId: 'c1' }), post('2', 'tt', 'failed'), post('3', 'ig', 'published')],
+    };
+  });
+
+  it('Calendar shows a month with the posts on their days', async () => {
+    await show();
+    open('Calendar');
+    expect(await screen.findByRole('button', { name: 'Next month' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Month or week' })).toBeTruthy();
+  });
+
+  it('Campaigns is a table, and "See posts" opens the posts table on that campaign', async () => {
+    await show();
+    open('Campaigns');
+    const row = await screen.findByRole('row', { name: 'Winter offer' });
+    expect(within(row).getAllByRole('cell')[2].textContent).toBe('Website');
+    fireEvent.click(within(row).getByRole('button', { name: 'See posts' }));
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(2);
+    expect((screen.getByLabelText('Campaign') as HTMLSelectElement).value).toBe('c1');
+  });
+
+  it('Analytics shows the figures for the last 30 days', async () => {
+    await show();
+    open('Analytics');
+    expect(await screen.findByRole('heading', { name: 'Analytics' })).toBeTruthy();
+    expect((screen.getByLabelText('When') as HTMLSelectElement).value).toBe('last30');
+  });
+});

@@ -33,6 +33,8 @@ interface Props {
   onStatus: (item: SocialContent, status: SocialContentStatus) => void | Promise<void>;
   /** Remove posts from the list for good. */
   onDelete: (items: SocialContent[]) => Promise<void>;
+  /** Opens the table on these filters (a campaign's posts, the drafts). `at` changes each time it is asked. */
+  jump?: { filters: Partial<PostFilters>; at: number } | null;
   /** The time "now", for the ready-made date spans. */
   now?: () => Date;
 }
@@ -47,9 +49,9 @@ const ROW = 'border-b border-border/60 align-top transition-colors last:border-0
 
 const whenText = (d: Date): string => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNewPost, onRetry, onStatus, onDelete, now = () => new Date() }) => {
+export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNewPost, onRetry, onStatus, onDelete, jump = null, now = () => new Date() }) => {
   const id = useId();
-  const [filters, setFilters] = useState<PostFilters>(NO_FILTERS);
+  const [filters, setFilters] = useState<PostFilters>(() => ({ ...NO_FILTERS, ...(jump?.filters ?? {}) }));
   const [sort, setSort] = useState<PostSort>(FIRST_SORT);
   const [page, setPage] = useState(1);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -65,6 +67,15 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
     setFilters((f) => ({ ...f, ...patch }));
     setPage(1);
   };
+
+  // Asked from another tab ("See posts" of a campaign): start from exactly those filters.
+  const jumpAt = jump?.at;
+  useEffect(() => {
+    if (!jump) return;
+    setFilters({ ...NO_FILTERS, ...jump.filters });
+    setPage(1);
+    // Only when it is asked again (`at` changes), not when the filters object is made anew.
+  }, [jumpAt]);
 
   // A post that is gone (deleted, or filtered out by another person's change) is no longer picked.
   useEffect(() => {
