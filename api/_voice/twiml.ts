@@ -31,7 +31,8 @@ export function dialTwiml(a: { base: string; callId: string; to: string; callerI
   return (
     HEAD +
     "<Response>" +
-    `<Dial callerId="${xml(a.callerId)}" answerOnBridge="true" timeout="${RING_SECONDS}" timeLimit="${MAX_CALL_SECONDS}"` +
+    // ringTone: the caller hears that country's ringing straight away, also when the other side's phone company sends none.
+    `<Dial callerId="${xml(a.callerId)}" answerOnBridge="true" ringTone="${a.country === "GB" ? "uk" : "us"}" timeout="${RING_SECONDS}" timeLimit="${MAX_CALL_SECONDS}"` +
     ` record="record-from-answer-dual" recordingStatusCallback="${xml(callbackUrl(a.base, "recording", a.callId))}"` +
     ` recordingStatusCallbackEvent="completed" action="${xml(callbackUrl(a.base, "done", a.callId))}" method="POST">` +
     `<Number url="${xml(notice)}" method="POST">${xml(a.to)}</Number>` +

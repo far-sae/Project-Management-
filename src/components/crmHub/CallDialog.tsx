@@ -177,7 +177,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
           }
           setPhase('ended');
         }
-      });
+      }, started.country);
       if (abandoned.current) opened.hangUp();
       else line.current = opened;
     } catch (err) {

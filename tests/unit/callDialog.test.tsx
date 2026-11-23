@@ -65,6 +65,8 @@ describe('call window', () => {
     await waitFor(() => expect(h.openLine).toHaveBeenCalled());
     expect(h.startCall).toHaveBeenCalledWith({ contactId: LEAD, to: '+447700900123', country: 'GB' });
     expect(h.openLine.mock.calls[0].slice(0, 2)).toEqual(['tok', 'call-1']);
+    // The line is told which country is rung, so the right ringing tone is played while it rings.
+    expect(h.openLine.mock.calls[0][3]).toBe(h.startCall.mock.results[0] ? (await h.startCall.mock.results[0].value).country : undefined);
 
     act(() => h.tell?.('ringing'));
     expect(screen.getByRole('status').textContent).toBe('Ringing…');

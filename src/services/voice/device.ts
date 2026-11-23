@@ -3,6 +3,8 @@
  * call is actually placed (it is large, and most visits never call anyone).
  */
 
+import { startRingback, type RingCountry } from './ringback';
+
 export type LineEvent = 'ringing' | 'answered' | 'ended';
 
 export interface Line {
@@ -39,19 +41,32 @@ export const lineProblem = (err: unknown): string =>
  * Places the call the server prepared (`callId`) with its short-lived `token`.
  * `on` is told when the other phone rings, when it is answered, and once when
  * the call is over (with a sentence when it ended because something failed).
+ *
+ * While the other phone rings the caller hears a ringing tone. When the other
+ * side's phone company sends none (common for United States numbers), the
+ * tone of `country` is played here, so "Ringing" is never silent.
  */
 export async function openLine(
   token: string,
   callId: string,
   on: (event: LineEvent, problem?: string) => void,
+  country: RingCountry = 'US',
+  ring: (country: RingCountry) => () => void = startRingback,
 ): Promise<Line> {
   const { Device } = await import('@twilio/voice-sdk');
   // The library's own console lines are for building the app, not for the live site.
   const device = new Device(token, { closeProtection: true, logLevel: import.meta.env.PROD ? 'silent' : 'error' });
   let over = false;
+  /** Stops our own ringing tone, when it is playing. */
+  let quiet: (() => void) | null = null;
+  const stopRinging = () => {
+    quiet?.();
+    quiet = null;
+  };
   const finish = (problem?: string) => {
     if (over) return;
     over = true;
+    stopRinging();
     try {
       device.destroy();
     } catch {
@@ -70,8 +85,15 @@ export async function openLine(
     finish(lineProblem(err));
     throw err;
   }
-  call.on('ringing', () => on('ringing'));
-  call.on('accept', () => on('answered'));
+  call.on('ringing', (hasEarlyMedia?: boolean) => {
+    // The library plays the other side's own ringing when there is some. When there is none, play ours.
+    if (!hasEarlyMedia && !quiet && !over) quiet = ring(country);
+    on('ringing');
+  });
+  call.on('accept', () => {
+    stopRinging();
+    on('answered');
+  });
   call.on('disconnect', () => finish());
   call.on('cancel', () => finish());
   call.on('reject', () => finish());
