@@ -42,7 +42,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
   const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
 
-  const { workspaces, selectedId, selected, isAll, isUnassigned, select } =
+  const { workspaces, selectedId, selected, isAll, isUnassigned, select, workspacesKnown } =
     useSelectedWorkspace();
   const { isAdmin: isOrgAdminOrOwner } = useOrganization();
   const { projects, loading: projectsLoading } = useProjects();
@@ -69,8 +69,13 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
   // back to "All workspaces" so the trigger label and project filter stay
   // consistent with what they're allowed to see. Wait for projects to load
   // first so we never reset based on an empty in-flight projects list.
+  //
+  // And wait until the list of workspaces is the real one for this person's
+  // organisation. On a reload the organisation arrives after the page does:
+  // until then nobody is known to be an owner and the list is empty, and
+  // acting on that threw the chosen workspace away on every reload.
   useEffect(() => {
-    if (isOrgAdminOrOwner || projectsLoading) return;
+    if (!workspacesKnown || isOrgAdminOrOwner || projectsLoading) return;
     if (isAll || isUnassigned) return;
     if (!selectedId) return;
     const stillVisible = visibleWorkspaces.some(
@@ -78,6 +83,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
     );
     if (!stillVisible) select(ALL_WORKSPACES_ID);
   }, [
+    workspacesKnown,
     isOrgAdminOrOwner,
     projectsLoading,
     isAll,

@@ -12,6 +12,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useOrganization } from "@/context/OrganizationContext";
 import type { Workspace } from "@/types/workspace";
 import type { PageKey } from "@/lib/pageCatalog";
+import { isPlaceholderWorkspaceName } from "@/lib/workspaceDisplay";
 import {
   ALL_WORKSPACES_ID,
   UNASSIGNED_WORKSPACE_ID,
@@ -22,6 +23,8 @@ import {
 } from "@/lib/workspaceScope";
 
 const STORAGE_KEY = "selectedWorkspaceId";
+/** The last real workspace that was chosen, kept also while "All workspaces" is chosen. */
+const LAST_KEY = "selectedWorkspaceId.last";
 const EVENT_NAME = "app:selected-workspace-changed";
 
 /**
@@ -42,8 +45,17 @@ const readStored = (): string | null => {
 const writeStored = (id: string): void => {
   try {
     window.localStorage.setItem(STORAGE_KEY, id);
+    if (id !== ALL_WORKSPACES_ID) window.localStorage.setItem(LAST_KEY, id);
   } catch {
     /* ignore */
+  }
+};
+
+const readLast = (): string | null => {
+  try {
+    return window.localStorage.getItem(LAST_KEY);
+  } catch {
+    return null;
   }
 };
 
@@ -65,6 +77,14 @@ export interface WorkspaceScope {
   workspacesKnown: boolean;
   /** Read the list again now (after making or renaming a workspace). */
   refreshWorkspaces: () => Promise<void>;
+  /**
+   * For a page that needs one workspace (Email, Social) while "All workspaces"
+   * is chosen: the chosen one when there is one, else the one used last, else
+   * one the person named themselves, else the only one there is. Never simply
+   * the oldest, which is the ready-made "General". Null while the list is not
+   * known, so no page picks from a half-read list.
+   */
+  preferredWorkspaceId: string | null;
   /** Project ids in the selected workspace. `null` = All workspaces (no filtering). */
   projectIds: Set<string> | null;
   /** Quick Menu items enabled in the selected workspace. `null` = all. */
@@ -146,6 +166,16 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     return workspaces.find((w) => w.workspaceId === id) || null;
   }, [workspaces, id]);
 
+  const preferredWorkspaceId = useMemo<string | null>(() => {
+    if (!workspacesKnown || workspaces.length === 0) return null;
+    const has = (wanted: string | null) => Boolean(wanted) && workspaces.some((w) => w.workspaceId === wanted);
+    if (has(id)) return id;
+    const last = readLast();
+    if (has(last)) return last;
+    return (workspaces.find((w) => !isPlaceholderWorkspaceName(w.name)) ?? workspaces[0]).workspaceId;
+    // `id` is read on purpose: choosing a workspace changes what was used last.
+  }, [workspaces, workspacesKnown, id]);
+
   const projectIds = useMemo(() => projectIdsForScope(projects, id), [projects, id]);
 
   const menuPages = useMemo(
@@ -181,6 +211,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
       isUnassigned: false,
       workspacesKnown,
       refreshWorkspaces,
+      preferredWorkspaceId,
       projectIds,
       menuPages,
       filterProjects,
@@ -188,7 +219,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     }),
     [
       workspaces, loading, id, selected, select, DEFAULT_WORKSPACE_ID,
-      workspacesKnown, refreshWorkspaces,
+      workspacesKnown, refreshWorkspaces, preferredWorkspaceId,
       projectIds, menuPages, filterProjects, filterTasks,
     ],
   );

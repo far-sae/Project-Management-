@@ -46,7 +46,7 @@ const PROVIDERS: SocialProvider[] = ['linkedin', 'facebook', 'instagram', 'x', '
 export const SocialMedia: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin } = useOrganization();
-  const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading } = useSelectedWorkspace();
+  const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading, preferredWorkspaceId } = useSelectedWorkspace();
   const { projects, loading: projectsLoading } = useProjects();
   const { tasks } = useAllTasks();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
@@ -85,8 +85,10 @@ export const SocialMedia: React.FC = () => {
 
   useEffect(() => {
     if (workspaceLoading || (!isAll && !isUnassigned)) return;
-    if (workspaces[0]) select(workspaces[0].workspaceId);
-  }, [isAll, isUnassigned, select, workspaceLoading, workspaces]);
+    // The workspace used last, never simply the oldest one (see WorkspaceContext).
+    const wanted = preferredWorkspaceId ?? null;
+    if (wanted) select(wanted);
+  }, [isAll, isUnassigned, select, workspaceLoading, preferredWorkspaceId]);
 
   // Back from logging in at a platform ("Connect"): say how it ended, show the
   // accounts, and take the note out of the address so a reload does not repeat it.

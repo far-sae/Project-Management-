@@ -63,7 +63,3 @@ export function reloadOnce(now: number = Date.now(), win: Pick<Window, 'location
   win.location.reload();
   return true;
 }
-
-/** True while a window is open over the page (a form being filled in, a call): not the moment to reload. */
-export const somethingIsOpen = (doc: Document = document): boolean =>
-  doc.querySelector('[role="dialog"], [role="alertdialog"]') !== null;

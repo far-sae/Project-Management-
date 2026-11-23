@@ -29,7 +29,7 @@ type EmailTabValue =
 export const Email: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin, loading: orgLoading } = useOrganization();
-  const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading } = useSelectedWorkspace();
+  const { selected, isAll, isUnassigned, select, loading: workspaceLoading, preferredWorkspaceId } = useSelectedWorkspace();
   const [activeTab, setActiveTab] = useState<EmailTabValue>('campaigns');
   /**
    * A template on its way into the composer. Held here rather than in
@@ -68,8 +68,10 @@ export const Email: React.FC = () => {
   const orgId = queryableOrgId(organization?.organizationId ?? user?.organizationId);
   useEffect(() => {
     if (workspaceLoading || (!isAll && !isUnassigned)) return;
-    if (workspaces[0]) select(workspaces[0].workspaceId);
-  }, [isAll, isUnassigned, select, workspaceLoading, workspaces]);
+    // The workspace used last, never simply the oldest one (see WorkspaceContext).
+    const wanted = preferredWorkspaceId ?? null;
+    if (wanted) select(wanted);
+  }, [isAll, isUnassigned, select, workspaceLoading, preferredWorkspaceId]);
   const workspaceId = selected?.workspaceId ?? null;
 
   /**

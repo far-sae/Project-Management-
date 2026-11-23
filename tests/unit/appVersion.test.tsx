@@ -1,6 +1,5 @@
-// An open tab must not keep running an old version of the app after the site
-// was updated: it notices, offers a reload, and takes the new version by
-// itself at the next move to another page.
+// An open tab is told when the site was updated: it notices and offers a
+// reload. It never reloads by itself while a person moves around the app.
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
@@ -9,7 +8,7 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }));
 vi.mock('sonner', () => ({ toast }));
 
-import { RELOAD_GAP_MS, loadedMainScript, mainScriptOf, newVersionAvailable, reloadOnce, somethingIsOpen } from '@/lib/appVersion';
+import { RELOAD_GAP_MS, loadedMainScript, mainScriptOf, newVersionAvailable, reloadOnce } from '@/lib/appVersion';
 import { VERSION_CHECK_MS, useAppVersion } from '@/hooks/useAppVersion';
 
 const page = (script: string) => `<!doctype html><html><head><script type="module" crossorigin src="${script}"></script></head><body><div id="root"></div></body></html>`;
@@ -78,13 +77,6 @@ describe('reloading', () => {
     expect(reloadOnce(1_000_000 + RELOAD_GAP_MS + 1, win)).toBe(true);
     expect(reload).toHaveBeenCalledTimes(2);
   });
-
-  it('is not done over an open window or a call', () => {
-    const doc = document.implementation.createHTMLDocument('app');
-    expect(somethingIsOpen(doc)).toBe(false);
-    doc.body.innerHTML = '<div role="dialog" aria-label="Active call"></div>';
-    expect(somethingIsOpen(doc)).toBe(true);
-  });
 });
 
 describe('an open tab', () => {
@@ -143,28 +135,15 @@ describe('an open tab', () => {
     expect(toast).toHaveBeenCalledTimes(1);
   });
 
-  it('takes the new version by itself at the next move to another page', async () => {
+  it('never reloads by itself when the person moves to another page', async () => {
     show(async () => true);
     await act(async () => { await vi.advanceTimersByTimeAsync(VERSION_CHECK_MS + 10); });
-    expect(reload).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledTimes(1);
+    // The notice is there; moving around the app changes nothing by itself.
     act(() => go('/crm/contacts'));
-    expect(reload).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not reload over an open window: nothing being typed is lost, no call is cut', async () => {
-    show(async () => true);
-    await act(async () => { await vi.advanceTimersByTimeAsync(VERSION_CHECK_MS + 10); });
-    const dialog = document.createElement('div');
-    dialog.setAttribute('role', 'dialog');
-    document.body.appendChild(dialog);
-    try {
-      act(() => go('/crm/contacts'));
-      expect(reload).not.toHaveBeenCalled();
-    } finally {
-      dialog.remove();
-    }
     act(() => go('/tasks'));
-    expect(reload).toHaveBeenCalledTimes(1);
+    act(() => go('/social'));
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('reloads once when a page’s file is gone from the server, instead of showing an error', () => {

@@ -1,26 +1,24 @@
 import { useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
-import { newVersionAvailable, reloadOnce, somethingIsOpen } from '@/lib/appVersion';
+import { newVersionAvailable, reloadOnce } from '@/lib/appVersion';
 
 /** How often an open tab asks whether the site was updated. */
 export const VERSION_CHECK_MS = 5 * 60_000;
 const TOAST_ID = 'app-new-version';
 
 /**
- * Keeps an open tab from running an old version of the app.
+ * Tells a person when their open tab runs an old version of the app.
  *
  *  - It asks every few minutes, and whenever the tab is looked at again,
  *    whether the site was updated.
- *  - When it was, the next move to another page loads the new version by
- *    itself (never while a window or a call is open over the page), and a
- *    small notice offers "Reload" for somebody who stays on one page.
- *  - A page that fails to load because its old file is gone from the server
- *    reloads once, instead of showing an error.
+ *  - When it was, a small notice offers "Reload". The page is never reloaded
+ *    by itself: a person moving from page to page must not have the app
+ *    reload under them. They press Reload when it suits them.
+ *  - One exception, because the other choice is an error screen: a page whose
+ *    file is gone from the server (it was replaced by the update) reloads once.
  */
 export function useAppVersion(check: () => Promise<boolean> = newVersionAvailable): void {
   const stale = useRef(false);
-  const location = useLocation();
 
   useEffect(() => {
     let alive = true;
@@ -53,12 +51,4 @@ export function useAppVersion(check: () => Promise<boolean> = newVersionAvailabl
       window.removeEventListener('vite:preloadError', onMissingFile);
     };
   }, [check]);
-
-  // Going to another page is the natural moment to take the new version:
-  // nothing typed is lost, because the page is being left anyway.
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    if (stale.current && !somethingIsOpen()) reloadOnce();
-  }, [location.pathname]);
 }
