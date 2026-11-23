@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Workspace } from '@/types/workspace';
 import { Project } from '@/types/project';
 import {
@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Combine,
   Edit,
   FolderKanban,
   Loader2,
@@ -25,6 +26,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
+import { MergeWorkspaceDialog } from '@/components/workspace/MergeWorkspaceDialog';
 
 interface WorkspacesModalProps {
   open: boolean;
@@ -59,6 +61,9 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
     }
     return counts;
   }, [projects]);
+
+  /** The workspace being emptied into another one, while that window is open. */
+  const [merging, setMerging] = useState<Workspace | null>(null);
 
   const handleSelectWorkspace = (workspaceId: string) => {
     onSelectWorkspace(workspaceId);
@@ -144,6 +149,13 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                           <Edit className="mr-2 h-4 w-4" aria-hidden="true" />
                           Edit
                         </DropdownMenuItem>
+                        {/* Everything in it goes into another workspace, and this one is removed. */}
+                        {workspaces.length > 1 && (
+                          <DropdownMenuItem onSelect={() => setMerging(workspace)}>
+                            <Combine className="mr-2 h-4 w-4" aria-hidden="true" />
+                            Move everything to another workspace
+                          </DropdownMenuItem>
+                        )}
                         {!isPrimary && (
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
@@ -186,6 +198,12 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
           </button>
         </div>
       </DialogContent>
+      <MergeWorkspaceDialog
+        workspace={merging}
+        workspaces={workspaces}
+        onOpenChange={(next) => { if (!next) setMerging(null); }}
+        onMerged={() => { onRefresh?.(); }}
+      />
     </Dialog>
   );
 };

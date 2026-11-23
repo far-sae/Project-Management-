@@ -179,3 +179,21 @@ export const subscribeToWorkspaces = (
     channel.unsubscribe();
   };
 };
+
+export const MERGE_WORKSPACE_NOT_SET_UP_MESSAGE =
+  'Putting workspaces together is not set up yet: run supabase/migrations/204_merge_workspace.sql in the Supabase SQL editor.';
+
+/**
+ * Moves everything of one workspace into another and removes the first. The
+ * database does it in one step: all of it, or nothing (it then says why, in a
+ * sentence that is passed on as it is). Only the owner and admins may.
+ */
+export const mergeWorkspace = async (fromId: string, intoId: string): Promise<{ moved: number }> => {
+  const { data, error } = await supabase.rpc("merge_workspace", { p_from: fromId, p_into: intoId });
+  if (!error) return { moved: Number((data as { moved?: unknown } | null)?.moved) || 0 };
+  // The function is not there until migration 204 has been run.
+  const missing = error.code === "PGRST202" || error.code === "42883"
+    || (/merge_workspace/.test(error.message ?? "") && /not find|does not exist|schema cache/i.test(error.message ?? ""));
+  logger.error("Failed to merge workspaces:", error.code);
+  throw new Error(missing ? MERGE_WORKSPACE_NOT_SET_UP_MESSAGE : error.message || "The workspaces could not be put together.");
+};
