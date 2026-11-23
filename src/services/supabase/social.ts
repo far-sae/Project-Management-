@@ -18,7 +18,7 @@ const mapMedia = (r: Row): PostMedia | null => {
   const video = VIDEO_FILE.test(url);
   return { url, kind: video ? 'video' : 'image', mime: video ? 'video/mp4' : 'image/jpeg', bytes: 0, name: '' };
 };
-const mapContent = (r: Row): SocialContent => ({ postGroupId: r.post_group_id ? String(r.post_group_id) : null, media: mapMedia(r), options: r.options && typeof r.options === 'object' && !Array.isArray(r.options) ? r.options as Record<string, unknown> : {}, id: String(r.id), organizationId: String(r.organization_id), workspaceId: String(r.workspace_id), campaignId: r.campaign_id ? String(r.campaign_id) : null, accountId: r.account_id ? String(r.account_id) : null, crmContactId: r.crm_contact_id ? String(r.crm_contact_id) : null, crmCompanyId: r.crm_company_id ? String(r.crm_company_id) : null, projectId: r.project_id ? String(r.project_id) : null, taskId: r.task_id ? String(r.task_id) : null, title: String(r.title), body: String(r.body ?? ''), status: r.status as SocialContentStatus, scheduledAt: date(r.scheduled_at), publishedAt: date(r.published_at), lastError: r.last_error ? String(r.last_error) : null, createdAt: date(r.created_at)! });
+const mapContent = (r: Row): SocialContent => ({ externalPostId: r.external_post_id ? String(r.external_post_id) : null, postGroupId: r.post_group_id ? String(r.post_group_id) : null, media: mapMedia(r), options: r.options && typeof r.options === 'object' && !Array.isArray(r.options) ? r.options as Record<string, unknown> : {}, id: String(r.id), organizationId: String(r.organization_id), workspaceId: String(r.workspace_id), campaignId: r.campaign_id ? String(r.campaign_id) : null, accountId: r.account_id ? String(r.account_id) : null, crmContactId: r.crm_contact_id ? String(r.crm_contact_id) : null, crmCompanyId: r.crm_company_id ? String(r.crm_company_id) : null, projectId: r.project_id ? String(r.project_id) : null, taskId: r.task_id ? String(r.task_id) : null, title: String(r.title), body: String(r.body ?? ''), status: r.status as SocialContentStatus, scheduledAt: date(r.scheduled_at), publishedAt: date(r.published_at), lastError: r.last_error ? String(r.last_error) : null, createdAt: date(r.created_at)! });
 
 export const listSocialData = async (workspaceId: string) => {
   const [accounts, campaigns, content, metrics] = await Promise.all([
@@ -62,6 +62,13 @@ export const updateSocialContentStatus = async (id: string, status: SocialConten
   if (status === 'approved') { updates.approved_by = userId ?? null; updates.approved_at = new Date().toISOString(); }
   if (status === 'scheduled') { updates.last_error = null; updates.scheduled_at = (scheduledAt ?? new Date()).toISOString(); }
   const { error } = await supabase.from('social_content').update(updates).eq('id', id);
+  if (error) throw error;
+};
+
+/** Removes posts from the list for good. A post already on a platform stays there. */
+export const deleteSocialContent = async (ids: string[]): Promise<void> => {
+  if (ids.length === 0) return;
+  const { error } = await supabase.from('social_content').delete().in('id', ids);
   if (error) throw error;
 };
 

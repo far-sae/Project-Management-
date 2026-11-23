@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   listSocialData: vi.fn(),
   updateSocialContentStatus: vi.fn(async () => {}),
   runSocialPublish: vi.fn(async () => {}),
+  deleteSocialContent: vi.fn(async () => {}),
   syncSocialAccounts: vi.fn(async () => 1),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -34,6 +35,7 @@ vi.mock('@/services/supabase/social', () => ({
   listSocialData: h.listSocialData,
   updateSocialContentStatus: h.updateSocialContentStatus,
   runSocialPublish: h.runSocialPublish,
+  deleteSocialContent: h.deleteSocialContent,
   createSocialAccount: vi.fn(), createSocialCampaign: vi.fn(), createSocialContent: vi.fn(), saveSocialAccountToken: vi.fn(), updateSocialCampaignStatus: vi.fn(),
   uploadSocialMedia: vi.fn(), removeSocialMedia: vi.fn(), createSocialPosts: vi.fn(),
 }));
@@ -73,6 +75,10 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the posts of one press', () => {
+  // The cards are the second way to see the posts; the table is the first.
+  beforeEach(() => window.localStorage.setItem('social.postsView', 'cards'));
+  afterEach(() => window.localStorage.removeItem('social.postsView'));
+
   it('are one card, with a line for each platform and how it went', async () => {
     await show();
     expect(screen.getAllByText('Five tips for a brighter smile')).toHaveLength(1);
@@ -189,5 +195,43 @@ describe('back from the posting service', () => {
     render(<SocialMedia />);
     await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('Nothing was connected. Press Connect to try again.'));
     expect(JSON.stringify(h.toast.error.mock.calls)).not.toContain('OAuth');
+  });
+});
+
+describe('the posts as a table', () => {
+  beforeEach(() => { window.localStorage.removeItem('social.postsView'); h.deleteSocialContent.mockClear(); h.toast.success.mockClear(); });
+
+  it('is what the Posts tab opens with: a row for each platform', async () => {
+    await show();
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('row')).toHaveLength(4);
+    expect(within(table).getByRole('row', { name: 'Five tips for a brighter smile, TikTok' }).textContent).toContain('Daily post cap reached');
+    expect(screen.getByRole('button', { name: 'Table' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('tries a failed post again from its row, straight away', async () => {
+    await show();
+    fireEvent.click(within(screen.getByRole('row', { name: 'Five tips for a brighter smile, TikTok' })).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(h.updateSocialContentStatus).toHaveBeenCalledTimes(1));
+    expect((h.updateSocialContentStatus.mock.calls[0] as unknown as [string, string])[1]).toBe('scheduled');
+    await waitFor(() => expect(h.runSocialPublish).toHaveBeenCalledTimes(1));
+  });
+
+  it('deletes a post after asking, then reads the list again', async () => {
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Five tips for a brighter smile (TikTok)' }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(h.deleteSocialContent).toHaveBeenCalledWith(['2']));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Post deleted'));
+    await waitFor(() => expect(h.listSocialData.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('switches to one card for each press and remembers the choice', async () => {
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'By post' }));
+    expect(screen.getByText('Posted to 2 of 3')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(window.localStorage.getItem('social.postsView')).toBe('cards');
+    window.localStorage.removeItem('social.postsView');
   });
 });

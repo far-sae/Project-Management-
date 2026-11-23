@@ -25,6 +25,8 @@ export interface SocialContent {
   media: PostMedia | null;
   /** What this post's platform needs (a YouTube title, who can see a TikTok, ...). */
   options: Record<string, unknown>;
+  /** Once posted: where the post is (its address, when the platform gave one). */
+  externalPostId: string | null;
 }
 export interface SocialMetric {
   contentId: string; impressions: number; reach: number; clicks: number;

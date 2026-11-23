@@ -1,15 +1,16 @@
 import { publicMessage, publicText } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, CalendarDays, Check, Clock, Film, ImageIcon, Library, Loader2, Plus, RotateCcw, Share2 } from 'lucide-react';
+import { BarChart3, CalendarDays, Check, Clock, Film, ImageIcon, LayoutList, Library, Loader2, Plus, RotateCcw, Rows3, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { useProjects } from '@/hooks/useProjects';
 import { useAllTasks } from '@/hooks/useAllTasks';
-import { createSocialAccount, createSocialCampaign, createSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, updateSocialCampaignStatus, updateSocialContentStatus } from '@/services/supabase/social';
+import { createSocialAccount, createSocialCampaign, createSocialContent, deleteSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, updateSocialCampaignStatus, updateSocialContentStatus } from '@/services/supabase/social';
 import { SocialComposer } from '@/components/social/SocialComposer';
 import { ConnectAccounts } from '@/components/social/ConnectAccounts';
+import { PostsTable } from '@/components/social/PostsTable';
 import { CONNECT_FAILED, SERVICE_CONNECTED, SERVICE_NOT_CONNECTED, connectReturnMessage, readConnectReturn, readServiceReturn } from '@/lib/socialConnect';
 import { syncSocialAccounts } from '@/services/social/connect';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
@@ -30,6 +31,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
 type CreateKind = 'account' | 'campaign' | 'content' | null;
+
+type PostsView = 'table' | 'cards';
+const POSTS_VIEW_KEY = 'social.postsView';
+const readPostsView = (): PostsView => {
+  try { return window.localStorage.getItem(POSTS_VIEW_KEY) === 'cards' ? 'cards' : 'table'; } catch { return 'table'; }
+};
 const PROVIDERS: SocialProvider[] = ['linkedin', 'facebook', 'instagram', 'x', 'youtube', 'tiktok', 'other'];
 
 export const SocialMedia: React.FC = () => {
@@ -53,6 +60,12 @@ export const SocialMedia: React.FC = () => {
   const [refreshToken, setRefreshToken] = useState('');
   const [composing, setComposing] = useState(false);
   const [tab, setTab] = useState('library');
+  // The posts as a table (every platform a row), or as cards (one for each press). The choice is remembered.
+  const [postsView, setPostsView] = useState<PostsView>(readPostsView);
+  const choosePostsView = (next: PostsView) => {
+    setPostsView(next);
+    try { window.localStorage.setItem(POSTS_VIEW_KEY, next); } catch { /* not remembered, that is all */ }
+  };
   const [projectId, setProjectId] = useState(''); const [campaignId, setCampaignId] = useState('');
   const [accountId, setAccountId] = useState(''); const [scheduledAt, setScheduledAt] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
@@ -145,14 +158,22 @@ export const SocialMedia: React.FC = () => {
     try { await updateSocialContentStatus(item.id, status, user?.userId, status === 'scheduled' ? item.scheduledAt : undefined); toast.success(status === 'approved' ? 'Content approved' : 'Status updated'); await load(); }
     catch (error) { toast.error(publicMessage(error, 'Could not update content')); }
   };
-  /** Try a post again now: back in the queue, and the server is asked to send it straight away. */
-  const retry = async (item: SocialContent) => {
+  /** Try posts again now: back in the queue, and the server is asked to send them straight away. */
+  const retryAll = async (items: SocialContent[]) => {
     try {
-      await updateSocialContentStatus(item.id, 'scheduled', user?.userId, new Date());
+      for (const item of items) await updateSocialContentStatus(item.id, 'scheduled', user?.userId, new Date());
       toast.success('Trying again now');
       await load(true);
       void runSocialPublish().then(() => load(true));
     } catch (error) { toast.error(publicMessage(error, 'Could not try the post again')); }
+  };
+  const retry = (item: SocialContent) => retryAll([item]);
+  const removePosts = async (items: SocialContent[]) => {
+    try {
+      await deleteSocialContent(items.map((item) => item.id));
+      toast.success(items.length === 1 ? 'Post deleted' : `${items.length} posts deleted`);
+      await load(true);
+    } catch (error) { toast.error(publicMessage(error, 'Could not delete. Please try again.')); }
   };
   const totals = metrics.reduce((sum, row) => ({ impressions: sum.impressions + row.impressions, clicks: sum.clicks + row.clicks, reactions: sum.reactions + row.reactions }), { impressions: 0, clicks: 0, reactions: 0 });
   const metricsByContent = useMemo(() => new Map(metrics.map((item) => [item.contentId, item])), [metrics]);
@@ -166,10 +187,20 @@ export const SocialMedia: React.FC = () => {
 
   return <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 md:p-8">
     <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-3xl font-bold">Social Media Marketing</h1><p className="text-muted-foreground">Plan, approve and measure content for <b>{selected.name}</b>.</p></div><Button onClick={() => setComposing(true)}><Plus className="mr-1 h-4 w-4" />New post</Button></div>
-    {loading ? <div className="py-20 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /></div> : <Tabs value={tab} onValueChange={setTab}><TabsList className="flex flex-wrap h-auto"><TabsTrigger value="library"><Library className="mr-1 h-4 w-4" />Library</TabsTrigger><TabsTrigger value="calendar"><CalendarDays className="mr-1 h-4 w-4" />Calendar</TabsTrigger><TabsTrigger value="campaigns">Campaigns</TabsTrigger><TabsTrigger value="accounts"><Share2 className="mr-1 h-4 w-4" />Accounts</TabsTrigger><TabsTrigger value="analytics"><BarChart3 className="mr-1 h-4 w-4" />Analytics</TabsTrigger></TabsList>
-      <TabsContent value="library" className="space-y-3"><SectionHeader title="Posts" action="New post" onClick={() => setComposing(true)} />{groups.length === 0 ? <Empty text="No posts yet. Press New post to upload once and post everywhere." /> : groups.map((group) => (group.posts.length === 1 && !group.posts[0].postGroupId
-        ? <ContentCard key={group.id} item={group.posts[0]} onStatus={setStatus} />
-        : <GroupCard key={group.id} group={group} accountName={(id) => accountsById.get(id ?? '')} onRetry={retry} />))}</TabsContent>
+    {loading ? <div className="py-20 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /></div> : <Tabs value={tab} onValueChange={setTab}><TabsList className="flex flex-wrap h-auto"><TabsTrigger value="library"><Library className="mr-1 h-4 w-4" />Posts</TabsTrigger><TabsTrigger value="calendar"><CalendarDays className="mr-1 h-4 w-4" />Calendar</TabsTrigger><TabsTrigger value="campaigns">Campaigns</TabsTrigger><TabsTrigger value="accounts"><Share2 className="mr-1 h-4 w-4" />Accounts</TabsTrigger><TabsTrigger value="analytics"><BarChart3 className="mr-1 h-4 w-4" />Analytics</TabsTrigger></TabsList>
+      <TabsContent value="library" className="space-y-3">
+        <div className="flex justify-end pt-3">
+          <div role="group" aria-label="How the posts are shown" className="inline-flex rounded-md border border-border p-0.5">
+            <Button size="sm" variant={postsView === 'table' ? 'secondary' : 'ghost'} aria-pressed={postsView === 'table'} onClick={() => choosePostsView('table')}><Rows3 aria-hidden />Table</Button>
+            <Button size="sm" variant={postsView === 'cards' ? 'secondary' : 'ghost'} aria-pressed={postsView === 'cards'} onClick={() => choosePostsView('cards')}><LayoutList aria-hidden />By post</Button>
+          </div>
+        </div>
+        {postsView === 'table'
+          ? <PostsTable content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onRetry={retryAll} onStatus={setStatus} onDelete={removePosts} />
+          : <><SectionHeader title="Posts" action="New post" onClick={() => setComposing(true)} />{groups.length === 0 ? <Empty text="No posts yet. Press New post to upload once and post everywhere." /> : groups.map((group) => (group.posts.length === 1 && !group.posts[0].postGroupId
+            ? <ContentCard key={group.id} item={group.posts[0]} onStatus={setStatus} />
+            : <GroupCard key={group.id} group={group} accountName={(id) => accountsById.get(id ?? '')} onRetry={retry} />))}</>}
+      </TabsContent>
       <TabsContent value="calendar"><SectionHeader title="Content calendar" /> <div className="mt-3 space-y-2">{content.filter((item) => item.scheduledAt).sort((a,b) => a.scheduledAt!.getTime() - b.scheduledAt!.getTime()).map((item) => <ContentCard key={item.id} item={item} onStatus={setStatus} />)}{content.every((item) => !item.scheduledAt) && <Empty text="Nothing scheduled." />}</div></TabsContent>
       <TabsContent value="campaigns" className="space-y-3"><SectionHeader title="Campaigns" action="New campaign" onClick={() => setCreateKind('campaign')} />{campaigns.length === 0 ? <Empty text="No campaigns yet." /> : campaigns.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between gap-3 p-4"><div><p className="font-semibold">{item.name}</p><p className="text-sm text-muted-foreground">{item.objective || 'No objective'} · {workspaceProjects.find((p) => p.projectId === item.projectId)?.name || 'No linked project'}</p></div><div className="flex items-center gap-2"><Badge>{item.status}</Badge>{item.status !== 'finished' && <Button size="sm" variant="outline" onClick={async () => { await updateSocialCampaignStatus(item.id, item.status === 'active' ? 'paused' : 'active'); await load(); }}>{item.status === 'active' ? 'Pause' : 'Activate'}</Button>}</div></CardContent></Card>)}</TabsContent>
       <TabsContent value="accounts" className="space-y-3"><ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} onChanged={() => void load(true)} /><SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />{accounts.length === 0 ? <Empty text="No account connected yet. Press Connect above." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
