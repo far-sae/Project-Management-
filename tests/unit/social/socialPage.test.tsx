@@ -14,8 +14,13 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('sonner', () => ({ toast: h.toast }));
+vi.mock('@/services/social/connect', () => ({
+  socialConnectSetup: async () => ({ ready: { youtube: true, meta: true, x: true, tiktok: true, linkedin: true }, callback: null }),
+  startSocialConnect: vi.fn(),
+  CONNECT_FAILED_MESSAGE: 'The account could not be connected. Please try again.',
+}));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1' } }) }));
-vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: { organizationId: 'org-1' } }) }));
+vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: { organizationId: 'org-1' }, isAdmin: true }) }));
 vi.mock('@/hooks/useSelectedWorkspace', () => ({
   useSelectedWorkspace: () => ({ selected: { workspaceId: 'ws-1', name: 'Northwind Studio' }, isAll: false, isUnassigned: false, select: vi.fn(), workspaces: [{ workspaceId: 'ws-1' }], loading: false }),
 }));
@@ -128,5 +133,34 @@ describe('starting a post', () => {
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Accounts/ }), { button: 0 });
     expect(await screen.findByText('connect again')).toBeTruthy();
     expect(screen.getByText('YouTube did not accept the connection. Connect the YouTube account again.')).toBeTruthy();
+  });
+});
+
+describe('back from logging in at a platform', () => {
+  afterEach(() => { window.history.replaceState(null, '', '/'); });
+
+  it('says the account is connected, shows the accounts, and clears the note from the address', async () => {
+    window.history.replaceState(null, '', '/social?connect=done&p=youtube&n=1');
+    h.toast.success.mockClear();
+    render(<SocialMedia />);
+    await screen.findByRole('heading', { name: 'Connected accounts' });
+    expect(h.toast.success).toHaveBeenCalledWith('YouTube is connected.');
+    expect(screen.getByText('Northwind channel')).toBeTruthy();
+    expect(window.location.search).toBe('');
+    expect(window.location.pathname).toBe('/social');
+  });
+
+  it('says plainly when nothing was connected', async () => {
+    window.history.replaceState(null, '', '/social?connect=cancelled&p=x');
+    render(<SocialMedia />);
+    await screen.findByRole('heading', { name: 'Connected accounts' });
+    expect(h.toast.error).toHaveBeenCalledWith('Nothing was connected: the log-in was cancelled.');
+  });
+
+  it('says nothing on an ordinary visit', async () => {
+    h.toast.success.mockClear();
+    await show();
+    expect(h.toast.success).not.toHaveBeenCalled();
+    expect(h.toast.error).not.toHaveBeenCalled();
   });
 });

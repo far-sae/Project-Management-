@@ -9,6 +9,8 @@ import { useProjects } from '@/hooks/useProjects';
 import { useAllTasks } from '@/hooks/useAllTasks';
 import { createSocialAccount, createSocialCampaign, createSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, updateSocialCampaignStatus, updateSocialContentStatus } from '@/services/supabase/social';
 import { SocialComposer } from '@/components/social/SocialComposer';
+import { ConnectAccounts } from '@/components/social/ConnectAccounts';
+import { connectReturnMessage, readConnectReturn } from '@/lib/socialConnect';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { groupPosts, groupSummary, isOnItsWay, type PostGroup } from '@/lib/socialCompose';
 import { PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
@@ -31,7 +33,7 @@ const PROVIDERS: SocialProvider[] = ['linkedin', 'facebook', 'instagram', 'x', '
 
 export const SocialMedia: React.FC = () => {
   const { user } = useAuth();
-  const { organization } = useOrganization();
+  const { organization, isAdmin } = useOrganization();
   const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading } = useSelectedWorkspace();
   const { projects, loading: projectsLoading } = useProjects();
   const { tasks } = useAllTasks();
@@ -60,6 +62,17 @@ export const SocialMedia: React.FC = () => {
     if (workspaceLoading || (!isAll && !isUnassigned)) return;
     if (workspaces[0]) select(workspaces[0].workspaceId);
   }, [isAll, isUnassigned, select, workspaceLoading, workspaces]);
+
+  // Back from logging in at a platform ("Connect"): say how it ended, show the
+  // accounts, and take the note out of the address so a reload does not repeat it.
+  useEffect(() => {
+    const back = readConnectReturn(window.location.search);
+    if (!back) return;
+    const said = connectReturnMessage(back);
+    if (said.ok) toast.success(said.text); else toast.error(said.text);
+    setTab('accounts');
+    window.history.replaceState(window.history.state, '', window.location.pathname);
+  }, []);
 
   const workspaceId = selected?.workspaceId ?? '';
   const orgId = organization?.organizationId ?? '';
@@ -133,7 +146,7 @@ export const SocialMedia: React.FC = () => {
         : <GroupCard key={group.id} group={group} accountName={(id) => accountsById.get(id ?? '')} onRetry={retry} />))}</TabsContent>
       <TabsContent value="calendar"><SectionHeader title="Content calendar" /> <div className="mt-3 space-y-2">{content.filter((item) => item.scheduledAt).sort((a,b) => a.scheduledAt!.getTime() - b.scheduledAt!.getTime()).map((item) => <ContentCard key={item.id} item={item} onStatus={setStatus} />)}{content.every((item) => !item.scheduledAt) && <Empty text="Nothing scheduled." />}</div></TabsContent>
       <TabsContent value="campaigns" className="space-y-3"><SectionHeader title="Campaigns" action="New campaign" onClick={() => setCreateKind('campaign')} />{campaigns.length === 0 ? <Empty text="No campaigns yet." /> : campaigns.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between gap-3 p-4"><div><p className="font-semibold">{item.name}</p><p className="text-sm text-muted-foreground">{item.objective || 'No objective'} · {workspaceProjects.find((p) => p.projectId === item.projectId)?.name || 'No linked project'}</p></div><div className="flex items-center gap-2"><Badge>{item.status}</Badge>{item.status !== 'finished' && <Button size="sm" variant="outline" onClick={async () => { await updateSocialCampaignStatus(item.id, item.status === 'active' ? 'paused' : 'active'); await load(); }}>{item.status === 'active' ? 'Pause' : 'Activate'}</Button>}</div></CardContent></Card>)}</TabsContent>
-      <TabsContent value="accounts" className="space-y-3"><SectionHeader title="Connected social accounts" action="Add account" onClick={() => setCreateKind('account')} /><p className="text-sm text-muted-foreground">Provider credentials are stored by the publishing integration; TaskCalendar stores only a credential reference.</p>{accounts.length === 0 ? <Empty text="No social accounts added." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
+      <TabsContent value="accounts" className="space-y-3"><ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} /><SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />{accounts.length === 0 ? <Empty text="No account connected yet. Press Connect above." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
       <TabsContent value="analytics" className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Metric label="Impressions" value={totals.impressions} /><Metric label="Clicks" value={totals.clicks} /><Metric label="Reactions" value={totals.reactions} /></div><Card><CardHeader><CardTitle>Campaign analytics</CardTitle></CardHeader><CardContent className="space-y-2">{campaignAnalytics.length === 0 ? <p className="text-sm text-muted-foreground">No campaigns to measure yet.</p> : campaignAnalytics.map(({ campaign, posts, impressions, clicks, reactions }) => <div key={campaign.id} className="grid grid-cols-[minmax(0,1fr)_repeat(4,auto)] gap-4 rounded-lg border p-3 text-sm"><b className="truncate">{campaign.name}</b><span>{posts} posts</span><span>{impressions.toLocaleString()} views</span><span>{clicks.toLocaleString()} clicks</span><span>{reactions.toLocaleString()} reactions</span></div>)}</CardContent></Card></TabsContent>
     </Tabs>}
 

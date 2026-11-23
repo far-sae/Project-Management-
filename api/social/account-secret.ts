@@ -1,8 +1,74 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { randomBytes } from 'node:crypto';
 import { env, serviceClient } from '../_lib/context';
 import { encryptSecret } from '../_lib/crypto';
+import { connectHandler, type ConnectStore } from '../_social/connect';
+import { writeSecret } from '../_social/tokens';
+
+/** True when the person is the owner or an admin of the organisation. */
+async function isOrgAdmin(db: SupabaseClient, organizationId: string, userId: string): Promise<boolean> {
+  const { data: org } = await db.from('organizations').select('owner_id, members').eq('organization_id', organizationId).maybeSingle();
+  if (!org) return false;
+  const members = Array.isArray(org.members) ? org.members as Array<Record<string, unknown>> : [];
+  return org.owner_id === userId || members.some((member) =>
+    String(member.userId ?? member.user_id ?? '') === userId && ['owner', 'admin'].includes(String(member.role)),
+  );
+}
+
+/** Where "Connect" keeps what it found: the same two tables a key pasted by hand goes to. */
+export function connectStore(db: SupabaseClient, key: () => string): ConnectStore {
+  return {
+    isAdmin: (organizationId, userId) => isOrgAdmin(db, organizationId, userId),
+    async workspaceOrg(workspaceId) {
+      const { data } = await db.from('workspaces').select('organization_id').eq('workspace_id', workspaceId).maybeSingle();
+      return data?.organization_id ? String(data.organization_id) : null;
+    },
+    async saveAccount(account) {
+      // The same account connected again takes the place of the old row: its posts keep pointing at it.
+      const { data, error } = await db.from('social_accounts').upsert({
+        organization_id: account.organizationId, workspace_id: account.workspaceId, provider: account.provider,
+        external_account_id: account.externalId, display_name: account.name.slice(0, 200), status: 'connected',
+        last_error: null, connected_by: account.userId, updated_at: new Date().toISOString(),
+      }, { onConflict: 'workspace_id,provider,external_account_id' }).select('id').single();
+      if (error || !data) throw new Error('account not stored');
+      const id = String(data.id);
+      const encrypted = await encryptSecret(writeSecret(account.secret), key());
+      const stored = await db.from('social_account_secrets').upsert({ account_id: id, secret_encrypted: encrypted, updated_at: new Date().toISOString() }, { onConflict: 'account_id' });
+      if (stored.error) throw new Error('key not stored');
+      await db.from('social_accounts').update({ credential_ref: `social_account_secrets:${id}` }).eq('id', id);
+    },
+  };
+}
+
+/** /api/social/connect/<route> arrives here as ?connect=<route> (see vercel.json). */
+const connect = (req: VercelRequest, res: VercelResponse, route: string) => {
+  const db = serviceClient();
+  return connectHandler({
+    fetch, env: process.env, now: () => Date.now(),
+    nonce: () => randomBytes(18).toString('base64url'),
+    store: connectStore(db, () => env('INTEGRATION_TOKEN_KEY')),
+    userOf: async (request) => {
+      const bearer = String(request.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+      if (!bearer) return null;
+      const { data, error } = await db.auth.getUser(bearer);
+      return error || !data.user ? null : data.user.id;
+    },
+  })(req, res, route);
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const route = String((Array.isArray(req.query.connect) ? req.query.connect[0] : req.query.connect) ?? '');
+  if (route) {
+    try {
+      return await connect(req, res, route);
+    } catch (e) {
+      // A browser arriving back from a platform must land on a page, never on an error screen.
+      console.error('[social] connect failed', e instanceof Error ? e.name : 'unknown');
+      if (route === 'callback') return res.redirect(302, '/social?connect=failed');
+      return res.status(500).json({ error: 'The account could not be connected. Please try again.' });
+    }
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const bearer = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
   if (!bearer) return res.status(401).json({ error: 'Unauthorized' });
@@ -18,12 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: account } = await db.from('social_accounts').select('organization_id').eq('id', accountId).maybeSingle();
   if (!account) return res.status(404).json({ error: 'Account not found' });
-  const { data: org } = await db.from('organizations').select('owner_id, members').eq('organization_id', account.organization_id).maybeSingle();
-  const members = Array.isArray(org?.members) ? org.members as Array<Record<string, unknown>> : [];
-  const admin = org?.owner_id === auth.user.id || members.some((member) =>
-    String(member.userId ?? member.user_id ?? '') === auth.user.id && ['owner', 'admin'].includes(String(member.role)),
-  );
-  if (!admin) return res.status(403).json({ error: 'Forbidden' });
+  if (!(await isOrgAdmin(db, String(account.organization_id), auth.user.id))) return res.status(403).json({ error: 'Forbidden' });
 
   let encrypted: string;
   try { encrypted = await encryptSecret(refreshToken ? JSON.stringify({ accessToken, refreshToken }) : accessToken, env('INTEGRATION_TOKEN_KEY')); }

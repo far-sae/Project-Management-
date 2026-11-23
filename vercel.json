@@ -9,12 +9,14 @@
     "api/automation.ts": { "maxDuration": 300 },
     "api/voice.ts": { "maxDuration": 60 },
     "api/lead-form.ts": { "maxDuration": 30 },
-    "api/social/publish.ts": { "maxDuration": 300 }
+    "api/social/publish.ts": { "maxDuration": 300 },
+    "api/social/account-secret.ts": { "maxDuration": 30 }
   },
   "rewrites": [
     { "source": "/api/signroom/:path*", "destination": "/api/signroom?path=:path*" },
     { "source": "/api/automation/:path*", "destination": "/api/automation?path=:path*" },
     { "source": "/api/voice/:path*", "destination": "/api/voice?path=:path*" },
+    { "source": "/api/social/connect/:path*", "destination": "/api/social/account-secret?connect=:path*" },
     {
       "source": "/((?!api/|google[a-z0-9]+\\.html$).*)",
       "destination": "/index.html"
