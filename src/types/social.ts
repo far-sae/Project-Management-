@@ -1,3 +1,5 @@
+import type { PostMedia } from '../../api/_social/shared/platforms';
+
 export type SocialProvider = 'linkedin' | 'facebook' | 'instagram' | 'x' | 'youtube' | 'tiktok' | 'other';
 export type SocialContentStatus = 'draft' | 'in_review' | 'approved' | 'scheduled' | 'publishing' | 'published' | 'failed';
 
@@ -17,6 +19,12 @@ export interface SocialContent {
   projectId: string | null; taskId: string | null; title: string; body: string;
   status: SocialContentStatus; scheduledAt: Date | null; publishedAt: Date | null;
   lastError: string | null; createdAt: Date;
+  /** The posts made by one press in the composer share this. Null on a post made before the composer. */
+  postGroupId: string | null;
+  /** The picture or video of the post, uploaded once. */
+  media: PostMedia | null;
+  /** What this post's platform needs (a YouTube title, who can see a TikTok, ...). */
+  options: Record<string, unknown>;
 }
 export interface SocialMetric {
   contentId: string; impressions: number; reach: number; clicks: number;

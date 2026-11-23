@@ -41,6 +41,7 @@ export const SETUP_PARTS: SetupPart[] = [
   { id: 'fieldTypes', name: 'Typed custom fields', gives: 'A custom field on a lead can be a number, a date or one of a list.', file: '200_crm_custom_field_types.sql', probe: { kind: 'table', table: 'crm_field_defs' } },
   { id: 'rules', name: 'Rules', gives: 'When something happens to a lead or a deal, one thing is done by itself.', file: '201_crm_rules.sql', probe: { kind: 'table', table: 'crm_rules' } },
   { id: 'sharedViews', name: 'Shared views', gives: 'A saved view of the Leads list can be shared with the team.', file: '202_crm_shared_views.sql', probe: { kind: 'table', table: 'crm_saved_views' } },
+  { id: 'socialComposer', name: 'Post to every platform', gives: 'One post with a picture or a video goes to YouTube, TikTok, Instagram, Facebook and X with one press.', file: '203_social_composer.sql', probe: { kind: 'column', table: 'social_content', column: 'post_group_id' } },
 ];
 
 /** The database's codes for "there is no such table / column / function". */

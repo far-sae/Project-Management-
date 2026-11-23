@@ -10,8 +10,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: auth, error: authError } = await db.auth.getUser(bearer);
   if (authError || !auth.user) return res.status(401).json({ error: 'Unauthorized' });
   const accountId = String((req.body ?? {}).accountId ?? '');
-  const accessToken = String((req.body ?? {}).accessToken ?? '');
+  const accessToken = String((req.body ?? {}).accessToken ?? '').trim();
+  // YouTube, TikTok and X keys run out within hours. Their second, lasting key renews the first by itself.
+  const refreshToken = String((req.body ?? {}).refreshToken ?? '').trim();
   if (!accountId || !accessToken) return res.status(400).json({ error: 'accountId and accessToken are required' });
+  if (accessToken.length > 4000 || refreshToken.length > 4000) return res.status(400).json({ error: 'That key is too long.' });
 
   const { data: account } = await db.from('social_accounts').select('organization_id').eq('id', accountId).maybeSingle();
   if (!account) return res.status(404).json({ error: 'Account not found' });
@@ -23,7 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!admin) return res.status(403).json({ error: 'Forbidden' });
 
   let encrypted: string;
-  try { encrypted = await encryptSecret(accessToken, env('INTEGRATION_TOKEN_KEY')); }
+  try { encrypted = await encryptSecret(refreshToken ? JSON.stringify({ accessToken, refreshToken }) : accessToken, env('INTEGRATION_TOKEN_KEY')); }
   catch { return res.status(500).json({ error: 'Server is not configured to store integration secrets' }); }
   const { error } = await db.from('social_account_secrets').upsert({ account_id: accountId, secret_encrypted: encrypted, updated_at: new Date().toISOString() }, { onConflict: 'account_id' });
   if (error) {
