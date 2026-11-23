@@ -8,7 +8,8 @@ import {
   type PipSupport,
 } from '@/services/calling/pip';
 
-const PIP_SIZE = { width: 320, height: 240 };
+/** Big enough to read a shared screen in; the person can drag it larger. */
+const PIP_SIZE = { width: 420, height: 300 };
 
 /**
  * Owns the floating mini call window (Document Picture-in-Picture):
@@ -16,7 +17,12 @@ const PIP_SIZE = { width: 320, height: 240 };
  * switches tabs), noticing when the user closes it, and closing it when the
  * call ends or the user is back on the call tab and not sharing.
  */
-export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolean }): {
+export function usePipWindow(args: {
+  callActive: boolean;
+  isLocalSharing: boolean;
+  /** The call is minimised to the small box inside the app (see shouldClosePip). */
+  inAppMini?: boolean;
+}): {
   pipWindow: Window | null;
   support: PipSupport;
   openPip: () => Promise<void>;
@@ -24,7 +30,7 @@ export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolea
   /** Re-apply the close rule now (e.g. after the share picker was cancelled). */
   recheck: () => void;
 } {
-  const { callActive, isLocalSharing } = args;
+  const { callActive, isLocalSharing, inAppMini = false } = args;
   const [pipWindow, setPipWindow] = useState<Window | null>(null);
   const pipRef = useRef<Window | null>(null);
   const openingRef = useRef(false);
@@ -75,6 +81,7 @@ export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolea
         callActive: argsRef.current.callActive,
         tabVisible: document.visibilityState === 'visible',
         isLocalSharing: argsRef.current.isLocalSharing,
+        inAppMini: argsRef.current.inAppMini,
       })
     ) {
       closePip();
@@ -93,7 +100,7 @@ export function usePipWindow(args: { callActive: boolean; isLocalSharing: boolea
     }
     document.addEventListener('visibilitychange', check);
     return () => document.removeEventListener('visibilitychange', check);
-  }, [callActive, isLocalSharing, recheck]);
+  }, [callActive, isLocalSharing, inAppMini, recheck]);
 
   // Automatic open on tab switch while a call is active (Chrome/Edge).
   useEffect(() => {

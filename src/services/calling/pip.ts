@@ -44,13 +44,20 @@ export function copyDocumentStyles(from: Document, to: Document): void {
  * Close the mini window when the call is over, or when the user is back on
  * the call tab — except while they're sharing their screen (then it stays,
  * Meet-style, so they keep seeing faces while presenting).
+ *
+ * One more case: the call is minimised inside the app and the user is on its
+ * tab. They are working in TaskCalendar with the small box in front of them,
+ * so a second, floating copy of the call is closed even while they share. It
+ * comes back by itself when they go to another tab.
  */
 export function shouldClosePip(s: {
   callActive: boolean;
   tabVisible: boolean;
   isLocalSharing: boolean;
+  /** The call is shown as the small box inside the app. */
+  inAppMini?: boolean;
 }): boolean {
-  return !s.callActive || (s.tabVisible && !s.isLocalSharing);
+  return !s.callActive || (s.tabVisible && (!s.isLocalSharing || s.inAppMini === true));
 }
 
 /**

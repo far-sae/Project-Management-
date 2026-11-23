@@ -280,7 +280,8 @@ const PIP_INSET = 20;
 
 const initialPipPosition = (): DragPosition => {
   if (typeof window === 'undefined') return { x: 0, y: 0 };
-  const approxHeight = PIP_VIDEO_HEIGHT + 80;
+  // The picture, the row of small faces, and the controls.
+  const approxHeight = PIP_VIDEO_HEIGHT + 80 + 62;
   return {
     x: Math.max(PIP_INSET, window.innerWidth - PIP_WIDTH - PIP_INSET),
     y: Math.max(PIP_INSET, window.innerHeight - approxHeight - PIP_INSET * 4),
@@ -536,6 +537,8 @@ export const CallOverlay: React.FC = () => {
   const floating = usePipWindow({
     callActive,
     isLocalSharing: state.isScreenSharing,
+    // Working in the app with the small box in view: no second, floating copy of the call.
+    inAppMini: minimized,
   });
 
   const handleToggleScreenShare = useCallback(() => {
@@ -754,7 +757,6 @@ export const CallOverlay: React.FC = () => {
   // ── Active call (connecting, connected, reconnecting) ──────
 
   const remoteSnaps = shownPeers.filter((p) => !p.isLocal);
-  const localSnap = shownPeers.find((p) => p.isLocal) ?? null;
 
   // Anyone screen-sharing? If so, give them the main stage and put the
   // others in a side strip — Meet/Teams convention.
@@ -775,13 +777,17 @@ export const CallOverlay: React.FC = () => {
   // ── PiP mode ───────────────────────────────────────────────
 
   if (minimized) {
-    // Pick a single tile to show in the PiP — prefer screen share, then
-    // active speaker, then the first remote, then local.
-    const pipSnap =
-      screenSharer ??
-      remoteSnaps.find((p) => p.isSpeaking) ??
-      remoteSnaps[0] ??
-      localSnap;
+    // The big tile is somebody else: the screen they share, else whoever is
+    // speaking, else the first of them. It is you only while you are alone.
+    // (While you share, you are looking at your own screen already; the
+    // person you are showing it to is who you want to see.)
+    const pipSnap = pickMiniMainTile(shownPeers);
+    const pipIsScreen = Boolean(pipSnap?.isScreenSharing && !pipSnap.isLocal);
+    // Everybody else, small, by their camera. When the big tile is a screen,
+    // the person sharing it is here too, first, so their face stays in view.
+    const pipOthers = pipIsScreen && pipSnap
+      ? [pipSnap, ...shownPeers.filter((p) => p.userId !== pipSnap.userId)]
+      : shownPeers.filter((p) => p.userId !== pipSnap?.userId);
     return (
       <div
         ref={pipDrag.ref}
@@ -800,24 +806,19 @@ export const CallOverlay: React.FC = () => {
         {remoteSnaps.map((p) => (
           <RemoteAudioSink key={p.userId} snap={p} />
         ))}
-        <div className={cn('relative', CALL_SURFACE)} style={{ height: PIP_VIDEO_HEIGHT }}>
+        <div data-testid="in-app-main-tile" className={cn('relative', CALL_SURFACE)} style={{ height: PIP_VIDEO_HEIGHT }}>
           {pipSnap ? (
             <ParticipantTile
               snap={pipSnap}
               compact
               // Somebody else's screen is worth watching here; your own would only mirror itself.
-              screen={pipSnap.isScreenSharing && !pipSnap.isLocal}
+              screen={pipIsScreen}
               className="h-full w-full rounded-none"
             />
           ) : (
             <div className={cn('flex h-full items-center justify-center text-xs', CALL_MUTED_TEXT)}>
               Waiting…
             </div>
-          )}
-          {remoteSnaps.length > 1 && (
-            <span className="absolute right-2 top-2 z-[3] inline-flex h-5 items-center rounded-md bg-black/70 px-1.5 text-xs font-medium text-white tabular-nums">
-              +{remoteSnaps.length - 1} more
-            </span>
           )}
           {someoneRecording && (
             <div
@@ -831,6 +832,15 @@ export const CallOverlay: React.FC = () => {
             </div>
           )}
         </div>
+        {pipOthers.length > 0 && (
+          <ul aria-label="Others in the call" className="flex gap-1.5 overflow-x-auto px-1.5 pt-1.5">
+            {pipOthers.map((p) => (
+              <li key={p.userId} className="h-14 w-[5.25rem] shrink-0 list-none">
+                <ParticipantTile snap={p} compact tiny className="h-full w-full" />
+              </li>
+            ))}
+          </ul>
+        )}
         {admitBanners(true, 'px-2 pt-2')}
         <div className="flex items-center gap-1.5 py-2 pl-3 pr-2">
           <div className="min-w-0 flex-1">

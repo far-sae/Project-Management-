@@ -43,6 +43,11 @@ interface ParticipantTileProps {
    * person then has two tiles: this one, and their camera among the others.
    */
   screen?: boolean;
+  /**
+   * A tile too small for labels (the row of faces in a small call window):
+   * the name and the muted mark only, so the name is never squeezed out.
+   */
+  tiny?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -52,6 +57,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
   compact = false,
   showSpeakingRing = true,
   screen = false,
+  tiny = false,
   className,
   style,
 }) => {
@@ -139,7 +145,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             </span>
           )}
         </span>
-        {!screen && snap.role === 'guest' && (
+        {!screen && !tiny && snap.role === 'guest' && (
           <span
             className={cn(
               'inline-flex shrink-0 items-center rounded bg-warning px-1.5 text-xs text-warning-foreground',
@@ -161,7 +167,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             <MicOff className="h-3 w-3" />
           </span>
         )}
-        {!screen && snap.isCameraOff && (
+        {!screen && !tiny && snap.isCameraOff && (
           <span
             className={cn(
               'inline-flex shrink-0 items-center justify-center rounded-md bg-black/70 text-[#a3a3a3]',
@@ -173,7 +179,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             <VideoOff className="h-3 w-3" />
           </span>
         )}
-        {!screen && snap.isScreenSharing && (
+        {!screen && !tiny && snap.isScreenSharing && (
           <span
             className={cn(
               'inline-flex shrink-0 items-center rounded bg-success px-1.5 text-xs text-success-foreground',

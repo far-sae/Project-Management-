@@ -73,7 +73,9 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
   const mainIsScreen = Boolean(main?.isScreenSharing && !main.isLocal);
   // Everyone else, small, by their camera. When the big tile is a screen, the
   // person sharing it is here as well, so their face stays visible.
-  const others = participants.filter((p) => mainIsScreen || p.userId !== main?.userId);
+  const others = mainIsScreen && main
+    ? [main, ...participants.filter((p) => p.userId !== main.userId)]
+    : participants.filter((p) => p.userId !== main?.userId);
 
   return (
     <div className={cn('flex h-screen w-screen flex-col gap-1.5 p-1.5', CALL_STAGE)}>
@@ -109,12 +111,14 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
       )}
 
       {others.length > 0 && (
-        <div data-testid="mini-strip" className="flex h-14 shrink-0 gap-1.5 overflow-x-auto">
+        // A shared screen needs the room more than the faces do.
+        <div data-testid="mini-strip" className={cn('flex shrink-0 gap-1.5 overflow-x-auto', mainIsScreen ? 'h-12' : 'h-14')}>
           {others.map((p) => (
             <ParticipantTile
               key={p.userId}
               snap={p}
               compact
+              tiny
               showSpeakingRing
               className="h-full w-20 shrink-0"
             />

@@ -93,6 +93,22 @@ describe('usePipWindow', () => {
     vis.mockRestore();
   });
 
+  it('closes when the call is minimised inside the app, even while sharing: one small window, not two', async () => {
+    const fake = installFakeDocumentPip();
+    const vis = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const { result, rerender } = renderHook(
+      (props: { mini: boolean }) => usePipWindow({ callActive: true, isLocalSharing: true, inAppMini: props.mini }),
+      { initialProps: { mini: false } },
+    );
+    await act(async () => {
+      await result.current.openPip();
+    });
+    expect(fake.close).not.toHaveBeenCalled();
+    rerender({ mini: true });
+    expect(fake.close).toHaveBeenCalled();
+    vis.mockRestore();
+  });
+
   it('recheck() closes the window when the share picker was cancelled on a visible tab', async () => {
     const fake = installFakeDocumentPip();
     const vis = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
