@@ -196,6 +196,31 @@ export const listLeadCategories = async (
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 };
 
+/**
+ * Rename a category, or (with `to` null) take it off: one change on every lead
+ * of the workspace that carries it, in any of the ways it was typed. The
+ * database's own rules still decide which leads this person may change.
+ * Returns how many leads were changed.
+ */
+export const setLeadCategory = async (
+  organizationId: string,
+  workspaceId: string | null | undefined,
+  spellings: string[],
+  to: string | null,
+): Promise<number> => {
+  if (spellings.length === 0) return 0;
+  let q = supabase
+    .from('crm_contacts')
+    .update({ category: to }, { count: 'exact' })
+    .eq('organization_id', organizationId)
+    .in('category', spellings);
+  // Each workspace has its own categories.
+  if (workspaceId) q = q.eq('workspace_id', workspaceId);
+  const { error, count } = await q;
+  if (error) throw error;
+  return count ?? 0;
+};
+
 export const MERGE_NOT_SET_UP_MESSAGE = 'Merging is not set up yet: run supabase/migrations/193_crm_merge_leads.sql in the Supabase SQL editor.';
 
 /**

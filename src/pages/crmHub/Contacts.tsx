@@ -5,7 +5,7 @@ import { forEachLead, nextSort, sortLeadIds, type LeadSort, type LeadSortKey } f
 import { DuplicateLeadsDialog } from '@/components/crmHub/DuplicateLeadsDialog';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Loader2, Download, Upload, MoreHorizontal, FileInput, UserSearch } from 'lucide-react';
+import { Plus, Search, Loader2, Download, Upload, MoreHorizontal, FileInput, UserSearch, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -13,7 +13,7 @@ import {
   useCrmContacts, useCrmCompanies, useContactTagsMap, useCrmTags, useCrmDealStages, useWorkspaceForCreate,
 } from '@/hooks/useCrmHub';
 import {
-  createContact, deleteContact, listLeadCategories, updateContact,
+  createContact, deleteContact, listLeadCategories, setLeadCategory, updateContact,
 } from '@/services/supabase/crmHub/contacts';
 import { ensureCompaniesByName } from '@/services/supabase/crmHub/companies';
 import {
@@ -29,6 +29,8 @@ import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill } from '@/components/common/StatusPill';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
+import { LeadCategoriesDialog } from '@/components/crmHub/LeadCategoriesDialog';
+import { categoryCounts, categorySpellings } from '@/lib/crmCategories';
 import { LeadViews } from '@/components/crmHub/LeadViews';
 import { viewsKey, type LeadViewState } from '@/lib/crmSavedViews';
 import { CsvImportWizard } from '@/components/crmHub/CsvImportWizard';
@@ -120,6 +122,27 @@ export const CrmContactsPage: React.FC = () => {
       .then(setExistingCategories)
       .catch(() => { /* non-fatal */ });
   }, [organizationId, workspaceId, contacts.length]);
+
+  // Categories can be renamed and deleted after they are made. A category is a
+  // word on leads, so both are one change on every lead that carries it.
+  const [showCategories, setShowCategories] = useState(false);
+  const categoryRows = useMemo(() => categoryCounts(contacts, allCategories), [contacts, allCategories]);
+  const handleRenameCategory = async (from: string, to: string) => {
+    if (!organizationId) return;
+    await setLeadCategory(organizationId, workspaceId, categorySpellings(contacts, from), to);
+    setExistingCategories((old) => [...new Set(old.map((name) => (name === from ? to : name)))]);
+    if (categoryFilter === from) setCategoryFilter(to);
+    toast.success(`“${from}” is now “${to}”`);
+    await refresh();
+  };
+  const handleDeleteCategory = async (name: string) => {
+    if (!organizationId) return;
+    await setLeadCategory(organizationId, workspaceId, categorySpellings(contacts, name), null);
+    setExistingCategories((old) => old.filter((item) => item !== name));
+    if (categoryFilter === name) setCategoryFilter('all');
+    toast.success(`Category “${name}” deleted. Its leads are kept.`);
+    await refresh();
+  };
 
   const companyById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
   const tagById = useMemo(() => new Map(allTags.map((t) => [t.id, t])), [allTags]);
@@ -455,6 +478,14 @@ export const CrmContactsPage: React.FC = () => {
                 </SelectContent>
               </Select>
             )}
+            {allCategories.length > 0 && (
+              <Button
+                variant="ghost" size="icon" aria-label="Edit categories" title="Rename or delete a category"
+                onClick={() => setShowCategories(true)}
+              >
+                <Pencil />
+              </Button>
+            )}
             {user && workspaceId && organizationId && (
               <LeadViews
                 storageKey={viewsKey(user.userId, workspaceId)}
@@ -742,6 +773,14 @@ export const CrmContactsPage: React.FC = () => {
         open={converting !== null}
         onOpenChange={(o) => !o && setConverting(null)}
         onConverted={refresh}
+      />
+
+      <LeadCategoriesDialog
+        open={showCategories}
+        onOpenChange={setShowCategories}
+        categories={categoryRows}
+        onRename={handleRenameCategory}
+        onDelete={handleDeleteCategory}
       />
 
       <CsvImportWizard

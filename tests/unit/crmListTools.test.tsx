@@ -23,6 +23,8 @@ const h = vi.hoisted(() => {
     ],
     companies: [{ id: 'c1', name: 'Northwind Studio' }, { id: 'c2', name: 'Harbour Dental' }, { id: 'c3', name: 'Fieldway Logistics' }],
     isAdmin: false,
+    categories: [] as string[],
+    setLeadCategory: vi.fn(async () => 2),
     organization: {
       organizationId: 'o',
       members: [
@@ -56,7 +58,8 @@ vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ orga
 vi.mock('@/hooks/useSelectedWorkspace', () => ({ useSelectedWorkspace: () => ({ selected: { workspaceId: 'w', name: 'Studio' } }) }));
 vi.mock('@/services/supabase/crmHub/contacts', () => ({
   createContact: vi.fn(), deleteContact: h.deleteContact, updateContact: h.updateContact, getContact: vi.fn(),
-  listLeadCategories: async () => [],
+  listLeadCategories: async () => h.categories,
+  setLeadCategory: h.setLeadCategory,
 }));
 vi.mock('@/services/supabase/crmHub/deals', () => ({ createDeal: vi.fn(), moveDealToStage: vi.fn(), linkDealHandoff: vi.fn() }));
 vi.mock('@/services/supabase/crmHub/companies', () => ({ getCompany: vi.fn(), createCompany: vi.fn(), ensureCompaniesByName: vi.fn() }));
@@ -144,6 +147,52 @@ describe('Leads page: list tools', () => {
     fireEvent.keyDown(within(toolbar()).getByRole('combobox'), { key: 'ArrowDown' });
     fireEvent.keyDown(await screen.findByRole('option', { name: who }), { key: 'Enter' });
   };
+
+  it('has no "Edit categories" button until there is a category', () => {
+    show();
+    expect(screen.queryByRole('button', { name: 'Edit categories' })).toBeNull();
+  });
+
+  it('renames a category on every lead that carries it, however it was typed', async () => {
+    const before = h.contacts.map((c) => c.category);
+    h.contacts[0].category = 'VIP' as never;
+    h.contacts[1].category = ' VIP ' as never;
+    h.contacts[2].category = 'Warm intro' as never;
+    h.setLeadCategory.mockClear();
+    try {
+      show();
+      fireEvent.click(screen.getByRole('button', { name: 'Edit categories' }));
+      const dialog = within(screen.getByRole('dialog', { name: 'Edit categories' }));
+      expect(dialog.getByText('VIP').closest('li')?.textContent).toContain('2 leads');
+      fireEvent.click(dialog.getByRole('button', { name: 'Rename VIP' }));
+      fireEvent.change(dialog.getByLabelText('New name for VIP'), { target: { value: 'Key clients' } });
+      fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(h.setLeadCategory).toHaveBeenCalledTimes(1));
+      const [org, workspace, spellings, to] = h.setLeadCategory.mock.calls[0] as unknown as [string, string, string[], string];
+      expect([org, workspace, to]).toEqual(['o', 'w', 'Key clients']);
+      expect([...spellings].sort()).toEqual([' VIP ', 'VIP']);
+    } finally {
+      h.contacts.forEach((c, i) => { c.category = before[i] as never; });
+    }
+  });
+
+  it('deletes a category by taking it off its leads; the leads stay', async () => {
+    const before = h.contacts.map((c) => c.category);
+    h.contacts[0].category = 'VIP' as never;
+    h.setLeadCategory.mockClear();
+    h.deleteContact.mockClear();
+    try {
+      show();
+      fireEvent.click(screen.getByRole('button', { name: 'Edit categories' }));
+      const dialog = within(screen.getByRole('dialog', { name: 'Edit categories' }));
+      fireEvent.click(dialog.getByRole('button', { name: 'Delete VIP' }));
+      fireEvent.click(dialog.getByRole('button', { name: 'Delete category' }));
+      await waitFor(() => expect(h.setLeadCategory).toHaveBeenCalledWith('o', 'w', ['VIP'], null));
+      expect(h.deleteContact).not.toHaveBeenCalled();
+    } finally {
+      h.contacts.forEach((c, i) => { c.category = before[i] as never; });
+    }
+  });
 
   it('offers "Find leads" to the owner and admins only: it spends credits', () => {
     show();
