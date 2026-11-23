@@ -13,8 +13,10 @@ const h = vi.hoisted(() => ({
   prospectSetup: vi.fn(),
   searchProspects: vi.fn(),
   revealProspects: vi.fn(),
+  prospectPhones: vi.fn(),
   listLeadEmails: vi.fn(),
   createContact: vi.fn(),
+  updateContact: vi.fn(),
   ensureCompaniesByName: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -27,9 +29,10 @@ vi.mock('@/services/prospects/client', () => ({
   prospectSetup: h.prospectSetup,
   searchProspects: h.searchProspects,
   revealProspects: h.revealProspects,
+  prospectPhones: h.prospectPhones,
   errorSentence: (e: unknown) => (e instanceof Error && e.message ? e.message : 'The request could not be completed. Please try again.'),
 }));
-vi.mock('@/services/supabase/crmHub/contacts', () => ({ listLeadEmails: h.listLeadEmails, createContact: h.createContact }));
+vi.mock('@/services/supabase/crmHub/contacts', () => ({ listLeadEmails: h.listLeadEmails, createContact: h.createContact, updateContact: h.updateContact }));
 vi.mock('@/services/supabase/crmHub/companies', () => ({ ensureCompaniesByName: h.ensureCompaniesByName }));
 
 import { setInternalsVisible } from '@/lib/publicError';
@@ -46,7 +49,8 @@ const revealed = (id: string, firstName: string, email: string, companyName = 'N
 });
 
 const show = async () => {
-  render(<MemoryRouter><CrmFindLeadsPage /></MemoryRouter>);
+  // No waiting between looks for phone numbers.
+  render(<MemoryRouter><CrmFindLeadsPage pollDelay={() => 0} /></MemoryRouter>);
   await waitFor(() => expect(screen.queryByLabelText('Checking')).toBeNull());
 };
 const type = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -60,7 +64,11 @@ const tick = (name: string) => fireEvent.click(screen.getByRole('checkbox', { na
 const row = (name: string) => screen.getByText(name).closest('tr') as HTMLElement;
 
 beforeEach(() => {
-  for (const fn of [h.prospectSetup, h.searchProspects, h.revealProspects, h.listLeadEmails, h.createContact, h.ensureCompaniesByName, h.toast.success, h.toast.error, h.toast.warning, h.leads.refresh]) fn.mockReset();
+  for (const fn of [h.prospectSetup, h.searchProspects, h.revealProspects, h.prospectPhones, h.listLeadEmails, h.createContact, h.updateContact, h.ensureCompaniesByName, h.toast.success, h.toast.error, h.toast.warning, h.leads.refresh]) fn.mockReset();
+  window.localStorage.clear();
+  // Most of these tests are about the email only; the phone tests switch this on again.
+  window.localStorage.setItem('crm.findLeads.withPhones', 'off');
+  h.updateContact.mockResolvedValue(undefined);
   h.organization = { isAdmin: true, isOwner: true, organization: { organizationId: 'org-1' } };
   h.workspaceId = 'ws-1';
   h.leads.items = [];
@@ -165,7 +173,7 @@ describe('searching', () => {
 
 describe('adding people as leads', () => {
   const reveal = (people: RevealedPerson[], over: Partial<ProspectReveal> = {}) =>
-    h.revealProspects.mockResolvedValue({ people, credits: people.length, notFound: 0, unverified: 0, ...over });
+    h.revealProspects.mockResolvedValue({ people, credits: people.length, notFound: 0, unverified: 0, phoneRequests: [], ...over });
 
   it('marks a person who is a lead already, and does not let them be bought again', async () => {
     h.leads.items = [{ id: 'lead-9', customFields: { 'Apollo ID': 'p2' } }];
@@ -204,14 +212,14 @@ describe('adding people as leads', () => {
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Add 2 leads' }));
 
     await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Added 2 leads. 2 Apollo credits used.'));
-    expect(h.revealProspects).toHaveBeenCalledWith('ws-1', ['p1', 'p3'], true);
+    expect(h.revealProspects).toHaveBeenCalledWith('ws-1', ['p1', 'p3'], true, false);
     expect(h.ensureCompaniesByName).toHaveBeenCalledWith('org-1', 'ws-1', [
       expect.objectContaining({ name: 'Northwind Studio', industry: 'design', company_size: '40' }),
       expect.objectContaining({ name: 'Harbour Dental' }),
     ], 'u1');
     expect(h.createContact).toHaveBeenCalledTimes(2);
     expect(h.createContact).toHaveBeenCalledWith({
-      organizationId: 'org-1', workspaceId: 'ws-1', firstName: 'Elena', lastName: 'Rossi', email: 'elena@northwind.example',
+      organizationId: 'org-1', workspaceId: 'ws-1', firstName: 'Elena', lastName: 'Rossi', email: 'elena@northwind.example', phone: null,
       jobTitle: 'Head of Operations', companyId: 'co-northwind', source: 'Apollo',
       customFields: { 'Apollo ID': 'p1', LinkedIn: 'http://www.linkedin.com/in/p1', Location: 'Leeds, United Kingdom', 'Email status': 'verified' },
     }, 'u1');
@@ -257,5 +265,109 @@ describe('adding people as leads', () => {
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Add 1 lead' }));
     await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('Apollo could not be reached. Please try again.'));
     expect(h.createContact).not.toHaveBeenCalled();
+  });
+});
+
+describe('phone numbers', () => {
+  const withCompanyPhone = (person: RevealedPerson, phone: string): RevealedPerson =>
+    ({ ...person, company: person.company ? { ...person.company, phone } : null });
+  const addTwo = async () => {
+    await show();
+    await search();
+    tick('Elena Ro***i');
+    tick('Tom Ro***i');
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 to leads' }));
+  };
+  const confirm = () => fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Add 2 leads' }));
+
+  beforeEach(() => {
+    window.localStorage.removeItem('crm.findLeads.withPhones');
+    h.revealProspects.mockResolvedValue({
+      people: [withCompanyPhone(revealed('p1', 'Elena', 'elena@northwind.example'), '+44 113 496 0000'), revealed('p3', 'Tom', 'tom@harbour.example', 'Harbour Dental')],
+      credits: 2, notFound: 0, unverified: 0, phoneRequests: ['900000000000000001'],
+    });
+    h.prospectPhones.mockResolvedValue({ phones: [{ id: 'p1', number: '+447700900123', type: 'mobile' }], credits: 8, pending: [], retryAfter: 0 });
+  });
+
+  it('are asked for unless that is switched off, and the choice is remembered', async () => {
+    await show();
+    const box = screen.getByRole('checkbox', { name: /Also get phone numbers/ }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(screen.getByText(/Only numbers Apollo marks as valid are kept/)).toBeTruthy();
+    fireEvent.click(box);
+    cleanup();
+    await show();
+    expect((screen.getByRole('checkbox', { name: /Also get phone numbers/ }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('are counted in what it will cost, before anything is bought', async () => {
+    await addTwo();
+    const text = screen.getByRole('alertdialog').textContent ?? '';
+    expect(text).toContain('up to 18 Apollo credits');
+    expect(text).toContain('8 more for each person a phone number is found for');
+    expect(h.revealProspects).not.toHaveBeenCalled();
+  });
+
+  it('start with the company’s number, which costs nothing more', async () => {
+    await addTwo();
+    confirm();
+    await waitFor(() => expect(h.createContact).toHaveBeenCalledTimes(2));
+    expect(h.revealProspects).toHaveBeenCalledWith('ws-1', ['p1', 'p3'], true, true);
+    expect(h.createContact.mock.calls[0]![0]).toMatchObject({ firstName: 'Elena', phone: '+44 113 496 0000', customFields: { 'Phone type': 'Company' } });
+    expect(h.createContact.mock.calls[1]![0]).toMatchObject({ firstName: 'Tom', phone: null });
+  });
+
+  it('are saved on the lead when Apollo has found the person’s own number', async () => {
+    await addTwo();
+    confirm();
+    await waitFor(() => expect(h.updateContact).toHaveBeenCalledTimes(1));
+    expect(h.prospectPhones).toHaveBeenCalledWith('ws-1', ['900000000000000001']);
+    expect(h.updateContact).toHaveBeenCalledWith('lead-Elena', {
+      phone: '+447700900123',
+      customFields: { 'Apollo ID': 'p1', LinkedIn: 'http://www.linkedin.com/in/p1', Location: 'Leeds, United Kingdom', 'Email status': 'verified', 'Phone type': 'Mobile' },
+    });
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Phone numbers added to 1 lead. 8 Apollo credits used.'));
+    // Nothing is left waiting, here or for the next visit.
+    await waitFor(() => expect(screen.queryByText(/Looking up phone numbers/)).toBeNull());
+    expect(window.localStorage.getItem('crm.findLeads.pendingPhones.ws-1')).toBeNull();
+  });
+
+  it('are asked for again while Apollo is still looking', async () => {
+    h.prospectPhones
+      .mockResolvedValueOnce({ phones: [], credits: 0, pending: ['900000000000000001'], retryAfter: 10 })
+      .mockResolvedValueOnce({ phones: [{ id: 'p3', number: '+14155550132', type: 'direct' }], credits: 8, pending: [], retryAfter: 0 });
+    await addTwo();
+    confirm();
+    expect(await screen.findByText(/Looking up phone numbers for 2 leads/)).toBeTruthy();
+    await waitFor(() => expect(h.prospectPhones).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(h.updateContact).toHaveBeenCalledWith('lead-Tom', expect.objectContaining({ phone: '+14155550132', customFields: expect.objectContaining({ 'Phone type': 'Direct line' }) })));
+  });
+
+  it('are still collected when the page is opened again later', async () => {
+    window.localStorage.setItem('crm.findLeads.pendingPhones.ws-1', JSON.stringify({
+      requestIds: ['900000000000000007'], leads: { p1: { id: 'lead-9', customFields: { 'Apollo ID': 'p1' } } }, added: 0, credits: 0,
+    }));
+    await show();
+    await waitFor(() => expect(h.prospectPhones).toHaveBeenCalledWith('ws-1', ['900000000000000007']));
+    await waitFor(() => expect(h.updateContact).toHaveBeenCalledWith('lead-9', { phone: '+447700900123', customFields: { 'Apollo ID': 'p1', 'Phone type': 'Mobile' } }));
+  });
+
+  it('say so when Apollo found no valid number', async () => {
+    h.prospectPhones.mockResolvedValue({ phones: [], credits: 0, pending: [], retryAfter: 0 });
+    await addTwo();
+    confirm();
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Apollo found no valid phone number for these leads. 0 Apollo credits used.'));
+    expect(h.updateContact).not.toHaveBeenCalled();
+  });
+
+  it('are not asked for at all once the box is unticked', async () => {
+    await show();
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also get phone numbers/ }));
+    await search();
+    tick('Elena Ro***i');
+    fireEvent.click(screen.getByRole('button', { name: 'Add 1 to leads' }));
+    expect(screen.getByRole('alertdialog').textContent).toContain('Phone numbers are not fetched');
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Add 1 lead' }));
+    await waitFor(() => expect(h.revealProspects).toHaveBeenCalledWith('ws-1', ['p1'], true, false));
   });
 });

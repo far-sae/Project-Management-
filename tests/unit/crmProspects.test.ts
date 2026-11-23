@@ -1,7 +1,8 @@
 // Finding leads in Apollo: the rules the page uses.
 import { describe, expect, it } from 'vitest';
 import {
-  APOLLO_ID_FIELD, addedSentence, hiddenName, knownApolloIds, leadFromPerson, splitList, splitNewLeads,
+  APOLLO_ID_FIELD, addedSentence, hiddenName, knownApolloIds, leadFromPerson, mergePendingPhones, phonePatch, phonesSentence,
+  readPendingPhones, savePendingPhones, splitList, splitNewLeads,
 } from '@/lib/crmProspects';
 import type { RevealedPerson } from '../../api/_prospect/shared/types';
 
@@ -39,7 +40,7 @@ describe('who is a lead already', () => {
 describe('a person becomes a lead', () => {
   it('with their job, where they are, their profile and their company', () => {
     expect(leadFromPerson(person())).toEqual({
-      apolloId: 'p1', firstName: 'Elena', lastName: 'Rossi', email: 'elena@northwind.example', jobTitle: 'Head of Operations',
+      apolloId: 'p1', firstName: 'Elena', lastName: 'Rossi', email: 'elena@northwind.example', phone: null, jobTitle: 'Head of Operations',
       customFields: {
         'Apollo ID': 'p1', LinkedIn: 'http://www.linkedin.com/in/elena-rossi', Location: 'Leeds, England, United Kingdom', 'Email status': 'verified',
       },
@@ -68,5 +69,43 @@ describe('what is said afterwards', () => {
   it('is also who was left out, and why', () => {
     expect(addedSentence({ added: 0, credits: 4, already: 2, unverified: 1, notFound: 1 }))
       .toBe('No leads were added. 4 Apollo credits used. 2 were already a lead. 1 had no verified email. 1 was not found.');
+  });
+});
+
+describe('phone numbers', () => {
+  it('start as the company’s number, and say whose number it is', () => {
+    const lead = leadFromPerson(person({ company: { name: 'Northwind Studio', website: '', industry: '', size: null, city: '', state: '', country: '', phone: '+44 113 496 0000' } }));
+    expect(lead.phone).toBe('+44 113 496 0000');
+    expect(lead.customFields['Phone type']).toBe('Company');
+    expect(leadFromPerson(person()).customFields['Phone type']).toBeUndefined();
+  });
+
+  it('become the person’s own number when it arrives, keeping what the lead already says', () => {
+    expect(phonePatch({ 'Apollo ID': 'p1', 'Phone type': 'Company' }, { number: '+447700900123', type: 'mobile' }))
+      .toEqual({ phone: '+447700900123', customFields: { 'Apollo ID': 'p1', 'Phone type': 'Mobile' } });
+    expect(phonePatch({}, { number: '+1', type: 'direct' }).customFields['Phone type']).toBe('Direct line');
+  });
+
+  it('are summed up in one line', () => {
+    expect(phonesSentence({ added: 2, credits: 16 })).toBe('Phone numbers added to 2 leads. 16 Apollo credits used.');
+    expect(phonesSentence({ added: 0, credits: 0 })).toBe('Apollo found no valid phone number for these leads. 0 Apollo credits used.');
+  });
+
+  it('are remembered between visits while Apollo is still looking, and forgotten when done', () => {
+    const waiting = { requestIds: ['9'], leads: { p1: { id: 'lead-1', customFields: {} } }, added: 0, credits: 0 };
+    savePendingPhones('ws-1', waiting);
+    expect(readPendingPhones('ws-1')).toEqual(waiting);
+    expect(readPendingPhones('ws-2')).toBeNull();
+    savePendingPhones('ws-1', null);
+    expect(readPendingPhones('ws-1')).toBeNull();
+    window.localStorage.setItem('crm.findLeads.pendingPhones.ws-1', 'not json');
+    expect(readPendingPhones('ws-1')).toBeNull();
+  });
+
+  it('join a second batch to one that is still waiting', () => {
+    const first = { requestIds: ['1'], leads: { p1: { id: 'a', customFields: {} } }, added: 1, credits: 8 };
+    const second = { requestIds: ['2'], leads: { p2: { id: 'b', customFields: {} } }, added: 0, credits: 0 };
+    expect(mergePendingPhones(first, second)).toEqual({ requestIds: ['1', '2'], leads: { p1: { id: 'a', customFields: {} }, p2: { id: 'b', customFields: {} } }, added: 1, credits: 8 });
+    expect(mergePendingPhones(null, second)).toBe(second);
   });
 });

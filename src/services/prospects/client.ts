@@ -8,7 +8,7 @@
  */
 import { publicMessage } from '@/lib/publicError';
 import { supabase } from '@/services/supabase/config';
-import type { ProspectFilters, ProspectReveal, ProspectSearch, ProspectSetup } from '../../../api/_prospect/shared/types';
+import type { ProspectFilters, ProspectPhones, ProspectReveal, ProspectSearch, ProspectSetup } from '../../../api/_prospect/shared/types';
 
 const BASE = '/api/voice/prospects/';
 
@@ -70,6 +70,15 @@ export const prospectSetup = (workspaceId: string): Promise<ProspectSetup> =>
 export const searchProspects = (workspaceId: string, filters: ProspectFilters, page: number): Promise<ProspectSearch> =>
   json<ProspectSearch>('search', { workspaceId, filters, page });
 
-/** The email and details of the chosen people. Uses 1 Apollo credit for each person found. */
-export const revealProspects = (workspaceId: string, ids: string[], verifiedOnly: boolean): Promise<ProspectReveal> =>
-  json<ProspectReveal>('reveal', { workspaceId, ids, verifiedOnly });
+/**
+ * The email and details of the chosen people. Uses 1 Apollo credit for each
+ * person found. With `phones`, Apollo also starts looking for their phone
+ * numbers (8 credits more for each one found); those are fetched afterwards
+ * with prospectPhones().
+ */
+export const revealProspects = (workspaceId: string, ids: string[], verifiedOnly: boolean, phones = false): Promise<ProspectReveal> =>
+  json<ProspectReveal>('reveal', { workspaceId, ids, verifiedOnly, phones });
+
+/** The phone numbers of earlier reveals, as far as Apollo has found them. */
+export const prospectPhones = (workspaceId: string, requestIds: string[]): Promise<ProspectPhones> =>
+  json<ProspectPhones>('phones', { workspaceId, requestIds });

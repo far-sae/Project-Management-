@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { ORGS_SETTING, KEY_SETTING, readProspectConfig } from "../../../api/_prospect/config";
-import { readFilters, searchUrl } from "../../../api/_prospect/apollo";
+import { bestPhone, readFilters, searchUrl } from "../../../api/_prospect/apollo";
 import {
   ADMINS_ONLY_MESSAGE,
   KEY_REFUSED_MESSAGE,
@@ -15,7 +15,7 @@ import {
   route,
   type ProspectDeps,
 } from "../../../api/_prospect/router";
-import type { ProspectReveal, ProspectSearch, ProspectSetup } from "../../../api/_prospect/shared/types";
+import type { ProspectPhones, ProspectReveal, ProspectSearch, ProspectSetup } from "../../../api/_prospect/shared/types";
 
 /**
  * Finding leads in Apollo: who may, what is asked of Apollo, what it costs and
@@ -209,7 +209,7 @@ describe("adding people (this is what costs credits)", () => {
     const { ask } = setUp();
     const out = (await ask("POST", "reveal", { workspaceId: WS, ids: ["p1"], verifiedOnly: true })).json as ProspectReveal;
     expect(out).toEqual({
-      credits: 1, notFound: 0, unverified: 0,
+      credits: 1, notFound: 0, unverified: 0, phoneRequests: [],
       people: [{
         id: "p1", firstName: "Elena", lastName: "Rossi", title: "Head of Operations", email: "elena@northwind.example", emailStatus: "verified",
         linkedinUrl: "http://www.linkedin.com/in/elena-rossi", city: "Leeds", state: "England", country: "United Kingdom",
@@ -301,5 +301,112 @@ describe("paths", () => {
     const { ask } = setUp();
     expect((await ask("GET", "search")).status).toBe(404);
     expect((await ask("POST", "everything")).status).toBe(404);
+  });
+});
+
+describe("phone numbers (8 credits each, and they arrive later)", () => {
+  const number = (over: Record<string, unknown> = {}) => ({
+    sanitized_number: "+442079460958", raw_number: "+44 20 7946 0958", status_cd: "valid_number", type_cd: "mobile", confidence_cd: "high", dnc_status_cd: "not_found", position: 0, ...over,
+  });
+
+  it("are not asked for unless the person adding leads asks", async () => {
+    const { ask, calls } = setUp();
+    const out = (await ask("POST", "reveal", { workspaceId: WS, ids: ["p1"] })).json as ProspectReveal;
+    expect(new URL(calls[0]!.url).searchParams.get("reveal_phone_number")).toBe("false");
+    expect(new URL(calls[0]!.url).searchParams.get("poll_only")).toBeNull();
+    expect(out.phoneRequests).toEqual([]);
+  });
+
+  it("are asked for by polling, and the request to come back for is returned", async () => {
+    const { ask, calls } = setUp({
+      answer: (call) => {
+        const ids = (call.body as { details: Array<{ id: string }> }).details.map((d) => d.id);
+        return { status: 200, json: { credits_consumed: ids.length, matches: ids.map((id) => match(id)), request_id_str: `90000000000000000${calls.length}`, phone_enrichment: { status: "pending" } } };
+      },
+    });
+    const ids = Array.from({ length: 12 }, (_, n) => `p${n}`);
+    const out = (await ask("POST", "reveal", { workspaceId: WS, ids, phones: true })).json as ProspectReveal;
+    const url = new URL(calls[0]!.url);
+    expect(url.searchParams.get("reveal_phone_number")).toBe("true");
+    expect(url.searchParams.get("poll_only")).toBe("true");
+    expect(url.searchParams.get("webhook_url")).toBeNull();
+    expect(out.phoneRequests).toEqual(["900000000000000001", "900000000000000002"]);
+  });
+
+  it("give no request to come back for when Apollo started no phone search", async () => {
+    const { ask } = setUp({
+      answer: () => ({ status: 200, json: { credits_consumed: 1, matches: [match("p1")], request_id_str: "900000000000000001", phone_enrichment: { status: "skipped" } } }),
+    });
+    const out = (await ask("POST", "reveal", { workspaceId: WS, ids: ["p1"], phones: true })).json as ProspectReveal;
+    expect(out.phoneRequests).toEqual([]);
+  });
+
+  it("come back as one number a person, the best valid one, with what they cost", async () => {
+    const { ask, calls } = setUp({
+      answer: () => ({
+        status: 200,
+        json: {
+          request_type: "phone",
+          webhook_result: {
+            credits_consumed: 16,
+            people: [
+              { id: "p1", status: "success", phone_numbers: [number({ type_cd: "other", sanitized_number: "+442079460111" }), number({ type_cd: "mobile", sanitized_number: "+447700900123" })] },
+              { id: "p2", status: "success", phone_numbers: [number({ type_cd: "work_direct", sanitized_number: "+14155550132" })] },
+              { id: "p3", status: "success", phone_numbers: [number({ status_cd: "invalid_number" })] },
+              { id: "p4", status: "failed", phone_numbers: [] },
+            ],
+          },
+        },
+      }),
+    });
+    const out = await ask("POST", "phones", { workspaceId: WS, requestIds: ["900000000000000001"] });
+    expect(out.status).toBe(200);
+    expect(calls[0]!.method).toBe("GET");
+    expect(calls[0]!.url).toBe("https://api.apollo.io/api/v1/webhook_result/900000000000000001");
+    expect(calls[0]!.headers["x-api-key"]).toBe(KEY);
+    expect(out.json as ProspectPhones).toEqual({
+      phones: [{ id: "p1", number: "+447700900123", type: "mobile" }, { id: "p2", number: "+14155550132", type: "direct" }],
+      credits: 16, pending: [], retryAfter: 0,
+    });
+  });
+
+  it("say to come back later while Apollo is still looking", async () => {
+    const { ask } = setUp({ answer: () => ({ status: 404, json: { error_code: "result_pending", retry_after_seconds: 12 } }) });
+    const out = (await ask("POST", "phones", { workspaceId: WS, requestIds: ["900000000000000001", "900000000000000002"] })).json as ProspectPhones;
+    expect(out).toEqual({ phones: [], credits: 0, pending: ["900000000000000001", "900000000000000002"], retryAfter: 12 });
+  });
+
+  it("stop asking about a request Apollo does not know or has let go", async () => {
+    for (const [status, code] of [[404, "request_id_unknown"], [410, "request_id_expired"], [400, "invalid_request_id"]] as const) {
+      const { ask } = setUp({ answer: () => ({ status, json: { error_code: code } }) });
+      const out = (await ask("POST", "phones", { workspaceId: WS, requestIds: ["900000000000000001"] })).json as ProspectPhones;
+      expect(out).toEqual({ phones: [], credits: 0, pending: [], retryAfter: 0 });
+    }
+  });
+
+  it("keep a request for later when Apollo cannot be reached this time", async () => {
+    const { ask } = setUp({ answer: () => ({ status: 500, json: {} }) });
+    const out = (await ask("POST", "phones", { workspaceId: WS, requestIds: ["900000000000000001"] })).json as ProspectPhones;
+    expect(out.pending).toEqual(["900000000000000001"]);
+    expect(out.retryAfter).toBeGreaterThan(0);
+  });
+
+  it("are for the owner and admins only, a few requests at a time, and only real request numbers", async () => {
+    const { ask, calls } = setUp();
+    expect((await ask("POST", "phones", { workspaceId: WS, requestIds: ["900000000000000001"] }, MEMBER)).status).toBe(403);
+    expect((await ask("POST", "phones", { workspaceId: WS, requestIds: [] })).status).toBe(400);
+    expect((await ask("POST", "phones", { workspaceId: WS, requestIds: ["../setup"] })).status).toBe(400);
+    expect((await ask("POST", "phones", { workspaceId: WS, requestIds: Array.from({ length: 11 }, (_, n) => `9${n}`) })).status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("choose a mobile over a direct line over any other, and never an invalid or do-not-call number", () => {
+    expect(bestPhone([number({ type_cd: "other", sanitized_number: "+1" }), number({ type_cd: "work_direct", sanitized_number: "+2" }), number({ type_cd: "mobile", sanitized_number: "+3" })])).toEqual({ number: "+3", type: "mobile" });
+    expect(bestPhone([number({ type_cd: "other", sanitized_number: "+1" }), number({ type_cd: "work_direct", sanitized_number: "+2" })])).toEqual({ number: "+2", type: "direct" });
+    expect(bestPhone([number({ status_cd: "no_status" }), number({ status_cd: "invalid_number" })])).toBeNull();
+    // A person on a do-not-call list is not rung from here.
+    expect(bestPhone([number({ dnc_status_cd: "registered" })])).toBeNull();
+    expect(bestPhone([number({ sanitized_number: "" })])).toBeNull();
+    expect(bestPhone(null)).toBeNull();
   });
 });

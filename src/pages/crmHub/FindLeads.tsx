@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Loader2, Search, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,13 +7,15 @@ import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmContacts, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { companyKey } from '@/lib/crmImport';
 import {
-  APOLLO_SOURCE, SENIORITY_OPTIONS, SIZE_OPTIONS, addedSentence, hiddenName, knownApolloIds, leadFromPerson, splitList, splitNewLeads,
+  APOLLO_SOURCE, SENIORITY_OPTIONS, SIZE_OPTIONS, addedSentence, hiddenName, knownApolloIds, leadFromPerson, mergePendingPhones,
+  phonePatch, phonesSentence, readPendingPhones, readPhonesChoice, savePendingPhones, savePhonesChoice, splitList, splitNewLeads,
+  type PendingPhones,
 } from '@/lib/crmProspects';
 import { publicMessage, publicText } from '@/lib/publicError';
 import { cn } from '@/lib/utils';
-import { errorSentence, prospectSetup, revealProspects, searchProspects } from '@/services/prospects/client';
+import { errorSentence, prospectPhones, prospectSetup, revealProspects, searchProspects } from '@/services/prospects/client';
 import { ensureCompaniesByName } from '@/services/supabase/crmHub/companies';
-import { createContact, listLeadEmails } from '@/services/supabase/crmHub/contacts';
+import { createContact, listLeadEmails, updateContact } from '@/services/supabase/crmHub/contacts';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill } from '@/components/common/StatusPill';
 import {
@@ -30,10 +32,19 @@ import type { ProspectFilters, ProspectSearch, ProspectSetup } from '../../../ap
  * them to the CRM as leads.
  *
  * Searching costs nothing. Adding a person costs one Apollo credit, because
- * that is when their email is fetched. Phone numbers (eight credits each) are
- * never fetched. A person who is a lead already cannot be bought again.
+ * that is when their email is fetched. Their own phone number costs eight
+ * credits more, so it is fetched only while "Also get phone numbers" is on;
+ * Apollo finds it a little later, and it is saved on the lead when it arrives.
+ * A person who is a lead already cannot be bought again.
  * For the organisation's owner and admins.
  */
+
+/** How many phone-number requests are asked about at once (the server's limit). */
+const PHONE_BATCH = 10;
+/** How long to wait before the first look for phone numbers, in seconds. Apollo then says how long to wait. */
+const PHONE_FIRST_WAIT = 8;
+/** After this many looks the page stops asking; what is left is collected the next time it is opened. */
+const PHONE_TRIES_MAX = 40;
 
 const BOX = 'rounded-lg border border-border bg-card';
 const NO_FILTER = 'Add at least one thing to search by: a job title, a place, a company or a keyword.';
@@ -71,7 +82,10 @@ const Chips: React.FC<{
   </div>
 );
 
-export const CrmFindLeadsPage: React.FC = () => {
+export const CrmFindLeadsPage: React.FC<{
+  /** Seconds to wait → milliseconds. Tests pass their own so they do not wait. */
+  pollDelay?: (seconds: number) => number;
+}> = ({ pollDelay = (seconds) => seconds * 1000 }) => {
   const id = useId();
   const { user } = useAuth();
   const { isAdmin, organization } = useOrganization();
@@ -89,6 +103,11 @@ export const CrmFindLeadsPage: React.FC = () => {
   const [seniorities, setSeniorities] = useState<string[]>([]);
   const [sizes, setSizes] = useState<string[]>([]);
   const [verifiedOnly, setVerifiedOnly] = useState(true);
+  const [withPhones, setWithPhones] = useState(readPhonesChoice);
+  /** Phone numbers Apollo is still looking up, and the leads they belong to. */
+  const [pendingPhones, setPendingPhones] = useState<PendingPhones | null>(null);
+  const phoneWait = useRef(PHONE_FIRST_WAIT);
+  const phoneTries = useRef(0);
 
   /** The filters of the search on screen, so "next page" asks for the same people. */
   const [asked, setAsked] = useState<ProspectFilters | null>(null);
@@ -111,6 +130,51 @@ export const CrmFindLeadsPage: React.FC = () => {
       .catch((err) => { if (alive) setSetupError(errorSentence(err)); });
     return () => { alive = false; };
   }, [isAdmin, workspaceId]);
+
+  // Numbers that were asked for on an earlier visit are still collected.
+  const ready = setup?.ready === true;
+  useEffect(() => {
+    if (ready && workspaceId) setPendingPhones(readPendingPhones(workspaceId));
+  }, [ready, workspaceId]);
+
+  // Ask Apollo for the numbers until it has them all, then say what came of it.
+  useEffect(() => {
+    if (!ready || !workspaceId || !pendingPhones || phoneTries.current >= PHONE_TRIES_MAX) return;
+    const timer = window.setTimeout(async () => {
+      phoneTries.current += 1;
+      let next: PendingPhones | null = { ...pendingPhones };
+      try {
+        const answer = await prospectPhones(workspaceId, pendingPhones.requestIds.slice(0, PHONE_BATCH));
+        let added = 0;
+        for (const phone of answer.phones) {
+          const lead = pendingPhones.leads[phone.id];
+          if (!lead) continue;
+          try {
+            await updateContact(lead.id, phonePatch(lead.customFields, phone));
+            added += 1;
+          } catch {
+            /* The lead was deleted in the meantime: nothing to put the number on. */
+          }
+        }
+        const requestIds = [...answer.pending, ...pendingPhones.requestIds.slice(PHONE_BATCH)];
+        const totals = { added: pendingPhones.added + added, credits: pendingPhones.credits + answer.credits };
+        phoneWait.current = answer.retryAfter > 0 ? answer.retryAfter : PHONE_FIRST_WAIT;
+        if (requestIds.length === 0) {
+          next = null;
+          toast.success(phonesSentence(totals));
+          void refreshLeads();
+        } else {
+          next = { ...pendingPhones, requestIds, ...totals };
+        }
+      } catch {
+        /* The request failed: the numbers are kept waiting and asked for again. */
+      }
+      // Saved first: the numbers were paid for, whether or not this page is still open.
+      savePendingPhones(workspaceId, next);
+      setPendingPhones(next);
+    }, pollDelay(phoneWait.current));
+    return () => window.clearTimeout(timer);
+  }, [pendingPhones, ready, workspaceId]);
 
   const known = useMemo(() => knownApolloIds(leads), [leads]);
   const isLead = (personId: string) => known.has(personId);
@@ -149,7 +213,7 @@ export const CrmFindLeadsPage: React.FC = () => {
     setConfirming(false);
     setAdding(true);
     try {
-      const bought = await revealProspects(workspaceId, chosen, asked?.verifiedOnly ?? true);
+      const bought = await revealProspects(workspaceId, chosen, asked?.verifiedOnly ?? true, withPhones);
       const existing = await listLeadEmails(organizationId, workspaceId);
       const { fresh, already } = splitNewLeads(bought.people.map(leadFromPerson), existing);
       const companies = fresh.flatMap((lead) => (lead.company ? [lead.company] : []));
@@ -157,13 +221,24 @@ export const CrmFindLeadsPage: React.FC = () => {
         ? await ensureCompaniesByName(organizationId, workspaceId, companies, user?.userId ?? null)
         : new Map<string, string>();
       let count = 0;
+      /** Each person → the lead made from them, so a phone number that arrives later finds its lead. */
+      const made: PendingPhones['leads'] = {};
       for (const lead of fresh) {
-        await createContact({
-          organizationId, workspaceId, firstName: lead.firstName, lastName: lead.lastName, email: lead.email, jobTitle: lead.jobTitle,
+        const created = await createContact({
+          organizationId, workspaceId, firstName: lead.firstName, lastName: lead.lastName, email: lead.email, phone: lead.phone,
+          jobTitle: lead.jobTitle,
           companyId: lead.company ? companyIds.get(companyKey(lead.company.name)) ?? null : null,
           source: APOLLO_SOURCE, customFields: lead.customFields,
         }, user?.userId ?? null);
+        made[lead.apolloId] = { id: created.id, customFields: lead.customFields };
         count += 1;
+      }
+      if (bought.phoneRequests.length && count > 0) {
+        const waiting = mergePendingPhones(pendingPhones, { requestIds: bought.phoneRequests, leads: made, added: 0, credits: 0 });
+        phoneTries.current = 0;
+        phoneWait.current = PHONE_FIRST_WAIT;
+        savePendingPhones(workspaceId, waiting);
+        setPendingPhones(waiting);
       }
       // Everybody who was paid for is marked, added or not: none of them should be bought again.
       setAdded((old) => new Set([...old, ...bought.people.map((p) => p.id)]));
@@ -252,6 +327,20 @@ export const CrmFindLeadsPage: React.FC = () => {
           />
           <span>Only people with a verified email</span>
         </label>
+        <label className="flex items-start gap-2 text-sm text-foreground">
+          <input
+            type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+            checked={withPhones}
+            onChange={(e) => { setWithPhones(e.target.checked); savePhonesChoice(e.target.checked); }}
+          />
+          <span className="min-w-0">
+            Also get phone numbers
+            <span className="block text-xs text-muted-foreground">
+              8 more credits for each person a number is found for. Only numbers Apollo marks as valid are kept.
+              Untick this to pay only for the email.
+            </span>
+          </span>
+        </label>
         {problem && <p role="alert" className="text-sm text-destructive">{problem}</p>}
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" disabled={searching}>
@@ -261,6 +350,14 @@ export const CrmFindLeadsPage: React.FC = () => {
           <span className="text-xs text-muted-foreground">No credit is used until you add somebody.</span>
         </div>
       </form>
+
+      {pendingPhones && (
+        <p role="status" className={cn(BOX, 'flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground')}>
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+          Looking up phone numbers for {plural(Object.keys(pendingPhones.leads).length, 'lead', 'leads')}.
+          They are saved on the leads when Apollo has found them. You can keep working.
+        </p>
+      )}
 
       {found && (
         found.people.length === 0 ? notice('Nobody matches. Try fewer or wider filters.') : (
@@ -344,8 +441,19 @@ export const CrmFindLeadsPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Add {plural(chosen.length, 'person', 'people')} as leads?</AlertDialogTitle>
             <AlertDialogDescription>
-              This uses up to {plural(chosen.length, 'Apollo credit', 'Apollo credits')}: 1 for each person whose details are found.
-              Phone numbers are not fetched, because they cost 8 credits each. Anybody who is a lead already is not added again.
+              {withPhones ? (
+                <>
+                  This uses up to {plural(chosen.length * 9, 'Apollo credit', 'Apollo credits')}: 1 for each person whose details are
+                  found, and 8 more for each person a phone number is found for. The numbers are saved on the leads a little later,
+                  when Apollo has found them.
+                </>
+              ) : (
+                <>
+                  This uses up to {plural(chosen.length, 'Apollo credit', 'Apollo credits')}: 1 for each person whose details are found.
+                  Phone numbers are not fetched, because they cost 8 credits each.
+                </>
+              )}
+              {' '}Anybody who is a lead already is not added again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

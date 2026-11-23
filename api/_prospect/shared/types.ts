@@ -69,4 +69,22 @@ export type ProspectReveal = {
   unverified: number;
   /** Set when it stopped part-way: why. The people before that are still returned. */
   stopped?: string;
+  /**
+   * When phone numbers were asked for: the requests to come back for. Apollo
+   * finds phone numbers after it has answered, so they are fetched later.
+   */
+  phoneRequests: string[];
+};
+
+/** How a person's number is reached: their mobile, their own line at work, or another number of theirs. */
+export type PhoneType = "mobile" | "direct" | "other";
+
+export type ProspectPhones = {
+  /** One number a person: the best one Apollo marks as valid. */
+  phones: Array<{ id: string; number: string; type: PhoneType }>;
+  /** Apollo credits the numbers used (8 for each person a mobile number was found for). */
+  credits: number;
+  /** Requests Apollo has not finished. Ask again after `retryAfter` seconds. */
+  pending: string[];
+  retryAfter: number;
 };

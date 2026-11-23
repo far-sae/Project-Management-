@@ -1,4 +1,4 @@
-import type { FoundPerson, ProspectFilters, RevealedCompany, RevealedPerson } from "./shared/types.js";
+import type { FoundPerson, PhoneType, ProspectFilters, RevealedCompany, RevealedPerson } from "./shared/types.js";
 
 /**
  * Apollo's own API (docs.apollo.io), and nothing else: no page of Apollo's is
@@ -7,8 +7,11 @@ import type { FoundPerson, ProspectFilters, RevealedCompany, RevealedPerson } fr
  *  - People search (mixed_people/api_search) is free. It returns no email and
  *    only part of the last name.
  *  - Bulk enrichment (people/bulk_match) returns the email: 1 credit a person
- *    when data is found, ten people a request. Phone numbers cost 8 credits
- *    more each, so they are never asked for here.
+ *    when data is found, ten people a request.
+ *  - Phone numbers cost 8 credits more for each person one is found for, so
+ *    they are asked for only when the person adding leads says so. Apollo looks
+ *    for them after it has answered; the result is fetched later
+ *    (webhook_result), which is free.
  */
 
 export const APOLLO_BASE = "https://api.apollo.io/api/v1";
@@ -169,12 +172,98 @@ function personOf(raw: unknown): RevealedPerson | null {
   };
 }
 
-/** One request of at most ten people: who was matched, how many were not, and the credits it used. */
-export async function revealBatch(fetchFn: typeof fetch, key: string, ids: string[]): Promise<{ people: RevealedPerson[]; notFound: number; credits: number }> {
-  const url = `${APOLLO_BASE}/people/bulk_match?reveal_personal_emails=false&reveal_phone_number=false`;
+/** What Apollo calls a request whose result is fetched later: a whole number, as text. */
+export const REQUEST_ID = /^-?\d{1,20}$/;
+
+/**
+ * One request of at most ten people: who was matched, how many were not, and
+ * the credits it used. With `phones`, Apollo also starts looking for their
+ * phone numbers; `phoneRequest` is then what to ask about later.
+ */
+export async function revealBatch(
+  fetchFn: typeof fetch,
+  key: string,
+  ids: string[],
+  phones = false,
+): Promise<{ people: RevealedPerson[]; notFound: number; credits: number; phoneRequest: string | null }> {
+  // poll_only: Apollo keeps the phone result for us to fetch, instead of sending it to an address of ours.
+  const url = `${APOLLO_BASE}/people/bulk_match?reveal_personal_emails=false&reveal_phone_number=${phones ? "true&poll_only=true" : "false"}`;
   const json = await post(fetchFn, key, url, { details: ids.map((id) => ({ id })) });
   const matches = Array.isArray(json.matches) ? json.matches : [];
   const people = matches.map(personOf).filter((p): p is RevealedPerson => p !== null);
   const credits = typeof json.credits_consumed === "number" && json.credits_consumed >= 0 ? json.credits_consumed : people.length;
-  return { people, notFound: Math.max(0, ids.length - people.length), credits };
+  const requestId = str(json.request_id_str, 24);
+  const pending = phones && obj(json.phone_enrichment)?.status === "pending" && REQUEST_ID.test(requestId);
+  return { people, notFound: Math.max(0, ids.length - people.length), credits, phoneRequest: pending ? requestId : null };
+}
+
+const PHONE_TYPE: Record<string, PhoneType> = { mobile: "mobile", work_direct: "direct" };
+const PHONE_RANK: Record<PhoneType, number> = { mobile: 0, direct: 1, other: 2 };
+/** Apollo's words for "not on a do-not-call list" (or "nobody has checked"). Anything else is left alone. */
+const MAY_CALL = new Set(["", "not_found", "unknown", "no_status"]);
+
+/**
+ * The one number worth keeping from the numbers Apollo found for a person:
+ * only a number it marks as valid and not on a do-not-call list; a mobile
+ * before a direct line before any other.
+ */
+export function bestPhone(raw: unknown): { number: string; type: PhoneType } | null {
+  let best: { number: string; type: PhoneType } | null = null;
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const n = obj(item);
+    const number = n ? str(n.sanitized_number, 20) : "";
+    if (!n || !/^\+\d{1,15}$/.test(number)) continue;
+    if (n.status_cd !== "valid_number") continue;
+    if (!MAY_CALL.has(str(n.dnc_status_cd, 40))) continue;
+    const type = PHONE_TYPE[str(n.type_cd, 40)] ?? "other";
+    if (!best || PHONE_RANK[type] < PHONE_RANK[best.type]) best = { number, type };
+  }
+  return best;
+}
+
+export type PhoneResult =
+  | { state: "ready"; phones: Array<{ id: string; number: string; type: PhoneType }>; credits: number }
+  | { state: "pending"; retryAfter: number }
+  /** Apollo does not know the request, or has let it go: there is nothing to wait for. */
+  | { state: "gone" };
+
+/** How long to wait before asking again when Apollo does not say. */
+export const RETRY_SECONDS = 10;
+
+/** The phone numbers of one earlier request, when Apollo has finished looking. Free. */
+export async function phoneResult(fetchFn: typeof fetch, key: string, requestId: string): Promise<PhoneResult> {
+  let response: Response;
+  try {
+    response = await fetchFn(`${APOLLO_BASE}/webhook_result/${requestId}`, {
+      method: "GET",
+      headers: { "x-api-key": key, "Cache-Control": "no-cache", Accept: "application/json" },
+    });
+  } catch {
+    throw new ApolloError(0);
+  }
+  let json: Record<string, unknown> = {};
+  try {
+    json = obj(await response.json()) ?? {};
+  } catch {
+    json = {};
+  }
+  if (response.ok) {
+    const result = obj(json.webhook_result) ?? {};
+    const phones: Array<{ id: string; number: string; type: PhoneType }> = [];
+    for (const raw of Array.isArray(result.people) ? result.people : []) {
+      const person = obj(raw);
+      const id = person ? str(person.id, 64) : "";
+      const phone = person ? bestPhone(person.phone_numbers) : null;
+      if (id && phone) phones.push({ id, ...phone });
+    }
+    const credits = typeof result.credits_consumed === "number" && result.credits_consumed >= 0 ? result.credits_consumed : 0;
+    return { state: "ready", phones, credits };
+  }
+  const code = str(json.error_code, 60);
+  if (response.status === 404 && code === "result_pending") {
+    const wait = Number(json.retry_after_seconds);
+    return { state: "pending", retryAfter: Number.isFinite(wait) && wait > 0 ? Math.min(Math.ceil(wait), 60) : RETRY_SECONDS };
+  }
+  if (response.status === 404 || response.status === 410 || response.status === 400) return { state: "gone" };
+  throw new ApolloError(response.status);
 }
