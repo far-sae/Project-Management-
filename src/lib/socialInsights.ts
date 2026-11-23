@@ -2,7 +2,7 @@
 // worked out from. Plain logic over the rows of the posts table (socialPosts):
 // the days of a month, the posts of a day, a campaign's counts, and the
 // figures for a span of days.
-import type { SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
+import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
 import { tabOf, type PostRow } from '@/lib/socialPosts';
 import { PLATFORMS, PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
 
@@ -67,7 +67,8 @@ export const undated = (rows: PostRow[]): PostRow[] => rows.filter((row) => !dat
 
 export type CampaignRow = {
   campaign: SocialCampaign;
-  projectName: string;
+  /** The platforms its posts go to, in the order the app always shows them. */
+  platforms: string[];
   posts: number;
   posted: number;
   failed: number;
@@ -83,18 +84,21 @@ export function campaignRows(
   campaigns: SocialCampaign[],
   content: SocialContent[],
   metrics: SocialMetric[],
-  projects: Array<{ projectId: string; name: string }>,
+  accounts: SocialAccount[],
 ): CampaignRow[] {
   const metricOf = new Map(metrics.map((m) => [m.contentId, m]));
-  const projectName = new Map(projects.map((p) => [p.projectId, p.name]));
+  const providerOf = new Map(accounts.map((a) => [a.id, a.provider as string]));
   return campaigns.map((campaign) => {
     const row: CampaignRow = {
-      campaign, projectName: campaign.projectId ? projectName.get(campaign.projectId) ?? '' : '',
+      campaign, platforms: [],
       posts: 0, posted: 0, failed: 0, waiting: 0, impressions: 0, clicks: 0, reactions: 0, lastPosted: null,
     };
+    const used = new Set<string>();
     for (const post of content) {
       if (post.campaignId !== campaign.id) continue;
       row.posts += 1;
+      const provider = post.accountId ? providerOf.get(post.accountId) : undefined;
+      if (provider && isPlatform(provider)) used.add(provider);
       const tab = tabOf(post.status);
       if (tab === 'posted') {
         row.posted += 1;
@@ -105,6 +109,7 @@ export function campaignRows(
       const m = metricOf.get(post.id);
       if (m) { row.impressions += m.impressions; row.clicks += m.clicks; row.reactions += m.reactions; }
     }
+    row.platforms = PLATFORMS.filter((platform) => used.has(platform)).map((platform) => PLATFORM_NAME[platform]);
     return row;
   });
 }

@@ -1,18 +1,19 @@
-// The campaigns of the workspace in one table: what each one is for, how many
-// of its posts went out, what they brought, and what can be done with it.
+// The social media campaigns of the workspace in one table: what each one is
+// for, which platforms it posts to, how many of its posts went out, what they
+// brought, and what can be done with it.
 import React, { useMemo, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { campaignRows } from '@/lib/socialInsights';
-import type { SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
+import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
 
 interface Props {
   campaigns: SocialCampaign[];
   content: SocialContent[];
   metrics: SocialMetric[];
-  projects: Array<{ projectId: string; name: string }>;
+  accounts: SocialAccount[];
   onNew: () => void;
   onSetStatus: (campaign: SocialCampaign, status: SocialCampaign['status']) => void | Promise<void>;
   /** Opens the posts table on this campaign's posts. */
@@ -33,15 +34,15 @@ const NUM = 'px-3 py-3 text-right tabular-nums';
 
 const day = (d: Date | null): string => (d ? d.toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—');
 
-export const CampaignsTable: React.FC<Props> = ({ campaigns, content, metrics, projects, onNew, onSetStatus, onSeePosts }) => {
+export const CampaignsTable: React.FC<Props> = ({ campaigns, content, metrics, accounts, onNew, onSetStatus, onSeePosts }) => {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
 
-  const rows = useMemo(() => campaignRows(campaigns, content, metrics, projects), [campaigns, content, metrics, projects]);
+  const rows = useMemo(() => campaignRows(campaigns, content, metrics, accounts), [campaigns, content, metrics, accounts]);
   const word = search.trim().toLowerCase();
   const shown = rows.filter((r) =>
     (!status || r.campaign.status === status)
-    && (!word || `${r.campaign.name}\n${r.campaign.objective ?? ''}\n${r.projectName}`.toLowerCase().includes(word)));
+    && (!word || `${r.campaign.name}\n${r.campaign.objective ?? ''}\n${r.platforms.join(' ')}`.toLowerCase().includes(word)));
 
   return (
     <section className="flex flex-col gap-3 pt-3" aria-label="Campaigns">
@@ -52,7 +53,7 @@ export const CampaignsTable: React.FC<Props> = ({ campaigns, content, metrics, p
 
       {campaigns.length === 0 ? (
         <p className="rounded-lg border border-dashed p-10 text-center text-muted-foreground">
-          No campaigns yet. A campaign groups the posts of one goal, so you can see what they brought together.
+          No campaigns yet. A campaign groups the social media posts of one goal, so you can see what they brought together.
         </p>
       ) : (
         <>
@@ -77,7 +78,7 @@ export const CampaignsTable: React.FC<Props> = ({ campaigns, content, metrics, p
                     <tr className={HEAD}>
                       <th scope="col" className="px-3 font-medium">Campaign</th>
                       <th scope="col" className="px-3 font-medium">State</th>
-                      <th scope="col" className="px-3 font-medium">Project</th>
+                      <th scope="col" className="px-3 font-medium">Platforms</th>
                       <th scope="col" className="px-3 text-right font-medium">Posts</th>
                       <th scope="col" className="px-3 text-right font-medium">Posted</th>
                       <th scope="col" className="px-3 text-right font-medium">Not posted</th>
@@ -99,7 +100,7 @@ export const CampaignsTable: React.FC<Props> = ({ campaigns, content, metrics, p
                             {c.objective && <p className="line-clamp-1 text-muted-foreground" title={c.objective}>{c.objective}</p>}
                           </td>
                           <td className="px-3 py-3"><StatusPill tone={STATE[c.status].tone}>{STATE[c.status].label}</StatusPill></td>
-                          <td className="max-w-[10rem] px-3 py-3">{r.projectName ? <span className="block truncate" title={r.projectName}>{r.projectName}</span> : <span className="text-muted-foreground">—</span>}</td>
+                          <td className="max-w-[14rem] px-3 py-3">{r.platforms.length ? <span className="block truncate" title={r.platforms.join(', ')}>{r.platforms.join(', ')}</span> : <span className="text-muted-foreground">—</span>}</td>
                           <td className={NUM}>{r.posts}</td>
                           <td className={NUM}>{r.posted}</td>
                           <td className={r.failed > 0 ? `${NUM} text-destructive` : NUM}>{r.failed}</td>

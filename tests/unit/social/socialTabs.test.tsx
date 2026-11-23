@@ -100,7 +100,7 @@ describe('the calendar', () => {
 describe('the campaigns table', () => {
   const fns = { onNew: vi.fn(), onSetStatus: vi.fn(), onSeePosts: vi.fn() };
   const show = (campaigns = CAMPAIGNS) =>
-    render(<CampaignsTable campaigns={campaigns} content={CONTENT} metrics={METRICS} projects={[{ projectId: 'p1', name: 'Website' }]} {...fns} />);
+    render(<CampaignsTable campaigns={campaigns} content={CONTENT} metrics={METRICS} accounts={ACCOUNTS} {...fns} />);
   const row = (name: string) => screen.getByRole('row', { name });
   const cells = (name: string) => within(row(name)).getAllByRole('cell').map((c) => c.textContent);
   beforeEach(() => { for (const fn of Object.values(fns)) fn.mockClear(); });
@@ -109,8 +109,11 @@ describe('the campaigns table', () => {
     show();
     const c = cells('Winter offer');
     expect(c[0]).toContain('More bookings in December');
-    expect(c.slice(1, 10)).toEqual(['Running', 'Website', '3', '2', '1', '0', '1,500', '45', '64']);
-    expect(cells('Open day').slice(1, 7)).toEqual(['Paused', '—', '1', '0', '0', '1']);
+    expect(c.slice(1, 10)).toEqual(['Running', 'YouTube, TikTok', '3', '2', '1', '0', '1,500', '45', '64']);
+    expect(cells('Open day').slice(1, 7)).toEqual(['Paused', 'Instagram', '1', '0', '0', '1']);
+    // Social media only: no project column.
+    expect(screen.queryByRole('columnheader', { name: 'Project' })).toBeNull();
+    expect(screen.getByRole('columnheader', { name: 'Platforms' })).toBeTruthy();
   });
 
   it('starts, pauses and finishes a campaign', () => {
@@ -146,7 +149,7 @@ describe('the campaigns table', () => {
 
   it('starts empty with what a campaign is for', () => {
     show([]);
-    expect(screen.getByText(/A campaign groups the posts of one goal/)).toBeTruthy();
+    expect(screen.getByText(/A campaign groups the social media posts of one goal/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'New campaign' }));
     expect(fns.onNew).toHaveBeenCalled();
   });

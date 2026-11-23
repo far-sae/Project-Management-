@@ -5,9 +5,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
-import { useProjects } from '@/hooks/useProjects';
-import { useAllTasks } from '@/hooks/useAllTasks';
-import { createSocialAccount, createSocialCampaign, createSocialContent, deleteSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, updateSocialCampaignStatus, updateSocialContentStatus } from '@/services/supabase/social';
+import { createSocialAccount, createSocialCampaign, deleteSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, setSocialContentCampaign, updateSocialCampaignStatus, updateSocialContentStatus } from '@/services/supabase/social';
 import { SocialComposer } from '@/components/social/SocialComposer';
 import { ConnectAccounts } from '@/components/social/ConnectAccounts';
 import { PostsTable } from '@/components/social/PostsTable';
@@ -21,9 +19,6 @@ import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { groupPosts, groupSummary, isOnItsWay, type PostGroup } from '@/lib/socialCompose';
 import { PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
 import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric, SocialProvider } from '@/types/social';
-import type { CrmCompany, CrmContact } from '@/types/crmHub';
-import { listContacts } from '@/services/supabase/crmHub/contacts';
-import { listCompanies } from '@/services/supabase/crmHub/companies';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -34,7 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
-type CreateKind = 'account' | 'campaign' | 'content' | null;
+type CreateKind = 'account' | 'campaign' | null;
 
 type PostsView = 'table' | 'cards';
 const POSTS_VIEW_KEY = 'social.postsView';
@@ -47,14 +42,10 @@ export const SocialMedia: React.FC = () => {
   const { user } = useAuth();
   const { organization, isAdmin } = useOrganization();
   const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading, preferredWorkspaceId } = useSelectedWorkspace();
-  const { projects, loading: projectsLoading } = useProjects();
-  const { tasks } = useAllTasks();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [campaigns, setCampaigns] = useState<SocialCampaign[]>([]);
   const [content, setContent] = useState<SocialContent[]>([]);
   const [metrics, setMetrics] = useState<SocialMetric[]>([]);
-  const [contacts, setContacts] = useState<CrmContact[]>([]);
-  const [companies, setCompanies] = useState<CrmCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [createKind, setCreateKind] = useState<CreateKind>(null);
@@ -77,11 +68,6 @@ export const SocialMedia: React.FC = () => {
     setPostsView(next);
     try { window.localStorage.setItem(POSTS_VIEW_KEY, next); } catch { /* not remembered, that is all */ }
   };
-  const [projectId, setProjectId] = useState(''); const [campaignId, setCampaignId] = useState('');
-  const [accountId, setAccountId] = useState(''); const [scheduledAt, setScheduledAt] = useState('');
-  const [mediaUrl, setMediaUrl] = useState('');
-  const [crmContactId, setCrmContactId] = useState(''); const [crmCompanyId, setCrmCompanyId] = useState('');
-  const [taskId, setTaskId] = useState('');
 
   useEffect(() => {
     if (workspaceLoading || (!isAll && !isUnassigned)) return;
@@ -103,13 +89,10 @@ export const SocialMedia: React.FC = () => {
 
   const workspaceId = selected?.workspaceId ?? '';
   const orgId = organization?.organizationId ?? '';
-  const workspaceProjects = useMemo(() => projects.filter((item) => item.workspaceId === workspaceId), [projects, workspaceId]);
-  const workspaceProjectIds = useMemo(() => new Set(workspaceProjects.map((item) => item.projectId)), [workspaceProjects]);
-  const workspaceTasks = useMemo(() => tasks.filter((item) => workspaceProjectIds.has(item.projectId) && (!projectId || item.projectId === projectId)), [projectId, tasks, workspaceProjectIds]);
   const load = useCallback(async (quiet = false) => {
     if (!workspaceId || !orgId) { setLoading(false); return; }
     if (!quiet) setLoading(true);
-    try { const [data, contactRows, companyRows] = await Promise.all([listSocialData(workspaceId), listContacts(orgId, { workspaceId }), listCompanies(orgId, { workspaceId })]); setAccounts(data.accounts); setCampaigns(data.campaigns); setContent(data.content); setMetrics(data.metrics); setContacts(contactRows); setCompanies(companyRows); }
+    try { const data = await listSocialData(workspaceId); setAccounts(data.accounts); setCampaigns(data.campaigns); setContent(data.content); setMetrics(data.metrics); }
     catch (error) { toast.error(publicMessage(error, 'Could not load social marketing')); }
     finally { setLoading(false); }
   }, [orgId, workspaceId]);
@@ -151,7 +134,7 @@ export const SocialMedia: React.FC = () => {
   const groups = useMemo(() => groupPosts(content), [content]);
   const accountsById = useMemo(() => new Map(accounts.map((item) => [item.id, item])), [accounts]);
 
-  const reset = () => { setCreateKind(null); setName(''); setDescription(''); setExternalId(''); setAccessToken(''); setRefreshToken(''); setProjectId(''); setTaskId(''); setCampaignId(''); setAccountId(''); setScheduledAt(''); setMediaUrl(''); setCrmContactId(''); setCrmCompanyId(''); };
+  const reset = () => { setCreateKind(null); setName(''); setDescription(''); setExternalId(''); setAccessToken(''); setRefreshToken(''); };
   const save = async () => {
     if (!name.trim() || !orgId || !workspaceId) return;
     setBusy(true);
@@ -160,9 +143,8 @@ export const SocialMedia: React.FC = () => {
         const id = await createSocialAccount({ organizationId: orgId, workspaceId, provider, displayName: name.trim(), externalAccountId: externalId.trim(), userId: user?.userId });
         if (accessToken.trim()) await saveSocialAccountToken(id, accessToken.trim(), refreshToken.trim() || undefined);
       }
-      if (createKind === 'campaign') await createSocialCampaign({ organizationId: orgId, workspaceId, name: name.trim(), objective: description.trim(), projectId, taskId, crmContactId, crmCompanyId, userId: user?.userId });
-      if (createKind === 'content') await createSocialContent({ organizationId: orgId, workspaceId, title: name.trim(), body: description, mediaUrls: mediaUrl.trim() ? [mediaUrl.trim()] : [], campaignId, accountId, projectId, taskId, crmContactId, crmCompanyId, scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined, userId: user?.userId });
-      toast.success(createKind === 'content' && scheduledAt ? 'Draft sent for approval' : 'Saved'); reset(); await load();
+      if (createKind === 'campaign') await createSocialCampaign({ organizationId: orgId, workspaceId, name: name.trim(), objective: description.trim(), userId: user?.userId });
+      toast.success('Saved'); reset(); await load();
     } catch (error) { toast.error(publicMessage(error, 'Could not save')); }
     finally { setBusy(false); }
   };
@@ -181,6 +163,13 @@ export const SocialMedia: React.FC = () => {
     } catch (error) { toast.error(publicMessage(error, 'Could not try the post again')); }
   };
   const retry = (item: SocialContent) => retryAll([item]);
+  const setPostsCampaign = async (items: SocialContent[], campaignId: string | null) => {
+    try {
+      await setSocialContentCampaign(items.map((item) => item.id), campaignId);
+      toast.success(campaignId ? (items.length === 1 ? 'Added to the campaign' : `${items.length} posts added to the campaign`) : 'Taken out of the campaign');
+      await load(true);
+    } catch (error) { toast.error(publicMessage(error, 'Could not change the campaign. Please try again.')); }
+  };
   const removePosts = async (items: SocialContent[]) => {
     try {
       await deleteSocialContent(items.map((item) => item.id));
@@ -189,8 +178,7 @@ export const SocialMedia: React.FC = () => {
     } catch (error) { toast.error(publicMessage(error, 'Could not delete. Please try again.')); }
   };
 
-  if (workspaceLoading || projectsLoading || !selected) return <main className="flex-1 grid place-items-center"><div className="text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-7 w-7 animate-spin" /><p>{workspaces.length ? 'Opening workspace social marketing…' : 'Create a workspace to use social marketing.'}</p></div></main>;
-  if (workspaceProjects.length === 0) return <main className="flex-1 grid place-items-center p-6"><div className="max-w-md text-center"><Share2 className="mx-auto mb-3 h-10 w-10 text-muted-foreground" /><h2 className="text-xl font-semibold">Create this workspace’s first project</h2><p className="mt-2 text-sm text-muted-foreground">Social campaigns unlock once there is a project to connect content and tasks to.</p></div></main>;
+  if (workspaceLoading || !selected) return <main className="flex-1 grid place-items-center"><div className="text-center text-muted-foreground"><Loader2 className="mx-auto mb-2 h-7 w-7 animate-spin" /><p>{workspaces.length ? 'Opening workspace social marketing…' : 'Create a workspace to use social marketing.'}</p></div></main>;
 
   return <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 md:p-8">
     <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-3xl font-bold">Social Media Marketing</h1><p className="text-muted-foreground">Plan, approve and measure content for <b>{selected.name}</b>.</p></div><Button onClick={() => setComposing(true)}><Plus className="mr-1 h-4 w-4" />New post</Button></div>
@@ -203,7 +191,7 @@ export const SocialMedia: React.FC = () => {
           </div>
         </div>
         {postsView === 'table'
-          ? <PostsTable content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onRetry={retryAll} onStatus={setStatus} onDelete={removePosts} jump={jump} />
+          ? <PostsTable content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onRetry={retryAll} onStatus={setStatus} onDelete={removePosts} onSetCampaign={setPostsCampaign} jump={jump} />
           : <><SectionHeader title="Posts" action="New post" onClick={() => setComposing(true)} />{groups.length === 0 ? <Empty text="No posts yet. Press New post to upload once and post everywhere." /> : groups.map((group) => (group.posts.length === 1 && !group.posts[0].postGroupId
             ? <ContentCard key={group.id} item={group.posts[0]} onStatus={setStatus} />
             : <GroupCard key={group.id} group={group} accountName={(id) => accountsById.get(id ?? '')} onRetry={retry} />))}</>}
@@ -213,7 +201,7 @@ export const SocialMedia: React.FC = () => {
       </TabsContent>
       <TabsContent value="campaigns">
         <CampaignsTable
-          campaigns={campaigns} content={content} metrics={metrics} projects={workspaceProjects}
+          campaigns={campaigns} content={content} metrics={metrics} accounts={accounts}
           onNew={() => setCreateKind('campaign')}
           onSetStatus={async (campaign, status) => {
             try { await updateSocialCampaignStatus(campaign.id, status); await load(true); }
@@ -228,14 +216,10 @@ export const SocialMedia: React.FC = () => {
       </TabsContent>
     </Tabs>}
 
-    <Dialog open={Boolean(createKind)} onOpenChange={(open) => { if (!open) reset(); }}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{createKind === 'account' ? 'Add social account' : createKind === 'campaign' ? 'New campaign' : 'New content'}</DialogTitle></DialogHeader><div className="space-y-3">
-      <Field label={createKind === 'content' ? 'Title' : 'Name'}><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+    <Dialog open={Boolean(createKind)} onOpenChange={(open) => { if (!open) reset(); }}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{createKind === 'account' ? 'Add social account' : 'New social media campaign'}</DialogTitle></DialogHeader><div className="space-y-3">
+      <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder={createKind === 'campaign' ? 'Winter offer' : undefined} /></Field>
       {createKind === 'account' ? <><Field label="Network"><Select value={provider} onValueChange={(v) => setProvider(v as SocialProvider)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROVIDERS.map((item) => <SelectItem key={item} value={item} className="capitalize">{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Provider account ID / author URN"><Input value={externalId} onChange={(e) => setExternalId(e.target.value)} /></Field><Field label="Provider access token"><Input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} /><p className="text-xs text-muted-foreground">Sent over TLS and encrypted server-side. It is never stored in the browser or readable through the app API.</p></Field>{(provider === 'youtube' || provider === 'tiktok' || provider === 'x') && <Field label="Refresh token"><Input type="password" autoComplete="off" value={refreshToken} onChange={(e) => setRefreshToken(e.target.value)} /><p className="text-xs text-muted-foreground">{PLATFORM_NAME[provider]} access tokens run out within hours. With the refresh token, a new one is fetched by itself each time.</p></Field>}</> : <>
-        <Field label={createKind === 'content' ? 'Post copy' : 'Objective'}><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} /></Field>
-        <Field label="Linked project"><Select value={projectId || '__none__'} onValueChange={(v) => setProjectId(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">No project</SelectItem>{workspaceProjects.map((item) => <SelectItem key={item.projectId} value={item.projectId}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Linked project task"><Select value={taskId || '__none__'} onValueChange={(v) => setTaskId(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">No task</SelectItem>{workspaceTasks.map((item) => <SelectItem key={item.taskId} value={item.taskId}>{item.title}</SelectItem>)}</SelectContent></Select></Field>
-        <div className="grid grid-cols-2 gap-3"><Field label="CRM contact"><Select value={crmContactId || '__none__'} onValueChange={(v) => setCrmContactId(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">No contact</SelectItem>{contacts.map((item) => <SelectItem key={item.id} value={item.id}>{item.firstName} {item.lastName}</SelectItem>)}</SelectContent></Select></Field><Field label="CRM company"><Select value={crmCompanyId || '__none__'} onValueChange={(v) => setCrmCompanyId(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">No company</SelectItem>{companies.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field></div>
-        {createKind === 'content' && <><Field label="Campaign"><Select value={campaignId || '__none__'} onValueChange={(v) => setCampaignId(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">No campaign</SelectItem>{campaigns.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field><Field label="Publish via"><Select value={accountId || '__none__'} onValueChange={(v) => setAccountId(v === '__none__' ? '' : v)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__none__">Choose later</SelectItem>{accounts.map((item) => <SelectItem key={item.id} value={item.id}>{item.displayName}</SelectItem>)}</SelectContent></Select></Field><Field label="Public media URL (optional)"><Input type="url" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} placeholder="https://…" /></Field><Field label="Schedule (optional)"><Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} /></Field></>}
+        <Field label="What is it for?"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="More bookings in December" /><p className="text-xs text-muted-foreground">A campaign groups social media posts of one goal. Choose it in New post, or add posts to it from the posts table.</p></Field>
       </>}</div><DialogFooter><Button variant="outline" onClick={reset}>Cancel</Button><Button disabled={busy || !name.trim()} onClick={save}>{busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Save</Button></DialogFooter></DialogContent></Dialog>
     <SocialComposer
       open={composing}
@@ -244,6 +228,7 @@ export const SocialMedia: React.FC = () => {
       workspaceId={workspaceId}
       userId={user?.userId}
       accounts={accounts}
+      campaigns={campaigns}
       onPosted={() => void load(true)}
       onAddAccount={() => { setTab('accounts'); setCreateKind('account'); }}
     />

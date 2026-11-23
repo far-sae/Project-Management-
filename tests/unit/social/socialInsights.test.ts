@@ -70,13 +70,15 @@ describe('the calendar', () => {
 });
 
 describe('the campaigns table', () => {
-  it('counts each campaign\'s posts by how they went, with its results and its project', () => {
-    const list = campaignRows(CAMPAIGNS, CONTENT, METRICS, [{ projectId: 'p1', name: 'Website' }]);
+  it('counts each campaign\'s posts by how they went, with its results and the platforms it posts to', () => {
+    const list = campaignRows(CAMPAIGNS, CONTENT, METRICS, ACCOUNTS);
     expect(list[0]).toMatchObject({
-      projectName: 'Website', posts: 3, posted: 2, failed: 1, waiting: 0, impressions: 1500, clicks: 45, reactions: 64,
+      platforms: ['YouTube', 'TikTok'], posts: 3, posted: 2, failed: 1, waiting: 0, impressions: 1500, clicks: 45, reactions: 64,
     });
     expect(list[0].lastPosted).toEqual(new Date('2026-11-20T10:05:00'));
-    expect(list[1]).toMatchObject({ projectName: '', posts: 1, posted: 0, failed: 0, waiting: 1, impressions: 0, lastPosted: null });
+    expect(list[1]).toMatchObject({ platforms: ['Instagram'], posts: 1, posted: 0, failed: 0, waiting: 1, impressions: 0, lastPosted: null });
+    // A campaign is about social media only: nothing of a project or a CRM record is on its row.
+    expect(Object.keys(list[0])).not.toContain('projectName');
   });
 });
 

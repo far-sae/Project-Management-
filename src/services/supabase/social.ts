@@ -65,6 +65,13 @@ export const updateSocialContentStatus = async (id: string, status: SocialConten
   if (error) throw error;
 };
 
+/** Puts posts in a campaign, or (null) takes them out of theirs. */
+export const setSocialContentCampaign = async (ids: string[], campaignId: string | null): Promise<void> => {
+  if (ids.length === 0) return;
+  const { error } = await supabase.from('social_content').update({ campaign_id: campaignId }).in('id', ids);
+  if (error) throw error;
+};
+
 /** Removes posts from the list for good. A post already on a platform stays there. */
 export const deleteSocialContent = async (ids: string[]): Promise<void> => {
   if (ids.length === 0) return;
@@ -108,6 +115,8 @@ export interface NewSocialPosts {
   media: PostMedia | null;
   /** When the posts go out. Now when left out. */
   scheduledAt?: Date;
+  /** The campaign these posts belong to, when there is one. */
+  campaignId?: string | null;
   /** One for each account the post goes to, with what that platform needs. */
   posts: Array<{ accountId: string; options: Record<string, unknown> }>;
 }
@@ -125,6 +134,7 @@ export const createSocialPosts = async (input: NewSocialPosts): Promise<string> 
     organization_id: input.organizationId,
     workspace_id: input.workspaceId,
     account_id: post.accountId,
+    campaign_id: input.campaignId || null,
     post_group_id: groupId,
     title: input.title,
     body: input.body,

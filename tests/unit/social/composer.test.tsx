@@ -272,3 +272,41 @@ describe('the posts of one press, afterwards', () => {
     expect(fileProblem({ type: 'image/jpeg', size: 10 })).toBeNull();
   });
 });
+
+describe('a campaign', () => {
+  const campaign = (id: string, name: string, status: 'active' | 'finished' = 'active') => ({
+    id, organizationId: 'org-1', workspaceId: 'ws-1', name, objective: null, crmContactId: null, crmCompanyId: null, projectId: null, taskId: null, status, createdAt: new Date('2026-11-01'),
+  });
+  const withCampaigns = () => render(
+    <SocialComposer
+      open onOpenChange={onOpenChange} organizationId="org-1" workspaceId="ws-1" userId="u1" accounts={[account('x', 'x', '@northwind')]}
+      campaigns={[campaign('c1', 'Winter offer'), campaign('c2', 'Last year', 'finished')]} onPosted={onPosted} onAddAccount={onAddAccount}
+    />,
+  );
+
+  it('is not asked about when there is none', () => {
+    show([account('x', 'x', '@northwind')]);
+    expect(screen.queryByLabelText('Campaign')).toBeNull();
+  });
+
+  it('can be chosen for the post, among the campaigns that still run', async () => {
+    withCampaigns();
+    const select = screen.getByLabelText('Campaign') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(['No campaign', 'Winter offer']);
+    type('Text', 'Open again from Monday.');
+    fireEvent.change(select, { target: { value: 'c1' } });
+    await waitFor(() => expect(postButton().disabled).toBe(false));
+    fireEvent.click(postButton());
+    await waitFor(() => expect(h.createSocialPosts).toHaveBeenCalledTimes(1));
+    expect((h.createSocialPosts.mock.calls[0] as unknown as [{ campaignId: string | null }])[0].campaignId).toBe('c1');
+  });
+
+  it('is left out when none is chosen', async () => {
+    withCampaigns();
+    type('Text', 'Open again from Monday.');
+    await waitFor(() => expect(postButton().disabled).toBe(false));
+    fireEvent.click(postButton());
+    await waitFor(() => expect(h.createSocialPosts).toHaveBeenCalledTimes(1));
+    expect((h.createSocialPosts.mock.calls[0] as unknown as [{ campaignId: string | null }])[0].campaignId).toBeNull();
+  });
+});

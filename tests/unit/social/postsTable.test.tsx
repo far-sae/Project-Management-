@@ -192,6 +192,73 @@ describe('what can be done in a row', () => {
   });
 });
 
+describe('what was posted', () => {
+  const picture = { url: 'https://abc.supabase.co/storage/v1/object/public/social-media/ws/smile.jpg', kind: 'image' as const, mime: 'image/jpeg', bytes: 1000, name: 'smile.jpg' };
+  const film = { url: 'https://abc.supabase.co/storage/v1/object/public/social-media/ws/clip.mp4', kind: 'video' as const, mime: 'video/mp4', bytes: 9000, name: 'clip.mp4' };
+  const WITH_MEDIA = [
+    post('p', { title: 'Before and after', body: 'Six weeks apart.', media: picture, publishedAt: new Date('2026-11-20T10:05:00'), externalPostId: 'https://youtu.be/abc' }),
+    post('v', { title: 'Meet the team', accountId: 'tt', media: film, status: 'failed', scheduledAt: new Date('2026-11-21T09:00:00'), lastError: 'TikTok did not accept the post: Video is too long.' }),
+    post('t', { title: 'Opening hours', accountId: 'ig', publishedAt: new Date('2026-11-19T09:00:00') }),
+  ];
+
+  it('shows a small picture of each post in its row: the picture, or the first frame of the video', () => {
+    show(WITH_MEDIA);
+    const image = rowOf('Before and after, YouTube').querySelector('img');
+    expect(image?.getAttribute('src')).toBe(picture.url);
+    const video = rowOf('Meet the team, TikTok').querySelector('video');
+    expect(video?.getAttribute('src')).toBe(`${film.url}#t=0.1`);
+    // Only the first frame is fetched for the list, never the whole video.
+    expect(video?.getAttribute('preload')).toBe('metadata');
+    // A post with text only has a plain tile, and can still be opened.
+    expect(rowOf('Opening hours, Instagram').querySelector('img, video')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Preview Opening hours (Instagram)' })).toBeTruthy();
+  });
+
+  it('opens the full picture with the text, where it went, and a way to it on the platform', async () => {
+    show(WITH_MEDIA);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Before and after (YouTube)' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('img', { name: 'Picture of Before and after' }).getAttribute('src')).toBe(picture.url);
+    expect(within(dialog).getByText('Six weeks apart.')).toBeTruthy();
+    expect(within(dialog).getByText(/YouTube · Northwind channel · Posted/)).toBeTruthy();
+    expect(within(dialog).getByRole('link', { name: 'View on YouTube' }).getAttribute('href')).toBe('https://youtu.be/abc');
+  });
+
+  it('plays the video in the preview, and says why it was not posted', async () => {
+    show(WITH_MEDIA);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Meet the team (TikTok)' }));
+    const dialog = await screen.findByRole('dialog');
+    const video = within(dialog).getByLabelText('Video of Meet the team') as HTMLVideoElement;
+    expect(video.getAttribute('src')).toBe(film.url);
+    expect(video.hasAttribute('controls')).toBe(true);
+    expect(within(dialog).getByRole('alert').textContent).toBe('TikTok did not accept the post: Video is too long.');
+  });
+
+  it('says so for a post that is text only', async () => {
+    show(WITH_MEDIA);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Opening hours (Instagram)' }));
+    expect(within(await screen.findByRole('dialog')).getByText('This post is text only: it has no picture or video.')).toBeTruthy();
+  });
+
+  it('never loads anything that is not a web address', () => {
+    show([post('x', { title: 'Odd one', media: { ...picture, url: 'javascript:alert(1)' } })]);
+    expect(rowOf('Odd one, YouTube').querySelector('img, video')).toBeNull();
+  });
+});
+
+describe('posts and campaigns', () => {
+  it('puts the picked posts in a campaign, or takes them out', () => {
+    const onSetCampaign = vi.fn();
+    render(<PostsTable content={CONTENT} accounts={ACCOUNTS} campaigns={CAMPAIGNS} now={() => NOW} {...fns} onSetCampaign={onSetCampaign} />);
+    fireEvent.click(screen.getByLabelText('Select Open day (Instagram)'));
+    fireEvent.click(screen.getByLabelText('Select Team photo (No account)'));
+    fireEvent.change(screen.getByLabelText('Put the selected posts in a campaign'), { target: { value: 'c1' } });
+    expect(onSetCampaign).toHaveBeenLastCalledWith([CONTENT[2], CONTENT[3]], 'c1');
+    fireEvent.change(screen.getByLabelText('Put the selected posts in a campaign'), { target: { value: '__none__' } });
+    expect(onSetCampaign).toHaveBeenLastCalledWith([CONTENT[2], CONTENT[3]], null);
+  });
+});
+
 describe('several posts at once', () => {
   it('tries the failed ones among the picked posts again', () => {
     show();

@@ -3,7 +3,7 @@
 // span of date and time), sorting, pages, an export, and what can be done with
 // a post right in its row.
 import React, { useEffect, useId, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, Download, ExternalLink, Film, ImageIcon, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, Download, ExternalLink, Plus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { MediaThumb, PostPreview } from '@/components/social/PostPreview';
 import { publicText } from '@/lib/publicError';
 import { saveTextFile } from '@/lib/signroom/billingCsv';
 import {
@@ -33,6 +34,8 @@ interface Props {
   onStatus: (item: SocialContent, status: SocialContentStatus) => void | Promise<void>;
   /** Remove posts from the list for good. */
   onDelete: (items: SocialContent[]) => Promise<void>;
+  /** Put posts in a campaign, or (null) take them out of theirs. */
+  onSetCampaign?: (items: SocialContent[], campaignId: string | null) => void | Promise<void>;
   /** Opens the table on these filters (a campaign's posts, the drafts). `at` changes each time it is asked. */
   jump?: { filters: Partial<PostFilters>; at: number } | null;
   /** The time "now", for the ready-made date spans. */
@@ -49,7 +52,7 @@ const ROW = 'border-b border-border/60 align-top transition-colors last:border-0
 
 const whenText = (d: Date): string => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNewPost, onRetry, onStatus, onDelete, jump = null, now = () => new Date() }) => {
+export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNewPost, onRetry, onStatus, onDelete, onSetCampaign, jump = null, now = () => new Date() }) => {
   const id = useId();
   const [filters, setFilters] = useState<PostFilters>(() => ({ ...NO_FILTERS, ...(jump?.filters ?? {}) }));
   const [sort, setSort] = useState<PostSort>(FIRST_SORT);
@@ -57,11 +60,14 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [toDelete, setToDelete] = useState<SocialContent[] | null>(null);
   const [deleting, setDeleting] = useState(false);
+  /** The post whose preview is open. Kept by id, so the preview follows the post as its state changes. */
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const rows = useMemo(() => postRows(content, accounts, campaigns), [content, accounts, campaigns]);
   const counts = useMemo(() => tabCounts(rows, filters), [rows, filters]);
   const shown = useMemo(() => sortRows(filterRows(rows, filters), sort), [rows, filters, sort]);
   const view = pageOf(shown, page);
+  const preview = previewId ? rows.find((r) => r.post.id === previewId) ?? null : null;
 
   const change = (patch: Partial<PostFilters>) => {
     setFilters((f) => ({ ...f, ...patch }));
@@ -212,6 +218,16 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
           {pickedFailed.length > 0 && (
             <Button size="sm" variant="outline" onClick={() => void onRetry(pickedFailed)}><RotateCcw aria-hidden />Try {pickedFailed.length === 1 ? 'it' : `${pickedFailed.length}`} again</Button>
           )}
+          {onSetCampaign && campaigns.length > 0 && (
+            <select
+              aria-label="Put the selected posts in a campaign" className={cn(BOX, 'max-w-[14rem]')} value=""
+              onChange={(e) => { if (e.target.value) void onSetCampaign(pickedPosts, e.target.value === '__none__' ? null : e.target.value); }}
+            >
+              <option value="">Add to a campaign…</option>
+              {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="__none__">No campaign</option>
+            </select>
+          )}
           <Button size="sm" variant="outline" onClick={() => setToDelete(pickedPosts)}><Trash2 aria-hidden />Delete</Button>
           <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Clear</Button>
         </div>
@@ -251,15 +267,17 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
                       <td className="px-3 py-3">
                         <input type="checkbox" className="h-4 w-4 accent-primary" aria-label={`Select ${post.title} (${row.platformName})`} checked={picked.has(post.id)} onChange={() => toggle(post.id)} />
                       </td>
-                      <td className="max-w-[22rem] px-3 py-3">
-                        <p className="flex items-center gap-1.5 font-medium text-foreground">
-                          {post.media && (post.media.kind === 'video' ? <Film className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden /> : <ImageIcon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />)}
-                          <span className="truncate" title={post.title}>{post.title}</span>
-                        </p>
-                        {post.body && <p className="mt-0.5 line-clamp-1 text-muted-foreground" title={post.body}>{post.body}</p>}
-                        {post.status === 'failed' && post.lastError && (
-                          <p className="mt-1 text-xs text-destructive">{publicText(post.lastError, 'The post was not accepted. Try again.')}</p>
-                        )}
+                      <td className="max-w-[24rem] px-3 py-3">
+                        <div className="flex items-start gap-3">
+                          <MediaThumb media={post.media} title={`${post.title} (${row.platformName})`} onOpen={() => setPreviewId(post.id)} />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground" title={post.title}>{post.title}</p>
+                            {post.body && <p className="mt-0.5 line-clamp-1 text-muted-foreground" title={post.body}>{post.body}</p>}
+                            {post.status === 'failed' && post.lastError && (
+                              <p className="mt-1 text-xs text-destructive">{publicText(post.lastError, 'The post was not accepted. Try again.')}</p>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-3 py-3">
                         <p className="whitespace-nowrap font-medium text-foreground">{row.platformName}</p>
@@ -301,6 +319,8 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
           </div>
         </div>
       )}
+
+      <PostPreview row={preview} onOpenChange={(open) => { if (!open) setPreviewId(null); }} />
 
       <AlertDialog open={toDelete !== null} onOpenChange={(open) => { if (!open && !deleting) setToDelete(null); }}>
         <AlertDialogContent>
