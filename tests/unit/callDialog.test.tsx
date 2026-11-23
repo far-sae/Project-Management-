@@ -3,11 +3,13 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { VoiceSetup } from '../../api/_voice/shared/types';
+import { NO_REASON_DETAIL, type VoiceSetup } from '../../api/_voice/shared/types';
+import { setInternalsVisible } from '@/lib/publicError';
 
 const h = vi.hoisted(() => ({
   startCall: vi.fn(),
   endCall: vi.fn(),
+  callResult: vi.fn(),
   openLine: vi.fn(),
   line: { hangUp: vi.fn(), mute: vi.fn(), press: vi.fn() },
   tell: null as null | ((event: 'ringing' | 'answered' | 'ended', problem?: string) => void),
@@ -16,11 +18,12 @@ const h = vi.hoisted(() => ({
 vi.mock('@/services/voice/client', () => ({
   startCall: h.startCall,
   endCall: h.endCall,
+  callResult: h.callResult,
   errorSentence: (e: unknown) => (e instanceof Error && e.message ? e.message : 'The request could not be completed. Please try again.'),
 }));
 vi.mock('@/services/voice/device', () => ({ openLine: h.openLine }));
 
-import { CallDialog } from '@/components/crmHub/CallDialog';
+import { CallDialog, RESULT_TRIES, RESULT_WAIT_MS } from '@/components/crmHub/CallDialog';
 
 const READY: VoiceSetup = { configured: true, ready: true, problem: null, numbers: { US: true, GB: true } };
 const LEAD = '0d000000-0000-4000-8000-000000000001';
@@ -39,6 +42,7 @@ const callButton = () => screen.getByRole('button', { name: 'Call' });
 beforeEach(() => {
   h.startCall.mockReset().mockResolvedValue({ id: 'call-1', to: '+447700900123', display: '+44 7700 900123', country: 'GB', token: 'tok' });
   h.endCall.mockReset().mockResolvedValue(undefined);
+  h.callResult.mockReset().mockResolvedValue({ final: false, status: 'ringing', sentence: null, detail: null });
   h.line.hangUp.mockReset().mockImplementation(() => h.tell?.('ended'));
   h.line.mute.mockReset();
   h.line.press.mockReset();
@@ -209,6 +213,99 @@ describe('call window', () => {
     expect(screen.getByRole('status').textContent).toBe('The call was not answered.');
     fireEvent.click(screen.getByRole('button', { name: 'Save to timeline' }));
     await waitFor(() => expect(h.endCall).toHaveBeenCalledWith('call-1', expect.objectContaining({ answered: false })));
+  });
+});
+
+describe('why a call was not answered', () => {
+  const GEO = "Phone provider error 13227: Dial: Geo Permission configuration is not permitting call. Calls to this country are switched off in the provider's account: open Voice, Settings, Geo permissions there and allow the country.";
+  const endUnanswered = async (rang = true) => {
+    show();
+    fireEvent.click(callButton());
+    await waitFor(() => expect(h.openLine).toHaveBeenCalled());
+    vi.useFakeTimers();
+    if (rang) act(() => h.tell?.('ringing'));
+    act(() => h.tell?.('ended'));
+  };
+  const wait = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+
+  beforeEach(() => setInternalsVisible(true));
+  afterEach(() => { vi.useRealTimers(); setInternalsVisible(true); });
+
+  it('says nobody answered within the ringing time, once the phone provider has reported', async () => {
+    h.callResult.mockResolvedValue({ final: true, status: 'no_answer', sentence: 'Nobody answered within 30 seconds.', detail: null });
+    await endUnanswered();
+    expect(screen.getByRole('status').textContent).toBe('The call was not answered.');
+    await wait(RESULT_WAIT_MS + 10);
+    expect(h.callResult).toHaveBeenCalledWith('call-1');
+    expect(screen.getByRole('status').textContent).toBe('Nobody answered within 30 seconds.');
+    // Settled: it does not keep asking.
+    await wait(RESULT_WAIT_MS * 3);
+    expect(h.callResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the line was busy, and picks that as how it went', async () => {
+    h.callResult.mockResolvedValue({ final: true, status: 'busy', sentence: 'The line was busy.', detail: null });
+    await endUnanswered();
+    await wait(RESULT_WAIT_MS + 10);
+    expect(screen.getByRole('status').textContent).toBe('The line was busy.');
+    vi.useRealTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to timeline' }));
+    await waitFor(() => expect(h.endCall).toHaveBeenCalledWith('call-1', expect.objectContaining({ outcome: 'busy' })));
+  });
+
+  it('tells the person who runs the site why the phone provider refused the call', async () => {
+    h.callResult.mockResolvedValue({ final: true, status: 'failed', sentence: 'The phone company did not connect this call.', detail: GEO });
+    // The provider hangs up at once: the other phone never rang.
+    await endUnanswered(false);
+    await wait(RESULT_WAIT_MS + 10);
+    expect(screen.getByRole('status').textContent).toBe('The phone company did not connect this call.');
+    expect(screen.getByText(GEO)).toBeTruthy();
+  });
+
+  it('tells everybody else only that it did not connect', async () => {
+    setInternalsVisible(false);
+    h.callResult.mockResolvedValue({ final: true, status: 'failed', sentence: 'The phone company did not connect this call.', detail: GEO });
+    await endUnanswered();
+    await wait(RESULT_WAIT_MS + 10);
+    expect(screen.getByRole('status').textContent).toBe('The phone company did not connect this call.');
+    expect(screen.queryByText(/13227|Geo permissions/)).toBeNull();
+  });
+
+  it('looks again while the report, or the reason for a refusal, is still on its way', async () => {
+    h.callResult
+      .mockResolvedValueOnce({ final: false, status: 'ringing', sentence: null, detail: null })
+      .mockResolvedValueOnce({ final: true, status: 'failed', sentence: 'The phone company did not connect this call.', detail: NO_REASON_DETAIL })
+      .mockResolvedValue({ final: true, status: 'failed', sentence: 'The phone company did not connect this call.', detail: GEO });
+    await endUnanswered();
+    await wait(RESULT_WAIT_MS + 10);
+    expect(screen.getByRole('status').textContent).toBe('The call was not answered.');
+    await wait(RESULT_WAIT_MS + 10);
+    expect(screen.getByText(NO_REASON_DETAIL)).toBeTruthy();
+    await wait(RESULT_WAIT_MS + 10);
+    expect(screen.getByText(GEO)).toBeTruthy();
+    await wait(RESULT_WAIT_MS * 3);
+    expect(h.callResult).toHaveBeenCalledTimes(3);
+  });
+
+  it('gives up quietly when the report never comes', async () => {
+    h.callResult.mockRejectedValueOnce(new Error('Failed to fetch'));
+    await endUnanswered();
+    await wait(RESULT_WAIT_MS * (RESULT_TRIES + 3));
+    expect(screen.getByRole('status').textContent).toBe('The call was not answered.');
+    expect(screen.queryByRole('alert')).toBeNull();
+    h.callResult.mockClear();
+  });
+
+  it('does not ask about a call that was answered', async () => {
+    show();
+    fireEvent.click(callButton());
+    await waitFor(() => expect(h.openLine).toHaveBeenCalled());
+    vi.useFakeTimers();
+    act(() => h.tell?.('ringing'));
+    act(() => h.tell?.('answered'));
+    act(() => h.tell?.('ended'));
+    await wait(RESULT_WAIT_MS * 3);
+    expect(h.callResult).not.toHaveBeenCalled();
   });
 });
 

@@ -2,10 +2,10 @@ import { AppError } from "../_signroom/errors.js";
 import { isUuid } from "../_signroom/validate.js";
 import { orgMayCall, type ConfigState, type VoiceConfig } from "./config.js";
 import { dialable, formatNumber, COUNTRY_NAME, type CallCountry } from "./shared/numbers.js";
-import { OUTCOME_LABEL, OUTCOMES, STATUS_SENTENCE, type CallActivityMeta, type CallList, type CallListItem, type CallOutcome, type CallStatus, type StartedCall, type VoiceSetup } from "./shared/types.js";
+import { NO_REASON_DETAIL, OUTCOME_LABEL, OUTCOMES, STATUS_SENTENCE, type CallActivityMeta, type CallList, type CallResult, type CallListItem, type CallOutcome, type CallStatus, type StartedCall, type VoiceSetup } from "./shared/types.js";
 import type { Call, CallPatch, VoiceStore } from "./store.js";
 import { isIdentity } from "./token.js";
-import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
+import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml, RING_SECONDS } from "./twiml.js";
 
 /**
  * The calling server's routes.
@@ -16,6 +16,7 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
  *   POST calls                 start a call to a lead, a company, or (the dialer) any number for a workspace
  *   POST calls/<id>/end        how the call went, in the caller's words
  *   GET  calls/<id>/recording  the recording, as audio
+ *   GET  calls/<id>/result     why the call ended, as the phone provider reported it
  *   DELETE calls/<id>          remove a call, its recording and its timeline entry (the owner only)
  *   GET  contacts/<id>/calls   the calls made to one lead, for a copy of that person's data
  *   DELETE contacts/<id>/calls remove every call made to one lead, with the recordings (the owner only)
@@ -39,6 +40,7 @@ export const NO_WORKSPACE_MESSAGE = "This record is not in a workspace, so its c
 export const TABLES_MISSING_MESSAGE = "Calling is not set up yet: run supabase/migrations/188_crm_calls.sql in the Supabase SQL editor.";
 export const TOO_MANY_MESSAGE = "Too many calls in one minute. Wait a moment, then try again.";
 export const NO_RECORDING_MESSAGE = "This call has no recording.";
+export { NO_REASON_DETAIL };
 export const RECORDING_UNAVAILABLE_MESSAGE = "The recording could not be loaded. Please try again.";
 export const DELETE_OWNER_ONLY_MESSAGE = "Only the owner can delete a call.";
 export const CALL_IN_PROGRESS_MESSAGE = "This call is still in progress. Delete it once it has ended.";
@@ -300,6 +302,69 @@ async function recording(d: VoiceDeps, r: RouteRequest, id: string): Promise<Rou
   return { status: 200, media: { type: "audio/mpeg", length: reply.headers.get("content-length"), body: reply.body as ReadableStream<Uint8Array> } };
 }
 
+/** How a call that was not answered ended, in one sentence for the caller. */
+const RESULT_SENTENCE: Partial<Record<CallStatus, string>> = {
+  no_answer: `Nobody answered within ${RING_SECONDS} seconds.`,
+  busy: "The line was busy.",
+  failed: "The phone company did not connect this call.",
+  canceled: "The call ended before it was answered.",
+};
+
+/** What to do about the provider's most common refusals. Read by the people who run the site. */
+const REFUSAL_HINT: Record<string, string> = {
+  "13227": "Calls to this country are switched off in the provider's account: open Voice, Settings, Geo permissions there and allow the country.",
+  "21215": "Calls to this country are switched off in the provider's account: open Voice, Settings, Geo permissions there and allow the country.",
+  "21219": "The provider's account is a trial account, which can only call numbers verified in it: upgrade the account, or verify this number in it.",
+  "14111": "The provider's account is a trial account, which can only call numbers verified in it: upgrade the account, or verify this number in it.",
+  "13214": "The number we call from is not accepted as caller ID: check that it is a number of this provider account.",
+  "13223": "The provider cannot call this number: it is not a valid phone number.",
+  "13224": "The provider cannot call this number: it is not valid, or the provider does not reach it.",
+  "13225": "The provider does not allow calls to this number.",
+};
+
+/** The provider's own words, made short and plain: they can arrive as a form ("Msg=...&ErrorCode=..."). */
+function providerWords(raw: unknown): string {
+  let words = typeof raw === "string" ? raw : "";
+  if (/(^|&)Msg=/.test(words)) words = new URLSearchParams(words).get("Msg") ?? "";
+  return words.replace(/[^ -~]/g, " ").replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
+/** Why the provider refused a call, from its own log of that call. Null when it cannot be read. */
+async function refusalDetail(d: VoiceDeps, config: VoiceConfig, callSid: string): Promise<string | null> {
+  try {
+    const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Calls/${callSid}/Notifications.json?PageSize=20`;
+    const reply = await d.fetch(url, { headers: { Authorization: "Basic " + Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64") } });
+    if (!reply.ok) return null;
+    const body = (await reply.json()) as { notifications?: Array<Record<string, unknown>> };
+    const all = Array.isArray(body?.notifications) ? body.notifications : [];
+    const found = all.find((n) => /^\d{3,6}$/.test(String(n?.error_code ?? "")));
+    if (!found) return null;
+    const code = String(found.error_code);
+    const words = providerWords(found.message_text);
+    return [`Phone provider error ${code}${words ? `: ${words}` : ""}.`, REFUSAL_HINT[code] ?? ""].filter(Boolean).join(" ");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Why a call ended. The call window only knows that the line closed; the
+ * provider knows whether nobody answered, the line was busy, or it refused to
+ * place the call at all. For a refusal the provider's own reason is fetched,
+ * so the people who run the site can read it without opening its console.
+ */
+async function result(d: VoiceDeps, r: RouteRequest, id: string): Promise<RouteResult> {
+  const call = await ownCall(d, id, r.user.id);
+  const final = Boolean(call.endedAt);
+  const out: CallResult = { final, status: call.status, sentence: final ? RESULT_SENTENCE[call.status] ?? null : null, detail: null };
+  if (final && call.status === "failed") {
+    const config = d.config().config;
+    const known = config && call.callSid && /^CA[0-9a-fA-F]{32}$/.test(call.callSid) ? await refusalDetail(d, config, call.callSid) : null;
+    out.detail = known ?? NO_REASON_DETAIL;
+  }
+  return { status: 200, json: out };
+}
+
 /** How long a call may stay "ringing" before it counts as over (the longest call, and a little more). */
 const STALE_MS = 3 * 60 * 60_000;
 
@@ -392,6 +457,7 @@ export async function route(d: VoiceDeps, r: RouteRequest): Promise<RouteResult>
     if (r.path.length === 2 && a === "calls" && r.method === "DELETE") return await remove(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "end" && r.method === "POST") return await end(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "recording" && r.method === "GET") return await recording(d, r, b);
+    if (r.path.length === 3 && a === "calls" && c === "result" && r.method === "GET") return await result(d, r, b);
     if (r.path.length === 3 && a === "contacts" && c === "calls" && r.method === "GET") return await personCalls(d, r, b);
     if (r.path.length === 3 && a === "contacts" && c === "calls" && r.method === "DELETE") return await removePersonCalls(d, r, b);
     return { status: 404, json: { error: "not found" } };

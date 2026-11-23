@@ -46,6 +46,20 @@ export function isUnansweredCallEntry(description: string): boolean {
   return [...Object.values(STATUS_SENTENCE), ...outcomes].some((sentence) => summary.includes(` ${sentence}`));
 }
 
+/** For the people who run the site, when the provider refused a call and gave no reason we could read (yet). */
+export const NO_REASON_DETAIL = "The phone provider gave no reason here. It is in the provider's console, under Monitor, Logs, Errors.";
+
+/** GET /api/voice/calls/<id>/result: why a call ended, as the phone provider reported it. */
+export type CallResult = {
+  /** False while the provider has not said how the call ended yet. */
+  final: boolean;
+  status: CallStatus;
+  /** One plain sentence for the caller. Null when there is nothing to add. */
+  sentence: string | null;
+  /** What the provider itself said went wrong. For the people who run the site only. */
+  detail: string | null;
+};
+
 /** GET /api/voice/setup */
 export type VoiceSetup = {
   /** False while no phone provider setting exists at all: the Call button then works as it always did. */

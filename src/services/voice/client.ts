@@ -7,7 +7,7 @@
  */
 import { publicMessage } from '@/lib/publicError';
 import { supabase } from '@/services/supabase/config';
-import type { CallList, EndCallInput, PersonCalls, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
+import type { CallList, CallResult, EndCallInput, PersonCalls, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
 
 const BASE = '/api/voice/';
 
@@ -86,6 +86,9 @@ export function forgetVoiceSetup(): void {
 }
 
 export const startCall = (input: StartCallInput): Promise<StartedCall> => json<StartedCall>('calls', input);
+
+/** Why a call ended, as the phone provider reported it (nobody answered, busy, refused). */
+export const callResult = (id: string): Promise<CallResult> => json<CallResult>(`calls/${id}/result`);
 
 export const endCall = (id: string, input: EndCallInput): Promise<void> => json<{ ok: true }>(`calls/${id}/end`, input).then(() => undefined);
 

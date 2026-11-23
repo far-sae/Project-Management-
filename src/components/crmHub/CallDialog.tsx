@@ -10,15 +10,16 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { SetupHint } from '@/components/common/SetupHint';
 import { cn } from '@/lib/utils';
 import { publicText } from '@/lib/publicError';
-import { endCall, errorSentence, startCall } from '@/services/voice/client';
+import { callResult, endCall, errorSentence, startCall } from '@/services/voice/client';
 import { openLine, type Line } from '@/services/voice/device';
 import {
   COUNTRY_NAME, dialable, formatNumber, guessCountry, type CallCountry,
 } from '../../../api/_voice/shared/numbers';
 import {
-  OUTCOME_LABEL, OUTCOMES, type CallOutcome, type VoiceSetup,
+  NO_REASON_DETAIL, OUTCOME_LABEL, OUTCOMES, type CallOutcome, type CallResult, type VoiceSetup,
 } from '../../../api/_voice/shared/types';
 
 /**
@@ -29,6 +30,10 @@ import {
  */
 
 type Phase = 'ready' | 'connecting' | 'ringing' | 'live' | 'ended';
+
+/** How long to wait for the phone provider's report on a call that was not answered, and how often to look. */
+export const RESULT_WAIT_MS = 1500;
+export const RESULT_TRIES = 4;
 
 export interface CallDialogProps {
   open: boolean;
@@ -69,6 +74,8 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
   const [outcome, setOutcome] = useState<CallOutcome>('no_answer');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Why a call that was not answered ended, once the phone provider has said so. */
+  const [why, setWhy] = useState<CallResult | null>(null);
   /** For a dialled number that is a lead's: that lead. The call is then theirs. */
   const [matched, setMatched] = useState<{ id: string; name: string } | null>(null);
   const dialer = 'workspaceId' in target;
@@ -99,6 +106,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
     setOutcome('no_answer');
     setNote('');
     setSaving(false);
+    setWhy(null);
     setMatched(null);
     line.current = null;
     callId.current = null;
@@ -115,6 +123,35 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
       if (answeredAt.current) setSeconds(Math.round((Date.now() - answeredAt.current) / 1000));
     }, 500);
     return () => window.clearInterval(timer);
+  }, [phase]);
+
+  // A call that ended without an answer: the line only knows that it closed. The
+  // phone provider knows whether nobody answered, the line was busy, or it
+  // refused to place the call, and reports that a moment later. Ask for it.
+  useEffect(() => {
+    const id = callId.current;
+    if (phase !== 'ended' || answeredAt.current || !id) return;
+    let alive = true;
+    const timers: number[] = [];
+    const ask = (attempt: number) => {
+      callResult(id)
+        .then((result) => {
+          if (!alive) return;
+          if (result.final) {
+            setWhy(result);
+            if (result.status === 'busy') setOutcome('busy');
+          }
+          // Not reported yet, or refused with the reason still on its way: look again.
+          const settled = result.final && !(result.status === 'failed' && result.detail === NO_REASON_DETAIL);
+          if (!settled && attempt < RESULT_TRIES) timers.push(window.setTimeout(() => ask(attempt + 1), RESULT_WAIT_MS));
+        })
+        .catch(() => undefined);
+    };
+    timers.push(window.setTimeout(() => ask(1), RESULT_WAIT_MS));
+    return () => {
+      alive = false;
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
   }, [phase]);
 
   // Leaving the page hangs up.
@@ -359,8 +396,13 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
         {phase === 'ended' && (
           <div className="flex flex-col gap-4">
             <p role="status" className="text-sm font-medium">
-              {answeredAt.current ? `Call ended. ${lasted(seconds)}.` : 'The call was not answered.'}
+              {answeredAt.current ? `Call ended. ${lasted(seconds)}.` : why?.sentence ?? 'The call was not answered.'}
             </p>
+            {!answeredAt.current && why?.detail && (
+              <SetupHint other={null}>
+                <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{why.detail}</p>
+              </SetupHint>
+            )}
             {problem && <p role="alert" className="text-sm text-destructive">{problem}</p>}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor={`${fieldId}-outcome`}>How did it go?</Label>

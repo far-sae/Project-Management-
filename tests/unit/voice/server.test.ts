@@ -14,6 +14,7 @@ import {
   CHOOSE_WORKSPACE_MESSAGE,
   DELETE_OWNER_ONLY_MESSAGE,
   describeCall,
+  NO_REASON_DETAIL,
   NO_WORKSPACE_MESSAGE,
   NOT_FOUND_MESSAGE,
   OWNER_ONLY_MESSAGE,
@@ -28,7 +29,7 @@ import {
 import { isUnansweredCallEntry, type CallList, type PersonCalls, type StartedCall } from "../../../api/_voice/shared/types";
 import type { Call, CallPatch, Target, VoiceStore } from "../../../api/_voice/store";
 import { callToken, identityOf, TOKEN_SECONDS } from "../../../api/_voice/token";
-import { dialTwiml, noticeTwiml, RECORDING_NOTICE } from "../../../api/_voice/twiml";
+import { dialTwiml, noticeTwiml, RECORDING_NOTICE, RING_SECONDS } from "../../../api/_voice/twiml";
 import { signedOrigin, voiceHandler, type VoiceHandlerDeps } from "../../../api/voice";
 
 /**
@@ -489,6 +490,100 @@ describe("calling: recordings", () => {
     const id = await w.startCall();
     await w.hook("recording", { RecordingStatus: "completed", RecordingSid: "../../Calls", RecordingDuration: "5" }, { call: id });
     expect(w.calls.get(id)?.recordingSid).toBeNull();
+  });
+});
+
+describe("calling: why a call ended", () => {
+  const notes = (list: Array<Record<string, unknown>>) => new Response(JSON.stringify({ notifications: list }), { status: 200, headers: { "content-type": "application/json" } });
+  const placed = async (w: ReturnType<typeof world>, to = "+1 415 555 0123") => {
+    const id = await w.startCall(OWNER, { contactId: LEAD, to });
+    await w.hook("twiml", { callId: id, From: "client:" + identityOf(OWNER), CallSid: CALL_SID });
+    return id;
+  };
+
+  it("says nobody answered, with how long it rang", async () => {
+    const w = world();
+    const id = await placed(w);
+    await w.hook("done", { DialCallStatus: "no-answer" }, { call: id });
+    const out = await w.as(OWNER).get(`calls/${id}/result`);
+    expect(out.status).toBe(200);
+    expect(out.json).toEqual({ final: true, status: "no_answer", sentence: `Nobody answered within ${RING_SECONDS} seconds.`, detail: null });
+    // Nothing is asked of the provider for an ordinary ending.
+    expect(w.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("says the line was busy, and that the caller ended it", async () => {
+    const w = world();
+    const busy = await placed(w);
+    await w.hook("done", { DialCallStatus: "busy" }, { call: busy });
+    expect((await w.as(OWNER).get(`calls/${busy}/result`)).json).toMatchObject({ final: true, sentence: "The line was busy.", detail: null });
+    const gone = await placed(w);
+    await w.hook("done", { DialCallStatus: "canceled" }, { call: gone });
+    expect((await w.as(OWNER).get(`calls/${gone}/result`)).json).toMatchObject({ final: true, sentence: "The call ended before it was answered.", detail: null });
+  });
+
+  it("is not final while the provider has not said how it ended", async () => {
+    const w = world();
+    const id = await placed(w);
+    expect((await w.as(OWNER).get(`calls/${id}/result`)).json).toEqual({ final: false, status: "ringing", sentence: null, detail: null });
+  });
+
+  it("says the provider did not connect it, and asks the provider why", async () => {
+    const w = world();
+    w.fetchMock.mockImplementation(async () => notes([
+      { error_code: "13227", log: "0", message_text: "Msg=Dial%3A+Geo+Permission+configuration+is+not+permitting+call&ErrorCode=13227&LogLevel=ERROR" },
+    ]));
+    const id = await placed(w);
+    await w.hook("done", { DialCallStatus: "failed" }, { call: id });
+    const out = (await w.as(ADMIN).get(`calls/${id}/result`)).json as { sentence: string; detail: string };
+    expect(out.sentence).toBe("The phone company did not connect this call.");
+    expect(out.detail).toContain("13227");
+    expect(out.detail).toContain("Geo Permission configuration is not permitting call");
+    expect(out.detail).toContain("Geo permissions");
+    const [url, init] = w.fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+    expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${CONFIG.accountSid}/Calls/${CALL_SID}/Notifications.json?PageSize=20`);
+    expect(init.headers.Authorization).toBe("Basic " + Buffer.from(`${CONFIG.accountSid}:${CONFIG.authToken}`).toString("base64"));
+  });
+
+  it("explains a trial account that may only call numbers verified in it", async () => {
+    const w = world();
+    w.fetchMock.mockImplementation(async () => notes([{ error_code: "21219", message_text: "The number is unverified. Trial accounts cannot call unverified numbers." }]));
+    const id = await placed(w);
+    await w.hook("done", { DialCallStatus: "failed" }, { call: id });
+    const out = (await w.as(OWNER).get(`calls/${id}/result`)).json as { detail: string };
+    expect(out.detail).toContain("21219");
+    expect(out.detail).toContain("trial account");
+  });
+
+  it("still answers when the provider gives no reason, or cannot be asked", async () => {
+    const w = world();
+    const id = await placed(w);
+    await w.hook("done", { DialCallStatus: "failed" }, { call: id });
+    for (const reply of [async () => notes([]), async () => new Response("no", { status: 500 }), async () => { throw new TypeError("fetch failed"); }, async () => new Response("<html>", { status: 200 })]) {
+      w.fetchMock.mockImplementation(reply as never);
+      const out = (await w.as(OWNER).get(`calls/${id}/result`)).json as { sentence: string; detail: string };
+      expect(out.sentence).toBe("The phone company did not connect this call.");
+      expect(out.detail).toBe(NO_REASON_DETAIL);
+      expect(out.detail).not.toMatch(/fetch failed|html/);
+    }
+  });
+
+  it("keeps the provider's words short and plain", async () => {
+    const w = world();
+    w.fetchMock.mockImplementation(async () => notes([{ error_code: "99999", message_text: "x".repeat(900) + "<script>" }]));
+    const id = await placed(w);
+    await w.hook("done", { DialCallStatus: "failed" }, { call: id });
+    const out = (await w.as(OWNER).get(`calls/${id}/result`)).json as { detail: string };
+    expect(out.detail.length).toBeLessThan(400);
+    expect(out.detail).not.toContain("<");
+    expect(out.detail).toContain("99999");
+  });
+
+  it("is only for an owner or admin of the call's organisation", async () => {
+    const w = world();
+    const id = await placed(w);
+    expect((await w.as(MEMBER).get(`calls/${id}/result`)).status).toBe(403);
+    expect((await w.as(OWNER).get("calls/not-an-id/result")).status).toBe(404);
   });
 });
 
