@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 import { MergeWorkspaceDialog } from '@/components/workspace/MergeWorkspaceDialog';
+import { DeleteWorkspaceDialog } from '@/components/workspace/DeleteWorkspaceDialog';
 
 interface WorkspacesModalProps {
   open: boolean;
@@ -34,7 +35,8 @@ interface WorkspacesModalProps {
   workspaces: Workspace[];
   projects: Project[];
   onEditWorkspace: (workspaceId: string) => void;
-  onDeleteWorkspace: (workspaceId: string) => void;
+  /** No longer used: a workspace is deleted from here with everything in it (see DeleteWorkspaceDialog). */
+  onDeleteWorkspace?: (workspaceId: string) => void;
   onCreateWorkspace: () => void;
   onSelectWorkspace: (workspaceId: string) => void;
   loading?: boolean;
@@ -47,7 +49,6 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
   workspaces,
   projects,
   onEditWorkspace,
-  onDeleteWorkspace,
   onCreateWorkspace,
   onSelectWorkspace,
   loading = false,
@@ -64,6 +65,7 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
 
   /** The workspace being emptied into another one, while that window is open. */
   const [merging, setMerging] = useState<Workspace | null>(null);
+  const [deleting, setDeleting] = useState<Workspace | null>(null);
 
   const handleSelectWorkspace = (workspaceId: string) => {
     onSelectWorkspace(workspaceId);
@@ -103,7 +105,6 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
         <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(min(220px,100%),1fr))]">
           {workspaces.map((workspace) => {
             const projectCount = projectCounts.get(workspace.workspaceId) ?? 0;
-            const isPrimary = workspace.isDefault;
 
             return (
               <div
@@ -156,16 +157,11 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                             Move everything to another workspace
                           </DropdownMenuItem>
                         )}
-                        {!isPrimary && (
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onSelect={() => {
-                              onDeleteWorkspace(workspace.workspaceId);
-                              onOpenChange(false);
-                            }}
-                          >
+                        {/* With everything in it: the database counts what goes first, and the person confirms. */}
+                        {workspaces.length > 1 && (
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleting(workspace)}>
                             <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
-                            Delete
+                            Delete with everything in it
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -203,6 +199,12 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
         workspaces={workspaces}
         onOpenChange={(next) => { if (!next) setMerging(null); }}
         onMerged={() => { onRefresh?.(); }}
+      />
+      <DeleteWorkspaceDialog
+        workspace={deleting}
+        workspaces={workspaces}
+        onOpenChange={(next) => { if (!next) setDeleting(null); }}
+        onDeleted={() => { onRefresh?.(); }}
       />
     </Dialog>
   );

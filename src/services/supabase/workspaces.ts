@@ -197,3 +197,29 @@ export const mergeWorkspace = async (fromId: string, intoId: string): Promise<{ 
   logger.error("Failed to merge workspaces:", error.code);
   throw new Error(missing ? MERGE_WORKSPACE_NOT_SET_UP_MESSAGE : error.message || "The workspaces could not be put together.");
 };
+
+export const DELETE_WORKSPACE_NOT_SET_UP_MESSAGE =
+  'Deleting a workspace with everything in it is not set up yet: run supabase/migrations/205_delete_workspace_with_data.sql in the Supabase SQL editor.';
+
+/**
+ * Deletes a workspace together with everything in it, or (confirm = false)
+ * only counts what would go. The database does it in one step: all of it, or
+ * nothing (it then says why, in a sentence that is passed on as it is). Only
+ * the organisation's owner may.
+ */
+export const deleteWorkspaceWithData = async (
+  workspaceId: string,
+  confirm: boolean,
+): Promise<{ deleted: boolean; counts: Record<string, number> }> => {
+  const { data, error } = await supabase.rpc("delete_workspace_with_data", { p_workspace: workspaceId, p_confirm: confirm });
+  if (!error) {
+    const answer = (data ?? {}) as { deleted?: unknown; counts?: unknown };
+    const counts = answer.counts && typeof answer.counts === "object" && !Array.isArray(answer.counts) ? (answer.counts as Record<string, number>) : {};
+    return { deleted: answer.deleted === true, counts };
+  }
+  // The function is not there until migration 205 has been run.
+  const missing = error.code === "PGRST202" || error.code === "42883"
+    || (/delete_workspace_with_data/.test(error.message ?? "") && /not find|does not exist|schema cache/i.test(error.message ?? ""));
+  logger.error("Failed to delete workspace with its data:", error.code);
+  throw new Error(missing ? DELETE_WORKSPACE_NOT_SET_UP_MESSAGE : error.message || "The workspace could not be deleted.");
+};
