@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Loader2Icon } from 'lucide-react';
 import { Sidebar } from '@/components/sidebar/Sidebar';
 import { ProjectChromeProvider } from '@/context/ProjectChromeContext';
+import { FirstWorkspaceGate } from '@/components/workspace/FirstWorkspaceGate';
 
 // Pending-invite escape hatch.
 //
@@ -44,6 +45,8 @@ export const AppLayout: React.FC = () => {
   }
 
   return (
+    // No ready-made workspace: a new organisation names its first one before anything else.
+    <FirstWorkspaceGate>
     <ProjectChromeProvider>
       {/* h-screen + overflow-hidden pins the shell to the viewport so the
             sidebar stays fixed and only the routed content (<main>) scrolls. */}
@@ -62,6 +65,7 @@ export const AppLayout: React.FC = () => {
           </main>
         </div>
     </ProjectChromeProvider>
+    </FirstWorkspaceGate>
   );
 };
 

@@ -24,9 +24,16 @@ import {
 const STORAGE_KEY = "selectedWorkspaceId";
 const EVENT_NAME = "app:selected-workspace-changed";
 
+/**
+ * "Unassigned projects" used to be a choice. It is not any more: a browser
+ * that still remembers it shows every workspace instead.
+ */
+const withoutUnassigned = (id: string | null): string | null =>
+  id === UNASSIGNED_WORKSPACE_ID ? ALL_WORKSPACES_ID : id;
+
 const readStored = (): string | null => {
   try {
-    return window.localStorage.getItem(STORAGE_KEY);
+    return withoutUnassigned(window.localStorage.getItem(STORAGE_KEY));
   } catch {
     return null;
   }
@@ -48,7 +55,16 @@ export interface WorkspaceScope {
   select: (id: string) => void;
   DEFAULT_WORKSPACE_ID: string;
   isAll: boolean;
+  /** Always false: "Unassigned projects" is no longer a choice. Kept so older callers still read a value. */
   isUnassigned: boolean;
+  /**
+   * True once `workspaces` is the real list of the signed-in person's
+   * organisation. False while signing in, during a reload, or while the
+   * organisation is still being worked out: an empty list then means nothing.
+   */
+  workspacesKnown: boolean;
+  /** Read the list again now (after making or renaming a workspace). */
+  refreshWorkspaces: () => Promise<void>;
   /** Project ids in the selected workspace. `null` = All workspaces (no filtering). */
   projectIds: Set<string> | null;
   /** Quick Menu items enabled in the selected workspace. `null` = all. */
@@ -70,11 +86,19 @@ const WorkspaceContext = createContext<WorkspaceScope | undefined>(undefined);
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { workspaces, loading, DEFAULT_WORKSPACE_ID } = useWorkspaces();
+  const { workspaces, loading, DEFAULT_WORKSPACE_ID, listOrgId, refresh } = useWorkspaces();
   const { projects } = useProjects();
   const { user, loading: authLoading } = useAuth();
-  const { loading: orgLoading } = useOrganization();
+  const { loading: orgLoading, organization } = useOrganization();
   const [id, setId] = useState<string>(() => readStored() || ALL_WORKSPACES_ID);
+
+  // The list can be trusted only when it was read for the organisation the
+  // person is in now. Everything that acts on "this workspace is not in the
+  // list" waits for that, so a reload never throws the chosen workspace away.
+  const organizationId = organization?.organizationId?.replace("local-", "") ?? null;
+  const workspacesKnown =
+    Boolean(user) && !authLoading && !orgLoading && !loading &&
+    organizationId !== null && listOrgId === organizationId;
 
   useEffect(() => {
     const onChange = () => {
@@ -90,21 +114,24 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // If the stored workspace is no longer visible (deleted, switched org), show all.
-  // Only once the list is authoritative: on a reload AuthContext starts with
-  // `user === null` and OrganizationContext hasn't resolved the org yet, so
-  // useWorkspaces reports an empty, non-loading list — resetting on that would
-  // wipe the persisted selection on every reload and on every public route.
+  // Only once the list is the real one for this organisation. On a reload the
+  // account and the organisation arrive one after the other, and in between
+  // the list is empty, or still being read, without saying so: acting on that
+  // threw the chosen workspace away on every reload.
   useEffect(() => {
-    if (!user || authLoading || orgLoading || loading) return;
-    if (id === ALL_WORKSPACES_ID || id === UNASSIGNED_WORKSPACE_ID) return;
+    if (!workspacesKnown) return;
+    if (id === ALL_WORKSPACES_ID) return;
     const exists = workspaces.some((w) => w.workspaceId === id);
     if (!exists) {
       setId(ALL_WORKSPACES_ID);
       writeStored(ALL_WORKSPACES_ID);
     }
-  }, [workspaces, loading, id, user, authLoading, orgLoading]);
+  }, [workspaces, workspacesKnown, id]);
 
-  const select = useCallback((newId: string) => {
+  const refreshWorkspaces = useCallback(() => refresh({ silent: true }), [refresh]);
+
+  const select = useCallback((asked: string) => {
+    const newId = withoutUnassigned(asked) ?? ALL_WORKSPACES_ID;
     setId(newId);
     writeStored(newId);
     try {
@@ -115,7 +142,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const selected = useMemo<Workspace | null>(() => {
-    if (id === ALL_WORKSPACES_ID || id === UNASSIGNED_WORKSPACE_ID) return null;
+    if (id === ALL_WORKSPACES_ID) return null;
     return workspaces.find((w) => w.workspaceId === id) || null;
   }, [workspaces, id]);
 
@@ -151,7 +178,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
       select,
       DEFAULT_WORKSPACE_ID,
       isAll: id === ALL_WORKSPACES_ID,
-      isUnassigned: id === UNASSIGNED_WORKSPACE_ID,
+      isUnassigned: false,
+      workspacesKnown,
+      refreshWorkspaces,
       projectIds,
       menuPages,
       filterProjects,
@@ -159,6 +188,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({
     }),
     [
       workspaces, loading, id, selected, select, DEFAULT_WORKSPACE_ID,
+      workspacesKnown, refreshWorkspaces,
       projectIds, menuPages, filterProjects, filterTasks,
     ],
   );

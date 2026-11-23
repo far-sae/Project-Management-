@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   ALL_WORKSPACES_ID,
-  UNASSIGNED_WORKSPACE_ID,
   useSelectedWorkspace,
 } from '@/hooks/useSelectedWorkspace';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -90,9 +89,7 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
   const triggerLabel = isAll
     ? 'All workspaces'
-    : isUnassigned
-      ? 'Unassigned projects'
-      : selected
+    : selected
         ? getWorkspaceDisplayName(selected)
         : 'Select workspace';
 
@@ -144,11 +141,6 @@ export const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
               <LayoutGrid className="w-4 h-4 mr-2" />
               <span className="flex-1">All workspaces</span>
               {isAll && <Check className="w-4 h-4 text-primary" />}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => select(UNASSIGNED_WORKSPACE_ID)}>
-              <LayoutGrid className="w-4 h-4 mr-2 opacity-70" />
-              <span className="flex-1">Unassigned projects</span>
-              {isUnassigned && <Check className="w-4 h-4 text-primary" />}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             {visibleWorkspaces.length === 0 && (

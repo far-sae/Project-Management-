@@ -26,7 +26,6 @@ import { useProjects } from '@/hooks/useProjects';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
-import { UNASSIGNED_WORKSPACE_ID } from '@/hooks/useSelectedWorkspace';
 import { fetchProjectTemplates } from '@/services/supabase/templates';
 import type { ProjectTemplate } from '@/types/projectTemplate';
 import { createTask } from '@/services/supabase/database';
@@ -77,9 +76,12 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedColor, setSelectedColor] = useState(PROJECT_COLORS[0]);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(
-    defaultWorkspaceId ?? UNASSIGNED_WORKSPACE_ID,
-  );
+  // A project always belongs to a workspace: the one being looked at, else the organisation's main one.
+  const mainWorkspaceId = (workspaces.find((w) => w.isDefault) ?? workspaces[0])?.workspaceId ?? '';
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(defaultWorkspaceId ?? '');
+  useEffect(() => {
+    if (!selectedWorkspaceId && mainWorkspaceId) setSelectedWorkspaceId(mainWorkspaceId);
+  }, [selectedWorkspaceId, mainWorkspaceId]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [creating, setCreating] = useState(false);
@@ -123,7 +125,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
     setStartDate('');
     setEndDate('');
     setSelectedColor(PROJECT_COLORS[0]);
-    setSelectedWorkspaceId(defaultWorkspaceId ?? UNASSIGNED_WORKSPACE_ID);
+    setSelectedWorkspaceId(defaultWorkspaceId ?? mainWorkspaceId);
     setSelectedTemplate(null);
     setCreateTab('blank');
     setCreateError(null);
@@ -145,8 +147,7 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
         name,
         description: description || (useTemplate ? selectedTemplate!.description ?? '' : ''),
         coverColor: selectedColor,
-        workspaceId:
-          selectedWorkspaceId === UNASSIGNED_WORKSPACE_ID ? undefined : selectedWorkspaceId,
+        workspaceId: selectedWorkspaceId || mainWorkspaceId || undefined,
         startDate: startDate || null,
         endDate: endDate || null,
         columns: useTemplate ? selectedTemplate!.columns : undefined,
@@ -229,7 +230,6 @@ export const NewProjectDialog: React.FC<NewProjectDialogProps> = ({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={UNASSIGNED_WORKSPACE_ID}>No workspace</SelectItem>
                   {workspaces.map((w) => (
                     <SelectItem key={w.workspaceId} value={w.workspaceId}>
                       {getWorkspaceDisplayName(w)}

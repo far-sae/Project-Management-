@@ -226,19 +226,8 @@ const ensureOrganizationExists = async (
       return null;
     }
 
-    // 4. Create primary workspace (group for projects; not shown as a special "default" in the UI)
-    const { error: wsError } = await supabase
-      .from('workspaces')
-      .insert({
-        workspace_id: crypto.randomUUID(),
-        name: 'General',
-        organization_id: orgId,
-        is_default: true,
-        created_at: now,
-        updated_at: now,
-      });
-
-    if (wsError) console.warn('⚠️ Failed to create default workspace:', wsError);
+    // 4. No workspace is made here. The person names their first workspace
+    //    themselves, on the first screen they see (FirstWorkspaceGate).
 
     // 5. Link org to user profile — UPSERT in case row doesn't exist yet
     const { error: profileError } = await supabase

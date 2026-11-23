@@ -36,16 +36,19 @@ beforeEach(() => {
 });
 
 describe('MoveProjectDialog', () => {
-  it('lists the other workspaces (not the current one) plus "No workspace"', () => {
+  it('lists the other workspaces (not the current one), and never "No workspace"', () => {
     renderDialog();
     expect(screen.queryByRole('radio', { name: 'Marketing' })).toBeNull();
     expect(screen.getByRole('radio', { name: 'Clients' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'General' })).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'No workspace' })).toBeTruthy();
+    // A workspace that was never given a name is not called "General" any more.
+    expect(screen.getByRole('radio', { name: 'Main workspace' })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'General' })).toBeNull();
+    // A project always belongs to a workspace.
+    expect(screen.queryByRole('radio', { name: 'No workspace' })).toBeNull();
     expect(screen.getByText(/tasks, comments, files and chat/i)).toBeTruthy();
   });
 
-  it('hides "No workspace" when the project already has none', () => {
+  it('offers every workspace to a project that has none yet, so it can be given one', () => {
     renderDialog({ projectId: 'p1', name: 'Website', workspaceId: null });
     expect(screen.queryByRole('radio', { name: 'No workspace' })).toBeNull();
     expect(screen.getByRole('radio', { name: 'Marketing' })).toBeTruthy();
@@ -67,14 +70,6 @@ describe('MoveProjectDialog', () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(moveProjectToWorkspace).toHaveBeenCalledWith('p1', 'ws-b');
     expect(toast.success).toHaveBeenCalledWith('Moved "Website" to Clients');
-  });
-
-  it('passes null for "No workspace"', async () => {
-    moveProjectToWorkspace.mockResolvedValue(undefined);
-    renderDialog();
-    fireEvent.click(screen.getByRole('radio', { name: 'No workspace' }));
-    fireEvent.click(screen.getByRole('button', { name: /^move$/i }));
-    await waitFor(() => expect(moveProjectToWorkspace).toHaveBeenCalledWith('p1', null));
   });
 
   it('shows the error and stays open when the move fails', async () => {

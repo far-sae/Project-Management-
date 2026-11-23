@@ -16,8 +16,6 @@ import { getWorkspaceDisplayName } from '@/lib/workspaceDisplay';
 import { moveProjectToWorkspace } from '@/services/supabase/projectMove';
 import type { Workspace } from '@/types/workspace';
 
-/** Sentinel for "No workspace" in the option list. */
-const NO_WORKSPACE = '__none__';
 
 interface MoveProjectDialogProps {
   open: boolean;
@@ -44,20 +42,20 @@ export const MoveProjectDialog: React.FC<MoveProjectDialogProps> = ({
   }, [open, project?.projectId]);
 
   const currentId = project?.workspaceId ?? null;
-  const options = useMemo(() => {
-    const list = workspaces
+  // A project always belongs to a workspace: it can be moved to another one, never to none.
+  const options = useMemo(
+    () => workspaces
       .filter((w) => w.workspaceId !== currentId)
-      .map((w) => ({ id: w.workspaceId, label: getWorkspaceDisplayName(w) }));
-    if (currentId) list.push({ id: NO_WORKSPACE, label: 'No workspace' });
-    return list;
-  }, [workspaces, currentId]);
+      .map((w) => ({ id: w.workspaceId, label: getWorkspaceDisplayName(w) })),
+    [workspaces, currentId],
+  );
 
   const handleMove = async () => {
     if (!project || !choice) return;
     const target = options.find((o) => o.id === choice);
     setMoving(true);
     try {
-      await moveProjectToWorkspace(project.projectId, choice === NO_WORKSPACE ? null : choice);
+      await moveProjectToWorkspace(project.projectId, choice);
       toast.success(`Moved "${project.name}" to ${target?.label ?? 'the new workspace'}`);
       onOpenChange(false);
     } catch (err) {

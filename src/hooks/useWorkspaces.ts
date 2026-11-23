@@ -23,6 +23,14 @@ export const useWorkspaces = () => {
   const { organization } = useOrganization();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
+  /**
+   * The organisation the list in `workspaces` was read for, or null before any
+   * list has arrived. While the account or the organisation is still settling
+   * (signing in, a reload, the tab coming back), `workspaces` can be empty or
+   * another organisation's: only a list for the current organisation may be
+   * trusted to say "this workspace is gone" or "there is no workspace".
+   */
+  const [listOrgId, setListOrgId] = useState<string | null>(null);
   const subscriptionRef = useRef<(() => void) | null>(null);
 
   const orgId = (
@@ -44,6 +52,7 @@ export const useWorkspaces = () => {
 
     if (!orgId) {
       setWorkspaces([]);
+      setListOrgId(null);
       setLoading(false);
       return;
     }
@@ -57,6 +66,7 @@ export const useWorkspaces = () => {
     const unsub = subscribeToWorkspaces(orgId, (list) => {
       // console.log("✅ Workspaces updated via subscription:", list.length);
       setWorkspaces(list);
+      setListOrgId(orgId);
       setLoading(false);
     });
 
@@ -121,6 +131,7 @@ export const useWorkspaces = () => {
     try {
       const list = await getOrganizationWorkspaces(orgId);
       setWorkspaces(list);
+      setListOrgId(orgId);
     } catch (err) {
       logger.error("useWorkspaces refresh failed:", err);
     } finally {
@@ -144,6 +155,7 @@ export const useWorkspaces = () => {
     removeWorkspace,
     refresh,
     orgId,
+    listOrgId,
     DEFAULT_WORKSPACE_ID,
   };
 };

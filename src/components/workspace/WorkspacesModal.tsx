@@ -120,7 +120,8 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                     </span>
                   </button>
 
-                  {!isPrimary && (
+                  {/* The main workspace can be renamed like any other. It cannot be deleted: every plan includes it. */}
+                  {(
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -143,16 +144,18 @@ export const WorkspacesModal: React.FC<WorkspacesModalProps> = ({
                           <Edit className="mr-2 h-4 w-4" aria-hidden="true" />
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onSelect={() => {
-                            onDeleteWorkspace(workspace.workspaceId);
-                            onOpenChange(false);
-                          }}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
-                          Delete
-                        </DropdownMenuItem>
+                        {!isPrimary && (
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => {
+                              onDeleteWorkspace(workspace.workspaceId);
+                              onOpenChange(false);
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                            Delete
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   )}

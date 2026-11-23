@@ -237,7 +237,7 @@ export const Dashboard: React.FC = () => {
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [selectedColor, setSelectedColor] = useState(PROJECT_COLORS[0]);
-  const [selectedProjectWorkspaceId, setSelectedProjectWorkspaceId] = useState<string>(UNASSIGNED_WORKSPACE_ID);
+  const [selectedProjectWorkspaceId, setSelectedProjectWorkspaceId] = useState<string>('');
   const [creating, setCreating] = useState(false);
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -354,10 +354,8 @@ export const Dashboard: React.FC = () => {
         name: newProjectName,
         description: newProjectDescription || (useTemplate ? selectedTemplate!.description ?? '' : ''),
         coverColor: selectedColor,
-        workspaceId:
-          selectedProjectWorkspaceId === UNASSIGNED_WORKSPACE_ID
-            ? undefined
-            : selectedProjectWorkspaceId,
+        // A project always belongs to a workspace.
+        workspaceId: selectedProjectWorkspaceId || mainWorkspaceId || undefined,
         startDate: newProjectStartDate || null,
         endDate: newProjectEndDate || null,
         columns: useTemplate ? selectedTemplate!.columns : undefined,
@@ -728,10 +726,12 @@ export const Dashboard: React.FC = () => {
 
   const isRealWorkspaceSelected =
     selectedWorkspaceId !== ALL_WORKSPACES_ID && selectedWorkspaceId !== UNASSIGNED_WORKSPACE_ID;
+  const mainWorkspaceId = (workspaces.find((w) => w.isDefault) ?? workspaces[0])?.workspaceId ?? '';
 
   const openCreateProject = () => {
-    // A new project starts in the workspace being looked at, so it shows up where it was made.
-    setSelectedProjectWorkspaceId(isRealWorkspaceSelected ? selectedWorkspaceId : UNASSIGNED_WORKSPACE_ID);
+    // A new project starts in the workspace being looked at, so it shows up where it was made;
+    // from "All workspaces" it starts in the organisation's main one. There is no "no workspace".
+    setSelectedProjectWorkspaceId(isRealWorkspaceSelected ? selectedWorkspaceId : mainWorkspaceId);
     setShowCreateModal(true);
     setCreateError(null);
   };
@@ -1247,7 +1247,6 @@ export const Dashboard: React.FC = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={UNASSIGNED_WORKSPACE_ID}>No workspace</SelectItem>
                   {workspaces.map((w) => (
                     <SelectItem key={w.workspaceId} value={w.workspaceId}>
                       {getWorkspaceDisplayName(w)}
