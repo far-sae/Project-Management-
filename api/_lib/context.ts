@@ -10,7 +10,11 @@ export function env(name: string): string {
 
 /** Service-role client. Never expose this key or its client to a browser. */
 export function serviceClient(): SupabaseClient {
-  return createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
+  // The address is SUPABASE_URL, or the one the browser side already has
+  // (VITE_SUPABASE_URL): the same project, and not a secret. The documents,
+  // automation and calling servers read it the same way.
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim() || env('SUPABASE_URL');
+  return createClient(url, env('SUPABASE_SERVICE_ROLE_KEY'), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
