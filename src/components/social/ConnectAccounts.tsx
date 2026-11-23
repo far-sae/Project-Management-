@@ -1,17 +1,17 @@
 // "Connect" for each social platform. Pressing it sends the person to the
-// platform to log in; the platform sends them back, and the account is in the
-// list. Nobody copies a key by hand.
+// platform to log in; they are sent back, and the account is in the list.
+// Nobody copies a key by hand.
 import React, { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { SetupHint } from '@/components/common/SetupHint';
 import { Button } from '@/components/ui/button';
 import { CONNECT_BRINGS } from '@/lib/socialConnect';
 import { publicMessage } from '@/lib/publicError';
-import { CONNECT_FAILED_MESSAGE, socialConnectSetup, startSocialConnect } from '@/services/social/connect';
+import { CONNECT_FAILED_MESSAGE, socialConnectSetup, startSocialConnect, syncSocialAccounts } from '@/services/social/connect';
 import {
   CONNECT_KINDS, CONNECT_NAME, CONNECT_SETTINGS,
-  type ConnectKind, type ConnectSetup,
+  type ConnectKind, type ConnectSetup, type DirectKind,
 } from '../../../api/_social/shared/connect';
 
 interface Props {
@@ -21,14 +21,23 @@ interface Props {
   canConnect: boolean;
   /** Leaves the app for the platform's log-in page. */
   go?: (url: string) => void;
+  /** Called after the list of accounts was brought up to date. */
+  onChanged?: () => void;
 }
 
 const leave = (url: string) => window.location.assign(url);
 
-export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, canConnect, go = leave }) => {
+/** The settings a platform still misses, for the people who set the site up. */
+const missing = (setup: ConnectSetup | null, kind: ConnectKind): string[] => {
+  const named = setup?.needs?.[kind];
+  return named?.length ? named : CONNECT_SETTINGS[kind as DirectKind] ?? [];
+};
+
+export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, canConnect, go = leave, onChanged }) => {
   const [setup, setSetup] = useState<ConnectSetup | null>(null);
   const [unknown, setUnknown] = useState(false);
   const [opening, setOpening] = useState<ConnectKind | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!canConnect) return;
@@ -54,18 +63,41 @@ export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, 
     }
   };
 
-  const someOff = setup !== null && CONNECT_KINDS.some((kind) => !setup.ready[kind]);
+  /** For an account that was connected but is not in the list yet: ask again. */
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await syncSocialAccounts(organizationId, workspaceId);
+      onChanged?.();
+    } catch (err) {
+      toast.error(publicMessage(err, 'The accounts could not be read. Please try again.'));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const kinds: ConnectKind[] = setup?.kinds?.length ? setup.kinds : [...CONNECT_KINDS];
+  const viaService = setup?.via === 'service';
+  const someOff = setup !== null && kinds.some((kind) => !setup.ready[kind]);
 
   return (
     <section className="rounded-lg border border-border bg-card">
-      <div className="border-b border-border px-4 py-3">
-        <h3 className="text-base font-semibold text-foreground">Connect an account</h3>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Press Connect and log in at the platform. You come back here with the account in the list.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-semibold text-foreground">Connect an account</h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Press Connect and log in at the platform. You come back here with the account in the list.
+          </p>
+        </div>
+        {viaService && (
+          <Button variant="ghost" size="sm" disabled={refreshing} onClick={() => void refresh()}>
+            {refreshing ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
+            Refresh the list
+          </Button>
+        )}
       </div>
       <ul className="divide-y divide-border">
-        {CONNECT_KINDS.map((kind) => {
+        {kinds.map((kind) => {
           const ready = setup?.ready[kind] === true;
           const off = setup !== null && !ready;
           return (
@@ -76,7 +108,7 @@ export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, 
                 {off && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     <SetupHint other="Not switched on yet.">
-                      Needs {(setup?.needs?.[kind]?.length ? setup.needs[kind] : CONNECT_SETTINGS[kind]).join(' and ')} in the server settings.
+                      Needs {missing(setup, kind).join(' and ')} in the server settings.
                     </SetupHint>
                   </p>
                 )}
@@ -97,10 +129,12 @@ export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, 
           Connecting could not be checked just now. Reload the page to try again.
         </p>
       )}
-      {someOff && setup?.callback && (
+      {setup?.callback && (viaService || someOff) && (
         <SetupHint other={null}>
           <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
-            Each platform asks for a return address when you create its app. Give every one this address:{' '}
+            {viaService
+              ? 'After the log-in, people must be sent back to this page. In the posting service’s dashboard, set the project’s redirect URL to: '
+              : 'Each platform asks for a return address when you create its app. Give every one this address: '}
             <code className="break-all rounded bg-muted px-1 py-0.5 text-foreground">{setup.callback}</code>
           </p>
         </SetupHint>

@@ -25,7 +25,8 @@ export type PublishDeps = {
   env: Record<string, string | undefined>;
 };
 
-export type SocialAccountRow = { id: string; provider: string; external_account_id: string | null };
+/** `credential_ref` says where the account's key is kept: with us, or with the posting service (see service.ts). */
+export type SocialAccountRow = { id: string; provider: string; external_account_id: string | null; credential_ref?: string | null };
 
 export type SocialPost = {
   id: string;

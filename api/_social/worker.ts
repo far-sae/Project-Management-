@@ -1,5 +1,6 @@
 import { PublishError, publishPost, type PublishDeps, type SocialAccountRow, type SocialPost } from "./publishers.js";
 import { PLATFORM_NAME, isPlatform, type PostMedia } from "./shared/platforms.js";
+import { serviceIdOf, servicePost, serviceResult } from "./service.js";
 import { isStale, readSecret, refreshSecret, writeSecret, type AccountSecret } from "./tokens.js";
 
 /**
@@ -21,6 +22,8 @@ export type ContentRow = {
   media_urls?: string[] | null;
   media?: unknown;
   options?: unknown;
+  /** While a post is with the posting service: its note of that (see `handedOver`). Afterwards: where the post is. */
+  external_post_id?: string | null;
 };
 
 export type WorkerStore = {
@@ -31,6 +34,8 @@ export type WorkerStore = {
   secret(accountId: string): Promise<string | null>;
   saveSecret(accountId: string, plain: string): Promise<void>;
   markPublished(row: ContentRow, externalId: string): Promise<void>;
+  /** Notes that the posting service has taken the post (or, with null, forgets that), so it is never handed over twice. */
+  markHandedOver(id: string, note: string | null): Promise<void>;
   markFailed(id: string, message: string): Promise<void>;
   /** Puts a claimed post back in the queue, untouched, for the next run. */
   release(id: string): Promise<void>;
@@ -46,6 +51,21 @@ export const BUDGET_MS = 240_000;
 export const NO_ACCOUNT_MESSAGE = "No account was chosen for this post.";
 export const NOT_CONNECTED_MESSAGE = "This account is not connected. Connect it again, then try the post again.";
 export const FAILED_MESSAGE = "The post could not be sent. Try again.";
+export const TOO_LONG_MESSAGE = "Posting took too long and was stopped. Try again.";
+
+/** How long one run waits for a platform's answer to a post the service took, and how often it looks. */
+export const SERVICE_WAIT_MS = 15_000;
+export const SERVICE_LOOK_MS = 3_000;
+/** After this long without an answer, the post counts as not sent. */
+export const SERVICE_GIVE_UP_MS = 45 * 60_000;
+
+const HANDED_OVER = /^pfm:([A-Za-z0-9_-]{3,80}):(\d{1,16})$/;
+/** The note kept on a post while the posting service has it: the service's id of the post, and when it took it. */
+export const handedOverNote = (postId: string, at: number): string => `pfm:${postId}:${at}`;
+export function handedOver(note: string | null | undefined): { postId: string; at: number } | null {
+  const m = HANDED_OVER.exec(note ?? "");
+  return m ? { postId: m[1], at: Number(m[2]) } : null;
+}
 
 const VIDEO_FILE = /\.(mp4|mov|m4v|webm)(\?|#|$)/i;
 
@@ -79,9 +99,42 @@ const postOf = (row: ContentRow): SocialPost => ({
   options: row.options && typeof row.options === "object" && !Array.isArray(row.options) ? (row.options as Record<string, unknown>) : {},
 });
 
-async function sendOne(store: WorkerStore, d: WorkerDeps, row: ContentRow): Promise<string> {
+/**
+ * A post for an account connected through the posting service. The service
+ * takes the post at once and the platform answers a little later, so this
+ * waits a short while for the answer. Null means "not answered yet": the post
+ * goes back in the queue, and the next run only asks again. It is never handed
+ * over a second time.
+ */
+async function sendViaService(store: WorkerStore, d: WorkerDeps, row: ContentRow, account: SocialAccountRow, serviceId: string): Promise<string | null> {
+  if (!isPlatform(account.provider)) throw new PublishError(FAILED_MESSAGE);
+  let sent = handedOver(row.external_post_id);
+  if (!sent) {
+    const postId = await servicePost(d, serviceId, account.provider, postOf(row));
+    if (!postId) return null;
+    sent = { postId, at: d.now() };
+    await store.markHandedOver(row.id, handedOverNote(postId, sent.at));
+  }
+  const until = d.now() + SERVICE_WAIT_MS;
+  for (;;) {
+    const result = await serviceResult(d, sent.postId, account.provider);
+    if (result?.ok) return result.id;
+    if (result || d.now() - sent.at > SERVICE_GIVE_UP_MS) {
+      // Over, and not sent: forget the hand-over, so "Try again" sends it afresh.
+      await store.markHandedOver(row.id, null);
+      throw result ? new PublishError(result.message, result.reconnect) : new PublishError(TOO_LONG_MESSAGE);
+    }
+    if (d.now() + SERVICE_LOOK_MS > until) return null;
+    await d.wait(SERVICE_LOOK_MS);
+  }
+}
+
+async function sendOne(store: WorkerStore, d: WorkerDeps, row: ContentRow): Promise<string | null> {
   if (!row.account_id) throw new PublishError(NO_ACCOUNT_MESSAGE);
-  const [account, saved] = await Promise.all([store.account(row.account_id), store.secret(row.account_id)]);
+  const account = await store.account(row.account_id);
+  const serviceId = account ? serviceIdOf(account) : null;
+  if (account && serviceId) return sendViaService(store, d, row, account, serviceId);
+  const saved = account ? await store.secret(row.account_id) : null;
   if (!account || !saved) throw new PublishError(NOT_CONNECTED_MESSAGE, true);
   const name = isPlatform(account.provider) ? PLATFORM_NAME[account.provider] : "This";
 
@@ -127,6 +180,12 @@ export async function runWorker(store: WorkerStore, d: WorkerDeps, limit: number
     }
     try {
       const externalId = await sendOne(store, d, row);
+      if (externalId === null) {
+        // With the posting service, not answered yet: back in the queue for the next run to ask again.
+        await store.release(row.id);
+        out.putBack += 1;
+        continue;
+      }
       await store.markPublished(row, externalId);
       if (row.account_id) await store.markAccount(row.account_id, null);
       out.published += 1;

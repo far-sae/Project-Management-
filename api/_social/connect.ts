@@ -22,9 +22,10 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { AccountSecret } from "./tokens.js";
 import {
-  CONNECT_KINDS, CONNECT_SETTINGS, isConnectKind,
-  type ConnectKind, type ConnectOutcome, type ConnectSetup,
+  CONNECT_KINDS, CONNECT_SETTINGS, SERVICE_KINDS, isConnectKind, isServiceKind,
+  type ConnectOutcome, type ConnectSetup, type DirectKind as ConnectKind,
 } from "./shared/connect.js";
+import { SERVICE_CONNECT_FAILED, serviceAccounts, serviceAuthUrl, serviceOn } from "./service.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -40,6 +41,16 @@ export type SavedAccount = {
   secret: AccountSecret;
 };
 
+/** An account connected through the posting service: it keeps the keys, we keep its id of the account. */
+export type SavedServiceAccount = {
+  organizationId: string;
+  workspaceId: string;
+  userId: string;
+  provider: string;
+  serviceId: string;
+  name: string;
+};
+
 export type ConnectStore = {
   /** True when the person is the owner or an admin of the organisation. */
   isAdmin(organizationId: string, userId: string): Promise<boolean>;
@@ -47,6 +58,8 @@ export type ConnectStore = {
   workspaceOrg(workspaceId: string): Promise<string | null>;
   /** Stores the account (new, or the same one connected again) with its keys sealed. */
   saveAccount(account: SavedAccount): Promise<void>;
+  /** Stores an account of the posting service (new, or the same one connected again). */
+  saveServiceAccount(account: SavedServiceAccount): Promise<void>;
 };
 
 export type ConnectDeps = {
@@ -82,6 +95,17 @@ export function callbackUrl(env: Env): string | null {
 }
 
 export function connectSetup(env: Env): ConnectSetup {
+  // With the posting service on, every platform it has can be connected, and none needs a key of ours.
+  if (serviceOn(env)) {
+    const site = set(env, "PUBLIC_SITE_URL").replace(/\/+$/, "");
+    return {
+      via: "service",
+      kinds: [...SERVICE_KINDS],
+      ready: Object.fromEntries(SERVICE_KINDS.map((kind) => [kind, true])),
+      needs: Object.fromEntries(SERVICE_KINDS.map((kind) => [kind, []])),
+      callback: /^https:\/\/[^/]+/.test(site) ? `${site}/social` : null,
+    };
+  }
   const callback = callbackUrl(env);
   // Needed by every platform: the site's own https address, and the key that seals what is stored.
   const base = [...(callback ? [] : ["PUBLIC_SITE_URL"]), ...(set(env, "INTEGRATION_TOKEN_KEY") ? [] : ["INTEGRATION_TOKEN_KEY"])];
@@ -89,7 +113,7 @@ export function connectSetup(env: Env): ConnectSetup {
     CONNECT_KINDS.map((kind) => [kind, [...base, ...CONNECT_SETTINGS[kind].filter((name) => !set(env, name))]]),
   ) as Record<ConnectKind, string[]>;
   const ready = Object.fromEntries(CONNECT_KINDS.map((kind) => [kind, needs[kind].length === 0])) as Record<ConnectKind, boolean>;
-  return { ready, needs, callback };
+  return { via: "direct", kinds: [...CONNECT_KINDS], ready, needs, callback };
 }
 
 // ── The signed state ─────────────────────────────────────────────────────────
@@ -188,6 +212,18 @@ export async function startConnect(
   d: ConnectDeps,
   input: { kind: unknown; organizationId: string; workspaceId: string; userId: string },
 ): Promise<{ url: string; cookie: string }> {
+  if (serviceOn(d.env)) {
+    if (!isServiceKind(input.kind)) throw new ConnectError(400, "That platform cannot be connected here.");
+    if (!(await mayConnect(d, input.organizationId, input.workspaceId, input.userId))) {
+      throw new ConnectError(403, "Only an owner or admin can connect a social account.");
+    }
+    try {
+      // The service does the whole log-in and sends the person back to the Social page itself.
+      return { url: await serviceAuthUrl(d, input.kind, input.workspaceId), cookie: "" };
+    } catch {
+      throw new ConnectError(502, SERVICE_CONNECT_FAILED);
+    }
+  }
   if (!isConnectKind(input.kind)) throw new ConnectError(400, "That platform cannot be connected here.");
   if (!(await mayConnect(d, input.organizationId, input.workspaceId, input.userId))) {
     throw new ConnectError(403, "Only an owner or admin can connect a social account.");
@@ -204,6 +240,31 @@ export async function startConnect(
     url: loginAddress(input.kind, d.env, redirect, state, nonce),
     cookie: `${STATE_COOKIE}=${nonce}; Path=${COOKIE_PATH}; Max-Age=${STATE_MINUTES * 60}; HttpOnly; Secure; SameSite=Lax`,
   };
+}
+
+/**
+ * After a log-in through the posting service: brings the accounts it now holds
+ * for this workspace into our own list. Safe to run at any time, and again.
+ */
+export async function syncConnect(
+  d: ConnectDeps,
+  input: { organizationId: string; workspaceId: string; userId: string; accountIds?: unknown },
+): Promise<{ connected: number }> {
+  if (!serviceOn(d.env)) return { connected: 0 };
+  if (!(await mayConnect(d, input.organizationId, input.workspaceId, input.userId))) {
+    throw new ConnectError(403, "Only an owner or admin can connect a social account.");
+  }
+  let found: Awaited<ReturnType<typeof serviceAccounts>>;
+  try {
+    const named = Array.isArray(input.accountIds) ? input.accountIds.filter((id): id is string => typeof id === "string") : [];
+    found = await serviceAccounts(d, input.workspaceId, named);
+  } catch {
+    throw new ConnectError(502, "The accounts could not be read. Please try again.");
+  }
+  for (const account of found) {
+    await d.store.saveServiceAccount({ organizationId: input.organizationId, workspaceId: input.workspaceId, userId: input.userId, ...account });
+  }
+  return { connected: found.length };
 }
 
 // ── Coming back ──────────────────────────────────────────────────────────────
@@ -372,7 +433,7 @@ export function connectHandler(d: ConnectHttpDeps) {
       res.redirect(302, location);
       return;
     }
-    if (route !== "setup" && route !== "start") {
+    if (route !== "setup" && route !== "start" && route !== "sync") {
       res.status(404).json({ error: "Not found" });
       return;
     }
@@ -391,10 +452,16 @@ export function connectHandler(d: ConnectHttpDeps) {
     }
     try {
       const body = obj(req.body);
+      if (route === "sync") {
+        res.status(200).json(await syncConnect(d, {
+          organizationId: text(body.organizationId), workspaceId: text(body.workspaceId), userId, accountIds: body.accountIds,
+        }));
+        return;
+      }
       const { url, cookie } = await startConnect(d, {
         kind: body.kind, organizationId: text(body.organizationId), workspaceId: text(body.workspaceId), userId,
       });
-      res.setHeader("Set-Cookie", cookie);
+      if (cookie) res.setHeader("Set-Cookie", cookie);
       res.status(200).json({ url });
     } catch (e) {
       if (e instanceof ConnectError) {

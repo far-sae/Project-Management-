@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   listSocialData: vi.fn(),
   updateSocialContentStatus: vi.fn(async () => {}),
   runSocialPublish: vi.fn(async () => {}),
+  syncSocialAccounts: vi.fn(async () => 1),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -17,6 +18,7 @@ vi.mock('sonner', () => ({ toast: h.toast }));
 vi.mock('@/services/social/connect', () => ({
   socialConnectSetup: async () => ({ ready: { youtube: true, meta: true, x: true, tiktok: true, linkedin: true }, callback: null }),
   startSocialConnect: vi.fn(),
+  syncSocialAccounts: h.syncSocialAccounts,
   CONNECT_FAILED_MESSAGE: 'The account could not be connected. Please try again.',
 }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1' } }) }));
@@ -162,5 +164,30 @@ describe('back from logging in at a platform', () => {
     await show();
     expect(h.toast.success).not.toHaveBeenCalled();
     expect(h.toast.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('back from the posting service', () => {
+  afterEach(() => { window.history.replaceState(null, '', '/'); });
+  beforeEach(() => { h.syncSocialAccounts.mockReset().mockResolvedValue(1); h.toast.success.mockClear(); });
+
+  it('brings the new account into the list, says so, and clears the note from the address', async () => {
+    window.history.replaceState(null, '', '/social?provider=youtube&projectId=proj_1&isSuccess=true&accountIds=spc_1');
+    render(<SocialMedia />);
+    await screen.findByRole('heading', { name: 'Connected accounts' });
+    await waitFor(() => expect(h.syncSocialAccounts).toHaveBeenCalledWith('org-1', 'ws-1', ['spc_1']));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('The account is connected.'));
+    // The list was read again after the accounts were brought in.
+    await waitFor(() => expect(h.listSocialData.mock.calls.length).toBeGreaterThan(1));
+    expect(window.location.search).toBe('');
+    expect(h.syncSocialAccounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('says plainly when the log-in was cancelled or failed, never the service\'s own words', async () => {
+    h.syncSocialAccounts.mockResolvedValue(0);
+    window.history.replaceState(null, '', '/social?provider=tiktok&isSuccess=false&error=' + encodeURIComponent('OAuth state mismatch {"code":401}'));
+    render(<SocialMedia />);
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('Nothing was connected. Press Connect to try again.'));
+    expect(JSON.stringify(h.toast.error.mock.calls)).not.toContain('OAuth');
   });
 });

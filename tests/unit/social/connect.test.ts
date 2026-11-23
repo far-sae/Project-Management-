@@ -7,8 +7,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  ConnectError, STATE_COOKIE, STATE_MINUTES, connectHandler, connectSetup, finishConnect, startConnect,
-  type ConnectDeps, type SavedAccount,
+  ConnectError, STATE_COOKIE, STATE_MINUTES, connectHandler, connectSetup, finishConnect, startConnect, syncConnect,
+  type ConnectDeps, type SavedAccount, type SavedServiceAccount,
 } from "../../../api/_social/connect";
 import { CONNECT_KINDS, CONNECT_SETTINGS } from "../../../api/_social/shared/connect";
 
@@ -30,6 +30,7 @@ type Reply = { status?: number; json?: unknown };
 function setUp(over: { env?: Record<string, string | undefined>; admin?: boolean; workspaceOrg?: string | null; reply?: (call: Call) => Reply; now?: number } = {}) {
   const calls: Call[] = [];
   const saved: SavedAccount[] = [];
+  const linked: SavedServiceAccount[] = [];
   let admin = over.admin ?? true;
   let now = over.now ?? NOW;
   let n = 0;
@@ -47,9 +48,10 @@ function setUp(over: { env?: Record<string, string | undefined>; admin?: boolean
       isAdmin: async () => admin,
       workspaceOrg: async () => (over.workspaceOrg === undefined ? "org-1" : over.workspaceOrg),
       saveAccount: async (account) => { saved.push(account); },
+      saveServiceAccount: async (account) => { linked.push(account); },
     },
   };
-  return { deps, calls, saved, setAdmin: (value: boolean) => { admin = value; }, setNow: (value: number) => { now = value; } };
+  return { deps, calls, saved, linked, setAdmin: (value: boolean) => { admin = value; }, setNow: (value: number) => { now = value; } };
 }
 
 const begin = (deps: ConnectDeps, kind: string) => startConnect(deps, { kind, organizationId: "org-1", workspaceId: "ws-1", userId: "user-1" });
@@ -60,6 +62,7 @@ const formOf = (call: Call) => Object.fromEntries(new URLSearchParams(call.body)
 describe("which platforms can be connected", () => {
   it("is each platform whose own keys are set", () => {
     expect(connectSetup(ENV)).toEqual({
+      via: "direct", kinds: ["youtube", "meta", "x", "tiktok", "linkedin"],
       ready: { youtube: true, meta: true, x: true, tiktok: true, linkedin: true },
       needs: { youtube: [], meta: [], x: [], tiktok: [], linkedin: [] },
       callback: CALLBACK,
@@ -349,6 +352,100 @@ describe("the three addresses", () => {
 
   it("answer nothing else", async () => {
     expect((await call(setUp(), "elsewhere", {})).status).toBe(404);
+  });
+});
+
+describe("through the posting service", () => {
+  const SERVICE = { ...ENV, POST_FOR_ME_API_KEY: "pfm_key" };
+  const TAG = "tc_ws-1";
+
+  it("offers its own list of platforms, all ready, with no key of ours for any of them", () => {
+    const bare = { POST_FOR_ME_API_KEY: "pfm_key", PUBLIC_SITE_URL: "https://app.example.com" };
+    expect(connectSetup(bare)).toEqual({
+      via: "service", kinds: ["youtube", "facebook", "instagram", "x", "tiktok", "linkedin"],
+      ready: { youtube: true, facebook: true, instagram: true, x: true, tiktok: true, linkedin: true },
+      needs: { youtube: [], facebook: [], instagram: [], x: [], tiktok: [], linkedin: [] },
+      // Where the service's project must send people back to.
+      callback: "https://app.example.com/social",
+    });
+    expect(connectSetup({ POST_FOR_ME_API_KEY: "pfm_key" }).callback).toBeNull();
+  });
+
+  it("sends an owner or admin to the log-in address the service gives, with no mark of ours to carry", async () => {
+    const s = setUp({ env: SERVICE, reply: () => ({ json: { url: "https://www.tiktok.com/v2/auth/authorize?x=1" } }) });
+    const { url, cookie } = await begin(s.deps, "tiktok");
+    expect(url).toBe("https://www.tiktok.com/v2/auth/authorize?x=1");
+    expect(cookie).toBe("");
+    expect(s.calls[0].url).toBe("https://api.postforme.dev/v1/social-accounts/auth-url");
+    expect(JSON.parse(s.calls[0].body)).toEqual({ platform: "tiktok", external_id: TAG });
+    expect(s.calls[0].headers.Authorization).toBe("Bearer pfm_key");
+  });
+
+  it("refuses a member, a workspace of another organisation and a platform it does not have", async () => {
+    const member = setUp({ env: SERVICE, admin: false });
+    await expect(begin(member.deps, "youtube")).rejects.toMatchObject({ status: 403 });
+    const elsewhere = setUp({ env: SERVICE, workspaceOrg: "org-2" });
+    await expect(begin(elsewhere.deps, "youtube")).rejects.toMatchObject({ status: 403 });
+    const s = setUp({ env: SERVICE });
+    // "meta" is the one log-in of our own app; the service has Facebook and Instagram apart.
+    await expect(begin(s.deps, "meta")).rejects.toMatchObject({ status: 400 });
+    expect(member.calls.length + elsewhere.calls.length + s.calls.length).toBe(0);
+  });
+
+  it("says plainly when the service gives no address", async () => {
+    const s = setUp({ env: SERVICE, reply: () => ({ status: 401, json: { message: "Invalid API key pfm_key" } }) });
+    const error = await begin(s.deps, "x").catch((e) => e);
+    expect(error).toBeInstanceOf(ConnectError);
+    expect(error.message).toBe("The account could not be connected. Please try again.");
+  });
+
+  const sync = (deps: ConnectDeps) => syncConnect(deps, { organizationId: "org-1", workspaceId: "ws-1", userId: "user-1" });
+
+  it("brings the workspace's accounts into our list after the log-in", async () => {
+    const s = setUp({ env: SERVICE, reply: () => ({ json: { data: [
+      { id: "spc_1", platform: "youtube", username: "Northwind channel", status: "connected", external_id: TAG, access_token: "secret" },
+      { id: "spc_2", platform: "instagram", username: "northwind.studio", status: "connected", external_id: TAG },
+      { id: "spc_9", platform: "facebook", username: "Somebody else", status: "connected", external_id: "tc_ws-2" },
+    ] } }) });
+    expect(await sync(s.deps)).toEqual({ connected: 2 });
+    expect(s.linked).toEqual([
+      { organizationId: "org-1", workspaceId: "ws-1", userId: "user-1", provider: "youtube", serviceId: "spc_1", name: "Northwind channel" },
+      { organizationId: "org-1", workspaceId: "ws-1", userId: "user-1", provider: "instagram", serviceId: "spc_2", name: "northwind.studio" },
+    ]);
+    expect(JSON.stringify(s.linked)).not.toContain("secret");
+  });
+
+  it("passes on the accounts the log-in named, as a short list of ids only", async () => {
+    const s = setUp({ env: SERVICE, reply: (call) => (call.url.includes("id=") && !call.url.includes("external_id=")
+      ? { json: { data: [{ id: "spc_7", platform: "tiktok", username: "northwind", status: "connected", external_id: null }] } }
+      : { json: { data: [] } }) });
+    const many = Array.from({ length: 40 }, (_, i) => `spc_${i}`);
+    const out = await syncConnect(s.deps, { organizationId: "org-1", workspaceId: "ws-1", userId: "user-1", accountIds: ["spc_7", 12, "<script>", ...many] });
+    expect(out).toEqual({ connected: 1 });
+    expect(s.linked[0]).toMatchObject({ provider: "tiktok", serviceId: "spc_7" });
+    const asked = new URL(s.calls[1].url).searchParams.getAll("id");
+    expect(asked[0]).toBe("spc_7");
+    expect(asked.length).toBeLessThanOrEqual(20);
+    expect(asked.every((id) => /^[A-Za-z0-9_-]+$/.test(id))).toBe(true);
+  });
+
+  it("brings nothing for a member, or while the service is off", async () => {
+    const member = setUp({ env: SERVICE, admin: false });
+    await expect(sync(member.deps)).rejects.toMatchObject({ status: 403 });
+    const off = setUp();
+    expect(await sync(off.deps)).toEqual({ connected: 0 });
+    expect(off.calls).toEqual([]);
+  });
+
+  it("has an address for it, for a signed-in person only", async () => {
+    const s = setUp({ env: SERVICE, reply: () => ({ json: { data: [{ id: "spc_1", platform: "x", username: "northwind", status: "connected", external_id: TAG }] } }) });
+    const sent: { status: number; body: unknown } = { status: 0, body: null };
+    const res = { setHeader: () => res, status: (code: number) => { sent.status = code; return res; }, json: (body: unknown) => { sent.body = body; return res; } };
+    const body = { organizationId: "org-1", workspaceId: "ws-1" };
+    await connectHandler({ ...s.deps, userOf: async () => "user-1" })({ method: "POST", query: {}, body, headers: {} } as never, res as never, "sync");
+    expect(sent).toEqual({ status: 200, body: { connected: 1 } });
+    await connectHandler({ ...s.deps, userOf: async () => null })({ method: "POST", query: {}, body, headers: {} } as never, res as never, "sync");
+    expect(sent.status).toBe(401);
   });
 });
 

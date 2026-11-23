@@ -9,7 +9,7 @@ import type { ConnectKind, ConnectSetup } from '../../../api/_social/shared/conn
 export const CONNECT_FAILED_MESSAGE = 'The account could not be connected. Please try again.';
 const SIGNED_OUT_MESSAGE = 'Please sign in again.';
 
-async function call<T>(route: 'setup' | 'start', body?: unknown): Promise<T> {
+async function call<T>(route: 'setup' | 'start' | 'sync', body?: unknown): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error(SIGNED_OUT_MESSAGE);
@@ -32,4 +32,13 @@ export const startSocialConnect = async (kind: ConnectKind, organizationId: stri
   const { url } = await call<{ url?: string }>('start', { kind, organizationId, workspaceId });
   if (!url) throw new Error(CONNECT_FAILED_MESSAGE);
   return url;
+};
+
+/**
+ * After a log-in through the posting service: brings the workspace's accounts
+ * into our list. Answers how many accounts the workspace has there.
+ */
+export const syncSocialAccounts = async (organizationId: string, workspaceId: string, accountIds: string[] = []): Promise<number> => {
+  const { connected } = await call<{ connected?: number }>('sync', { organizationId, workspaceId, ...(accountIds.length ? { accountIds } : {}) });
+  return typeof connected === 'number' ? connected : 0;
 };

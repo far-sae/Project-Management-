@@ -1,5 +1,5 @@
 import { publicMessage, publicText } from '@/lib/publicError';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, CalendarDays, Check, Clock, Film, ImageIcon, Library, Loader2, Plus, RotateCcw, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
@@ -10,7 +10,8 @@ import { useAllTasks } from '@/hooks/useAllTasks';
 import { createSocialAccount, createSocialCampaign, createSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, updateSocialCampaignStatus, updateSocialContentStatus } from '@/services/supabase/social';
 import { SocialComposer } from '@/components/social/SocialComposer';
 import { ConnectAccounts } from '@/components/social/ConnectAccounts';
-import { connectReturnMessage, readConnectReturn } from '@/lib/socialConnect';
+import { CONNECT_FAILED, SERVICE_CONNECTED, SERVICE_NOT_CONNECTED, connectReturnMessage, readConnectReturn, readServiceReturn } from '@/lib/socialConnect';
+import { syncSocialAccounts } from '@/services/social/connect';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { groupPosts, groupSummary, isOnItsWay, type PostGroup } from '@/lib/socialCompose';
 import { PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
@@ -88,12 +89,37 @@ export const SocialMedia: React.FC = () => {
   }, [orgId, workspaceId]);
   useEffect(() => { void load(); }, [load]);
 
+  // Back from a log-in through the posting service: bring the account into the
+  // list, say how it went, and take the note out of the address.
+  const [serviceBack] = useState(() => readServiceReturn(window.location.search));
+  const serviceHandled = useRef(false);
+  useEffect(() => {
+    if (!serviceBack || serviceHandled.current || !orgId || !workspaceId) return;
+    serviceHandled.current = true;
+    setTab('accounts');
+    window.history.replaceState(window.history.state, '', window.location.pathname);
+    void (async () => {
+      try {
+        const connected = await syncSocialAccounts(orgId, workspaceId, serviceBack.accountIds);
+        if (serviceBack.ok && connected > 0) toast.success(SERVICE_CONNECTED); else toast.error(SERVICE_NOT_CONNECTED);
+        await load(true);
+      } catch (error) { toast.error(publicMessage(error, CONNECT_FAILED)); }
+    })();
+  }, [serviceBack, orgId, workspaceId, load]);
+
   // While a post is on its way out, look again every few seconds, so each
   // platform's result shows up by itself.
   const waiting = useMemo(() => content.some((item) => isOnItsWay(item, Date.now())), [content]);
+  // Every fourth look also asks the server to check the posts that are with a
+  // platform, so an answer shows within seconds and not at the next five-minute run.
+  const looks = useRef(0);
   useEffect(() => {
-    if (!waiting) return;
-    const timer = window.setTimeout(() => void load(true), 5000);
+    if (!waiting) { looks.current = 0; return; }
+    const timer = window.setTimeout(() => {
+      looks.current += 1;
+      if (looks.current % 4 === 0) void runSocialPublish().catch(() => undefined).then(() => load(true));
+      else void load(true);
+    }, 5000);
     return () => window.clearTimeout(timer);
   }, [waiting, content, load]);
   const groups = useMemo(() => groupPosts(content), [content]);
@@ -146,7 +172,7 @@ export const SocialMedia: React.FC = () => {
         : <GroupCard key={group.id} group={group} accountName={(id) => accountsById.get(id ?? '')} onRetry={retry} />))}</TabsContent>
       <TabsContent value="calendar"><SectionHeader title="Content calendar" /> <div className="mt-3 space-y-2">{content.filter((item) => item.scheduledAt).sort((a,b) => a.scheduledAt!.getTime() - b.scheduledAt!.getTime()).map((item) => <ContentCard key={item.id} item={item} onStatus={setStatus} />)}{content.every((item) => !item.scheduledAt) && <Empty text="Nothing scheduled." />}</div></TabsContent>
       <TabsContent value="campaigns" className="space-y-3"><SectionHeader title="Campaigns" action="New campaign" onClick={() => setCreateKind('campaign')} />{campaigns.length === 0 ? <Empty text="No campaigns yet." /> : campaigns.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between gap-3 p-4"><div><p className="font-semibold">{item.name}</p><p className="text-sm text-muted-foreground">{item.objective || 'No objective'} · {workspaceProjects.find((p) => p.projectId === item.projectId)?.name || 'No linked project'}</p></div><div className="flex items-center gap-2"><Badge>{item.status}</Badge>{item.status !== 'finished' && <Button size="sm" variant="outline" onClick={async () => { await updateSocialCampaignStatus(item.id, item.status === 'active' ? 'paused' : 'active'); await load(); }}>{item.status === 'active' ? 'Pause' : 'Activate'}</Button>}</div></CardContent></Card>)}</TabsContent>
-      <TabsContent value="accounts" className="space-y-3"><ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} /><SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />{accounts.length === 0 ? <Empty text="No account connected yet. Press Connect above." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
+      <TabsContent value="accounts" className="space-y-3"><ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} onChanged={() => void load(true)} /><SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />{accounts.length === 0 ? <Empty text="No account connected yet. Press Connect above." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
       <TabsContent value="analytics" className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Metric label="Impressions" value={totals.impressions} /><Metric label="Clicks" value={totals.clicks} /><Metric label="Reactions" value={totals.reactions} /></div><Card><CardHeader><CardTitle>Campaign analytics</CardTitle></CardHeader><CardContent className="space-y-2">{campaignAnalytics.length === 0 ? <p className="text-sm text-muted-foreground">No campaigns to measure yet.</p> : campaignAnalytics.map(({ campaign, posts, impressions, clicks, reactions }) => <div key={campaign.id} className="grid grid-cols-[minmax(0,1fr)_repeat(4,auto)] gap-4 rounded-lg border p-3 text-sm"><b className="truncate">{campaign.name}</b><span>{posts} posts</span><span>{impressions.toLocaleString()} views</span><span>{clicks.toLocaleString()} clicks</span><span>{reactions.toLocaleString()} reactions</span></div>)}</CardContent></Card></TabsContent>
     </Tabs>}
 

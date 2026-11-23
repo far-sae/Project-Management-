@@ -62,7 +62,7 @@ export function supabaseStore(db: SupabaseClient, key: () => string): WorkerStor
       return (data ?? []) as ContentRow[];
     },
     async account(id) {
-      const { data } = await db.from('social_accounts').select('id, provider, external_account_id').eq('id', id).maybeSingle();
+      const { data } = await db.from('social_accounts').select('id, provider, external_account_id, credential_ref').eq('id', id).maybeSingle();
       return (data as SocialAccountRow | null) ?? null;
     },
     async secret(accountId) {
@@ -77,6 +77,9 @@ export function supabaseStore(db: SupabaseClient, key: () => string): WorkerStor
     async markPublished(row, externalId) {
       await db.from('social_content').update({ status: 'published', published_at: new Date().toISOString(), external_post_id: externalId, last_error: null }).eq('id', row.id);
       await db.from('social_content_metrics').upsert({ content_id: row.id, organization_id: row.organization_id, workspace_id: row.workspace_id }, { onConflict: 'content_id' });
+    },
+    async markHandedOver(id, note) {
+      await db.from('social_content').update({ external_post_id: note }).eq('id', id);
     },
     async markFailed(id, message) {
       await db.from('social_content').update({ status: 'failed', last_error: message }).eq('id', id);

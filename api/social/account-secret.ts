@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { env, serviceClient } from '../_lib/context';
 import { encryptSecret } from '../_lib/crypto';
 import { connectHandler, type ConnectStore } from '../_social/connect';
+import { SERVICE_REF } from '../_social/service';
 import { writeSecret } from '../_social/tokens';
 
 /** True when the person is the owner or an admin of the organisation. */
@@ -37,6 +38,16 @@ export function connectStore(db: SupabaseClient, key: () => string): ConnectStor
       const stored = await db.from('social_account_secrets').upsert({ account_id: id, secret_encrypted: encrypted, updated_at: new Date().toISOString() }, { onConflict: 'account_id' });
       if (stored.error) throw new Error('key not stored');
       await db.from('social_accounts').update({ credential_ref: `social_account_secrets:${id}` }).eq('id', id);
+    },
+    async saveServiceAccount(account) {
+      // The posting service keeps this account's keys. Our row carries only the service's id of it.
+      const { error } = await db.from('social_accounts').upsert({
+        organization_id: account.organizationId, workspace_id: account.workspaceId, provider: account.provider,
+        external_account_id: account.serviceId, display_name: account.name.slice(0, 200), status: 'connected',
+        last_error: null, connected_by: account.userId, credential_ref: `${SERVICE_REF}${account.serviceId}`,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'workspace_id,provider,external_account_id' });
+      if (error) throw new Error('account not stored');
     },
   };
 }

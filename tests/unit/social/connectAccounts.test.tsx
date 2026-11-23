@@ -10,20 +10,23 @@ import type { ConnectSetup } from '../../../api/_social/shared/connect';
 const h = vi.hoisted(() => ({
   socialConnectSetup: vi.fn(),
   startSocialConnect: vi.fn(),
+  syncSocialAccounts: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 vi.mock('sonner', () => ({ toast: h.toast }));
 vi.mock('@/services/social/connect', () => ({
   socialConnectSetup: h.socialConnectSetup,
   startSocialConnect: h.startSocialConnect,
+  syncSocialAccounts: h.syncSocialAccounts,
   CONNECT_FAILED_MESSAGE: 'The account could not be connected. Please try again.',
 }));
 
 import { ConnectAccounts } from '@/components/social/ConnectAccounts';
-import { connectReturnMessage, readConnectReturn } from '@/lib/socialConnect';
+import { connectReturnMessage, readConnectReturn, readServiceReturn } from '@/lib/socialConnect';
 
 const CALLBACK = 'https://app.example.com/api/social/connect/callback';
 const allReady: ConnectSetup = {
+  via: 'direct', kinds: ['youtube', 'meta', 'x', 'tiktok', 'linkedin'],
   ready: { youtube: true, meta: true, x: true, tiktok: true, linkedin: true },
   needs: { youtube: [], meta: [], x: [], tiktok: [], linkedin: [] },
   callback: CALLBACK,
@@ -129,6 +132,61 @@ describe('Connect an account', () => {
   });
 });
 
+describe('through the posting service', () => {
+  const service: ConnectSetup = {
+    via: 'service', kinds: ['youtube', 'facebook', 'instagram', 'x', 'tiktok', 'linkedin'],
+    ready: { youtube: true, facebook: true, instagram: true, x: true, tiktok: true, linkedin: true },
+    needs: { youtube: [], facebook: [], instagram: [], x: [], tiktok: [], linkedin: [] },
+    callback: 'https://app.example.com/social',
+  };
+  beforeEach(() => {
+    h.socialConnectSetup.mockResolvedValue(service);
+    h.syncSocialAccounts.mockReset().mockResolvedValue(2);
+  });
+
+  it('offers Facebook and Instagram each with its own Connect, all ready with no key of ours', async () => {
+    await show();
+    for (const name of ['YouTube', 'Facebook', 'Instagram', 'X', 'TikTok', 'LinkedIn']) {
+      await waitFor(() => expect((within(row(name)).getByRole('button', { name: `Connect ${name}` }) as HTMLButtonElement).disabled).toBe(false));
+    }
+    expect(screen.queryByRole('listitem', { name: 'Facebook and Instagram' })).toBeNull();
+    expect(screen.queryByText(/Needs /)).toBeNull();
+  });
+
+  it('starts the log-in for the platform that was pressed', async () => {
+    await show();
+    const button = await within(row('Instagram')).findByRole('button', { name: 'Connect Instagram' });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(h.startSocialConnect).toHaveBeenCalledWith('instagram', 'org-1', 'ws-1'));
+  });
+
+  it('tells the person who sets the site up where people must be sent back to, and nobody else', async () => {
+    await show();
+    await screen.findByText('https://app.example.com/social');
+    cleanup();
+    setInternalsVisible(false);
+    await show();
+    await waitFor(() => expect((within(row('YouTube')).getByRole('button', { name: 'Connect YouTube' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByText('https://app.example.com/social')).toBeNull();
+  });
+
+  it('can bring the list up to date by hand', async () => {
+    const onChanged = vi.fn();
+    render(<ConnectAccounts organizationId="org-1" workspaceId="ws-1" canConnect go={go} onChanged={onChanged} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh the list' }));
+    await waitFor(() => expect(h.syncSocialAccounts).toHaveBeenCalledWith('org-1', 'ws-1'));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it('has no Refresh while accounts are connected with our own apps', async () => {
+    h.socialConnectSetup.mockResolvedValue(allReady);
+    await show();
+    await waitFor(() => expect((within(row('YouTube')).getByRole('button', { name: 'Connect YouTube' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByRole('button', { name: 'Refresh the list' })).toBeNull();
+  });
+});
+
 describe('coming back from a platform', () => {
   it('reads how it ended from the page address', () => {
     expect(readConnectReturn('?connect=done&p=youtube&n=1')).toEqual({ outcome: 'done', kind: 'youtube', count: 1 });
@@ -137,6 +195,15 @@ describe('coming back from a platform', () => {
     // Anything else in the address is not taken as an outcome, and never reaches the screen.
     expect(readConnectReturn('?connect=<script>')).toBeNull();
     expect(readConnectReturn('?connect=done&p=<b>&n=1e9')).toEqual({ outcome: 'done', kind: null, count: 0 });
+  });
+
+  it('reads the posting service\'s own note: whether it worked, and which accounts it named', () => {
+    expect(readServiceReturn('?provider=facebook&projectId=p1&isSuccess=true&accountIds=spc_1,spc_2')).toEqual({ ok: true, accountIds: ['spc_1', 'spc_2'] });
+    expect(readServiceReturn('?isSuccess=true&accountIds=spc_1&accountIds=spc_2')).toEqual({ ok: true, accountIds: ['spc_1', 'spc_2'] });
+    expect(readServiceReturn('?isSuccess=false&error=denied')).toEqual({ ok: false, accountIds: [] });
+    // Anything that does not look like an id is dropped.
+    expect(readServiceReturn('?isSuccess=true&accountIds=' + encodeURIComponent('<b>,spc_3'))).toEqual({ ok: true, accountIds: ['spc_3'] });
+    expect(readServiceReturn('?tab=accounts')).toBeNull();
   });
 
   it('has one plain sentence for each ending', () => {

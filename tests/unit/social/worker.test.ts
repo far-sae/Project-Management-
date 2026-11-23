@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { BUDGET_MS, FAILED_MESSAGE, NOT_CONNECTED_MESSAGE, NO_ACCOUNT_MESSAGE, mediaOf, runWorker, type ContentRow, type WorkerDeps, type WorkerStore } from "../../../api/_social/worker";
+import { BUDGET_MS, FAILED_MESSAGE, NOT_CONNECTED_MESSAGE, NO_ACCOUNT_MESSAGE, SERVICE_GIVE_UP_MS, SERVICE_LOOK_MS, SERVICE_WAIT_MS, TOO_LONG_MESSAGE, handedOver, handedOverNote, mediaOf, runWorker, type ContentRow, type WorkerDeps, type WorkerStore } from "../../../api/_social/worker";
 import { CRON_LIMIT, PERSON_LIMIT, publishHandler } from "../../../api/social/publish";
 import { startingOptions } from "../../../api/_social/shared/platforms";
 
@@ -15,13 +15,14 @@ const row = (over: Partial<ContentRow> = {}): ContentRow => ({
   media_urls: [], media: [], options: startingOptions("x", shared), ...over,
 });
 
-function setUp(over: { rows?: ContentRow[]; secrets?: Record<string, string | null>; providers?: Record<string, string>; reply?: (url: string, n: number) => { status?: number; json?: unknown } } = {}) {
+function setUp(over: { refs?: Record<string, string>; rows?: ContentRow[]; secrets?: Record<string, string | null>; providers?: Record<string, string>; reply?: (url: string, n: number) => { status?: number; json?: unknown } } = {}) {
   const secrets: Record<string, string | null> = { "acc-x": "x-token", ...(over.secrets ?? {}) };
   const providers: Record<string, string> = { "acc-x": "x", "acc-yt": "youtube", ...(over.providers ?? {}) };
-  const log = { published: [] as Array<[string, string]>, failed: [] as Array<[string, string]>, released: [] as string[], accounts: [] as Array<[string, string | null]>, saved: [] as Array<[string, string]> };
+  const log = { handed: [] as Array<[string, string | null]>, published: [] as Array<[string, string]>, failed: [] as Array<[string, string]>, released: [] as string[], accounts: [] as Array<[string, string | null]>, saved: [] as Array<[string, string]> };
   const store: WorkerStore = {
     claim: vi.fn(async () => over.rows ?? [row()]),
-    account: async (id) => (providers[id] ? { id, provider: providers[id], external_account_id: "ext" } : null),
+    account: async (id) => (providers[id] ? { id, provider: providers[id], external_account_id: "ext", credential_ref: over.refs?.[id] ?? null } : null),
+    markHandedOver: async (id, note) => { log.handed.push([id, note]); },
     secret: async (id) => secrets[id] ?? null,
     saveSecret: async (id, plain) => { log.saved.push([id, plain]); secrets[id] = plain; },
     markPublished: async (r, externalId) => { log.published.push([r.id, externalId]); },
@@ -37,8 +38,9 @@ function setUp(over: { rows?: ContentRow[]; secrets?: Record<string, string | nu
       const out = over.reply?.(String(url), calls.length) ?? { json: { data: { id: "tweet-1" } } };
       return new Response(JSON.stringify(out.json ?? {}), { status: out.status ?? 200, headers: { "content-type": "application/json" } });
     }) as unknown as typeof fetch,
-    wait: async () => {},
-    env: { SUPABASE_URL: "https://abc.supabase.co", GOOGLE_CLIENT_ID: "cid", GOOGLE_CLIENT_SECRET: "cs", X_CLIENT_ID: "xid" },
+    // Waiting takes time: a wait moves the clock on.
+    wait: async (ms: number) => { clock += ms; },
+    env: { SUPABASE_URL: "https://abc.supabase.co", GOOGLE_CLIENT_ID: "cid", GOOGLE_CLIENT_SECRET: "cs", X_CLIENT_ID: "xid", POST_FOR_ME_API_KEY: "pfm_key" },
     now: () => clock,
   };
   return { store, deps, log, calls, tick: (ms: number) => { clock += ms; } };
@@ -94,6 +96,100 @@ describe("a run", () => {
     await runWorker(store, deps, 10);
     expect(log.failed).toEqual([["post-1", FAILED_MESSAGE]]);
     vi.restoreAllMocks();
+  });
+});
+
+describe("an account connected through the posting service", () => {
+  const service = { refs: { "acc-x": "postforme:spc_x" }, secrets: { "acc-x": null } };
+  const isCreate = (url: string) => url.endsWith("/v1/social-posts");
+
+  it("hands the post over once, waits for the platform's answer, and marks it as posted with where it is", async () => {
+    const { store, deps, log, calls } = setUp({
+      ...service,
+      reply: (url, n) => isCreate(url) ? { json: { id: "sp_1" } } : n < 4 ? { json: { data: [] } } : { json: { data: [{ success: true, platform_data: { url: "https://x.com/northwind/status/1" } }] } },
+    });
+    expect(await runWorker(store, deps, 10)).toEqual({ claimed: 1, published: 1, failed: 0, putBack: 0 });
+    expect(calls.filter((c) => isCreate(c.url))).toHaveLength(1);
+    expect(calls[0].auth).toBe("Bearer pfm_key");
+    // It needs no key of the account: the service has it.
+    expect(log.handed).toHaveLength(1);
+    expect(handedOver(log.handed[0][1])).toMatchObject({ postId: "sp_1" });
+    expect(log.published).toEqual([["post-1", "https://x.com/northwind/status/1"]]);
+    expect(log.accounts).toEqual([["acc-x", null]]);
+  });
+
+  it("puts the post back when the platform has not answered in time, and the next run only asks again", async () => {
+    const first = setUp({ ...service, reply: (url) => (isCreate(url) ? { json: { id: "sp_1" } } : { json: { data: [] } }) });
+    expect(await runWorker(first.store, first.deps, 10)).toEqual({ claimed: 1, published: 0, failed: 0, putBack: 1 });
+    expect(first.log.released).toEqual(["post-1"]);
+    expect(first.log.failed).toEqual([]);
+    // It looked several times, and stopped within the time one run may wait.
+    const looks = first.calls.filter((c) => !isCreate(c.url)).length;
+    expect(looks).toBeGreaterThan(2);
+    expect(looks).toBeLessThanOrEqual(SERVICE_WAIT_MS / SERVICE_LOOK_MS + 1);
+
+    const note = first.log.handed[0][1] as string;
+    const next = setUp({
+      ...service, rows: [row({ external_post_id: note })],
+      reply: () => ({ json: { data: [{ success: true, platform_data: { id: "tweet-9" } }] } }),
+    });
+    expect(await runWorker(next.store, next.deps, 10)).toMatchObject({ published: 1 });
+    // Not handed over a second time: the post is never sent twice.
+    expect(next.calls.some((c) => isCreate(c.url))).toBe(false);
+    expect(next.log.handed).toEqual([]);
+    expect(next.log.published).toEqual([["post-1", "tweet-9"]]);
+  });
+
+  it("writes down the platform's reason when it refuses, and forgets the hand-over so the post can be tried again", async () => {
+    const { store, deps, log } = setUp({
+      ...service,
+      reply: (url) => (isCreate(url) ? { json: { id: "sp_1" } } : { json: { data: [{ success: false, error: "Your post is a duplicate." }] } }),
+    });
+    expect(await runWorker(store, deps, 10)).toMatchObject({ failed: 1 });
+    expect(log.failed).toEqual([["post-1", "X did not accept the post: Your post is a duplicate."]]);
+    expect(log.handed.map(([, note]) => (note ? "kept" : null))).toEqual(["kept", null]);
+    expect(log.accounts).toEqual([]);
+  });
+
+  it("marks the account for connecting again when the platform refused the connection", async () => {
+    const { store, deps, log } = setUp({
+      ...service,
+      reply: (url) => (isCreate(url) ? { json: { id: "sp_1" } } : { json: { data: [{ success: false, error: "The access token has expired." }] } }),
+    });
+    await runWorker(store, deps, 10);
+    expect(log.failed[0][1]).toBe("X account needs to be connected again. Connect it again, then try the post again.");
+    expect(log.accounts).toEqual([["acc-x", log.failed[0][1]]]);
+  });
+
+  it("puts the post back, untouched, while the service is busy: nothing was taken", async () => {
+    const { store, deps, log } = setUp({ ...service, reply: () => ({ status: 503, json: {} }) });
+    expect(await runWorker(store, deps, 10)).toEqual({ claimed: 1, published: 0, failed: 0, putBack: 1 });
+    expect(log.handed).toEqual([]);
+    expect(log.failed).toEqual([]);
+  });
+
+  it("gives up on a post the platform never answered, in plain words", async () => {
+    const old = handedOverNote("sp_old", 1_000_000);
+    const { store, deps, log, calls, tick } = setUp({ ...service, rows: [row({ external_post_id: old })], reply: () => ({ json: { data: [] } }) });
+    tick(SERVICE_GIVE_UP_MS + 1000);
+    expect(await runWorker(store, deps, 10)).toMatchObject({ failed: 1 });
+    expect(log.failed).toEqual([["post-1", TOO_LONG_MESSAGE]]);
+    expect(log.handed).toEqual([["post-1", null]]);
+    expect(calls.some((c) => isCreate(c.url))).toBe(false);
+  });
+
+  it("reads only its own notes: an address left by an earlier post is not one", () => {
+    expect(handedOver("https://youtu.be/abc")).toBeNull();
+    expect(handedOver("pfm:sp_1")).toBeNull();
+    expect(handedOver(null)).toBeNull();
+    expect(handedOver(handedOverNote("sp_1", 1_700_000_000_000))).toEqual({ postId: "sp_1", at: 1_700_000_000_000 });
+  });
+
+  it("leaves accounts connected with their own key exactly as they were", async () => {
+    const { store, deps, log, calls } = setUp();
+    await runWorker(store, deps, 10);
+    expect(calls[0].url).toBe("https://api.x.com/2/tweets");
+    expect(log.handed).toEqual([]);
   });
 });
 

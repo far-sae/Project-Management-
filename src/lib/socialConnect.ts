@@ -9,6 +9,8 @@ import {
 export const CONNECT_BRINGS: Record<ConnectKind, string> = {
   youtube: 'Your channel, for videos and Shorts.',
   meta: 'Your Facebook Pages, and the Instagram business accounts linked to them.',
+  facebook: 'Your Facebook Pages.',
+  instagram: 'Your Instagram business or creator account.',
   x: 'Your X account.',
   tiktok: 'Your TikTok account, for videos.',
   linkedin: 'Your LinkedIn profile.',
@@ -31,6 +33,24 @@ export function readConnectReturn(search: string): ConnectReturn | null {
 }
 
 export const CONNECT_FAILED = 'The account could not be connected. Please try again.';
+
+/**
+ * Back from a log-in through the posting service. It adds its own note to the
+ * page address (?provider=facebook&isSuccess=true&accountIds=...). Only whether
+ * it worked is read here: the accounts themselves are asked of the server.
+ */
+export function readServiceReturn(search: string): { ok: boolean; accountIds: string[] } | null {
+  const params = new URLSearchParams(search);
+  const answer = params.get('isSuccess');
+  if (answer === null) return null;
+  // The accounts the log-in named, as ids only. Whose they are is checked by the server.
+  const accountIds = params.getAll('accountIds').flatMap((part) => part.split(',')).map((id) => id.trim())
+    .filter((id) => /^[A-Za-z0-9_-]{3,80}$/.test(id)).slice(0, 20);
+  return { ok: answer.toLowerCase() === 'true', accountIds };
+}
+
+export const SERVICE_CONNECTED = 'The account is connected.';
+export const SERVICE_NOT_CONNECTED = 'Nothing was connected. Press Connect to try again.';
 
 /** The sentence for the person, and whether it is good news. */
 export function connectReturnMessage(back: ConnectReturn): { ok: boolean; text: string } {
