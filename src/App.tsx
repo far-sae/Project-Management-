@@ -43,6 +43,7 @@ const CrmTasksPage = React.lazy(() => import('@/pages/crmHub/Tasks').then((m) =>
 const CrmReportsPage = React.lazy(() => import('@/pages/crmHub/Reports').then((m) => ({ default: m.CrmReportsPage })));
 const CrmCallsPage = React.lazy(() => import('@/pages/crmHub/Calls').then((m) => ({ default: m.CrmCallsPage })));
 const CrmActivityPage = React.lazy(() => import('@/pages/crmHub/Activity').then((m) => ({ default: m.CrmActivityPage })));
+const CrmFindLeadsPage = React.lazy(() => import('@/pages/crmHub/FindLeads').then((m) => ({ default: m.CrmFindLeadsPage })));
 const CrmTagsPage = React.lazy(() => import('@/pages/crmHub/Tags').then((m) => ({ default: m.CrmTagsPage })));
 const CrmLayout = React.lazy(() => import('@/pages/crmHub/CrmLayout').then((m) => ({ default: m.CrmLayout })));
 const CrmContactDetailPage = React.lazy(() => import('@/pages/crmHub/ContactDetail').then((m) => ({ default: m.CrmContactDetailPage })));
@@ -356,6 +357,7 @@ const router = createBrowserRouter(
                 { path: 'dashboard',    element: lazyAppRoute(<CrmDashboardPage />) },
                 { path: 'reports',      element: lazyAppRoute(<CrmReportsPage />) },
                 { path: 'contacts',     element: lazyAppRoute(<CrmContactsPage />) },
+                { path: 'find-leads',   element: lazyAppRoute(<CrmFindLeadsPage />) },
                 { path: 'contacts/:id', element: lazyAppRoute(<CrmContactDetailPage />) },
                 { path: 'companies',    element: lazyAppRoute(<CrmCompaniesPage />) },
                 { path: 'companies/:id', element: lazyAppRoute(<CrmCompanyDetailPage />) },

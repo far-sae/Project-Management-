@@ -7,6 +7,8 @@ import { refuseOversize } from "./_signroom/host/bodySize.js";
 import { refuseForeign } from "./_signroom/host/origin.js";
 import { accountChecker } from "./_voice/check.js";
 import { readConfig } from "./_voice/config.js";
+import { readProspectConfig } from "./_prospect/config.js";
+import { route as prospectRoute } from "./_prospect/router.js";
 import { route as realRoute, webhook as realWebhook, WEBHOOKS, type RouteRequest, type RouteResult, type VoiceDeps, type Webhook, type WebhookRequest } from "./_voice/router.js";
 import { supabaseStore } from "./_voice/store.js";
 import { callToken } from "./_voice/token.js";
@@ -38,6 +40,11 @@ export type VoiceHandlerDeps = {
   build: () => VoiceDeps | null;
   /** The provider's Auth Token, or null while calling is not set up. */
   authToken: () => string | null;
+  /**
+   * Finding leads (paths under "prospects"). It lives in this function because it needs the same
+   * sign-in and the same "owner or admin" check, and the plan allows no more functions.
+   */
+  prospects?: (deps: VoiceDeps, r: RouteRequest) => Promise<RouteResult>;
 };
 
 export function splitPath(raw: string | string[] | undefined): string[] {
@@ -151,7 +158,8 @@ export function voiceHandler(d: VoiceHandlerDeps) {
       }
       const query: Record<string, string> = {};
       for (const [k, v] of Object.entries(req.query ?? {})) if (k !== "path") query[k] = first(v);
-      out = await d.route(deps, { method: String(req.method), path, body: bodyOf(req.body), query, user: { id: who.id } });
+      const request: RouteRequest = { method: String(req.method), path, body: bodyOf(req.body), query, user: { id: who.id } };
+      out = path[0] === "prospects" && d.prospects ? await d.prospects(deps, request) : await d.route(deps, request);
     } catch (e) {
       console.error("[voice] failed", e instanceof Error ? e.name : "unknown");
       res.status(500).json({ error: FAILED_MESSAGE });
@@ -189,4 +197,5 @@ export default voiceHandler({
   webhook: realWebhook,
   build: buildDeps,
   authToken: () => readConfig().config?.authToken ?? null,
+  prospects: (deps, r) => prospectRoute({ store: deps.store, fetch: deps.fetch, config: () => readProspectConfig() }, r),
 });

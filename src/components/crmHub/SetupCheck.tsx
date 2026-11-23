@@ -25,6 +25,8 @@ const File: React.FC<{ name: string }> = ({ name }) => (
   <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem] text-foreground">supabase/migrations/{name}</code>
 );
 
+const CODE = 'rounded bg-muted px-1 py-0.5 font-mono text-[0.6875rem] text-foreground';
+
 export const SetupCheck: React.FC = () => {
   const { organization, isOwner } = useOrganization();
   const { user } = useAuth();
@@ -139,6 +141,22 @@ export const SetupCheck: React.FC = () => {
             ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-label="Checking" />
             : <StatusPill tone={callingState.tone}>{callingState.label}</StatusPill>}
         </li>
+
+        {/* Finding leads spends the credits of one Apollo account, so it is named for one organisation. */}
+        {isOwner && organization?.organizationId && (
+          <li className="flex items-start justify-between gap-3 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Find leads settings</p>
+              <p className="text-xs text-muted-foreground">The settings on the server that let the CRM search Apollo and add people as leads.</p>
+              <p className="mt-1.5 text-pretty text-xs text-muted-foreground">
+                Add two settings in Vercel, then deploy again: <code className={CODE}>APOLLO_API_KEY</code> with the API key
+                from your Apollo account, and <code className={CODE}>APOLLO_ALLOWED_ORGS</code> with this
+                value: <code className={`break-all ${CODE}`}>{organization.organizationId}</code>.
+                The Find leads page (on the Leads page) says whether it is ready.
+              </p>
+            </div>
+          </li>
+        )}
       </ul>
     </section>
   );

@@ -22,6 +22,7 @@ const h = vi.hoisted(() => {
       lead('l5', 'Jon', 'Petrov', 'lead', 'unqualified', null, 'u2', 2),
     ],
     companies: [{ id: 'c1', name: 'Northwind Studio' }, { id: 'c2', name: 'Harbour Dental' }, { id: 'c3', name: 'Fieldway Logistics' }],
+    isAdmin: false,
     organization: {
       organizationId: 'o',
       members: [
@@ -51,7 +52,7 @@ vi.mock('@/hooks/useCrmHub', () => ({
   useWorkspaceForCreate: () => 'w',
 }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1', email: 'sam@example.com', displayName: 'Sam' } }) }));
-vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: h.organization }) }));
+vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: h.organization, isAdmin: h.isAdmin }) }));
 vi.mock('@/hooks/useSelectedWorkspace', () => ({ useSelectedWorkspace: () => ({ selected: { workspaceId: 'w', name: 'Studio' } }) }));
 vi.mock('@/services/supabase/crmHub/contacts', () => ({
   createContact: vi.fn(), deleteContact: h.deleteContact, updateContact: h.updateContact, getContact: vi.fn(),
@@ -143,6 +144,19 @@ describe('Leads page: list tools', () => {
     fireEvent.keyDown(within(toolbar()).getByRole('combobox'), { key: 'ArrowDown' });
     fireEvent.keyDown(await screen.findByRole('option', { name: who }), { key: 'Enter' });
   };
+
+  it('offers "Find leads" to the owner and admins only: it spends credits', () => {
+    show();
+    expect(screen.queryByRole('link', { name: 'Find leads' })).toBeNull();
+    cleanup();
+    h.isAdmin = true;
+    try {
+      show();
+      expect(screen.getByRole('link', { name: 'Find leads' }).getAttribute('href')).toBe('/crm/find-leads');
+    } finally {
+      h.isAdmin = false;
+    }
+  });
 
   it('sorts by the heading that is pressed, and turns round on the second press', () => {
     show();

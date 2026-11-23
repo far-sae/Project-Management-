@@ -823,6 +823,19 @@ describe("calling: the way in", () => {
     expect(out.statusCode).toBe(401);
     expect(signedOut.route).not.toHaveBeenCalled();
 
+    // Finding leads shares this function: its paths go to their own router, behind the same checks.
+    const prospects = vi.fn(async () => ({ status: 200, json: { ready: true } }));
+    const d4 = handlerDeps({ prospects } as never);
+    const found = res();
+    await voiceHandler(d4)(pageReq({ url: "/api/voice?path=prospects/setup", query: { path: "prospects/setup", workspaceId: WS } }), found as never);
+    expect(found.body).toEqual({ ready: true });
+    expect(prospects).toHaveBeenCalledWith(expect.anything(), { method: "GET", path: ["prospects", "setup"], body: {}, query: { workspaceId: WS }, user: { id: OWNER } });
+    expect(d4.route).not.toHaveBeenCalled();
+    const notSignedIn = handlerDeps({ prospects, signedIn: vi.fn(async (_req, r) => (r.status(401).json({ error: "Please sign in to use this tool." }), null)) } as never);
+    prospects.mockClear();
+    await voiceHandler(notSignedIn)(pageReq({ query: { path: "prospects/search" } }), res() as never);
+    expect(prospects).not.toHaveBeenCalled();
+
     // A provider path is never answered to a page: it has no signature.
     const d3 = handlerDeps();
     const twiml = res();

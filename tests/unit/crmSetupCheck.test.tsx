@@ -170,6 +170,15 @@ describe('Set-up check', () => {
     expect(note.textContent).toContain('0c000000-0000-4000-8000-000000000001');
   });
 
+  it('tells the owner the two settings for finding leads, with the value to paste', async () => {
+    render(<SetupCheck />);
+    await screen.findByText('Phone provider settings');
+    const text = row('Find leads settings').textContent ?? '';
+    expect(text).toContain('APOLLO_API_KEY');
+    expect(text).toContain('APOLLO_ALLOWED_ORGS');
+    expect(text).toContain('0b000000-0000-4000-8000-000000000001');
+  });
+
   it('says when no phone provider is set at all', async () => {
     h.voiceSetup.mockResolvedValue({ configured: false, ready: false, problem: null, numbers: { US: false, GB: false } });
     render(<SetupCheck />);
