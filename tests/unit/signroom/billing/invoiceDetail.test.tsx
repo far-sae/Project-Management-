@@ -214,7 +214,7 @@ describe('Draft invoice', () => {
   it('can record a payment received as it issues, once the payment is confirmed', async () => {
     serve(savedDraft(), { issue: () => issued({ status: 'Paid', payments: [payment({ amountMinor: 1800 })] }) });
     await open();
-    fireEvent.click(screen.getByRole('checkbox', { name: /Record a payment and create its receipt/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Make a receipt with this invoice/ }));
     expect((screen.getByRole('button', { name: 'Issue invoice' }) as HTMLButtonElement).disabled).toBe(true);
     type('Payment reference', 'BACS 4471');
     fireEvent.click(screen.getByRole('checkbox', { name: 'I confirm this payment has actually been received.' }));
@@ -387,7 +387,7 @@ describe('Issued invoice', () => {
       payment: () => issued({ status: 'Part paid', revision: 4, payments: [payment({ amountMinor: 800, paidOn: '2026-11-19' })] }),
     });
     await open();
-    press('Record a payment');
+    press('Create a receipt');
     const dialog = within(screen.getByRole('dialog'));
     const amount = dialog.getByLabelText('Amount received (GBP)') as HTMLInputElement;
     expect(amount.value).toBe('18.00');
@@ -421,7 +421,7 @@ describe('Issued invoice', () => {
       }),
     });
     await open();
-    press('Record a payment');
+    press('Create a receipt');
     const dialog = within(screen.getByRole('dialog'));
     expect((dialog.getByLabelText('Amount received (GBP)') as HTMLInputElement).value).toBe('10.00');
     fireEvent.click(dialog.getByRole('checkbox'));
@@ -431,7 +431,7 @@ describe('Issued invoice', () => {
     expect(bodyOf('billing/i1/payment')).toMatchObject({ revision: 4, amount: '10.00' });
     expect(within(screen.getByRole('heading', { level: 1 })).getByText('Paid')).toBeTruthy();
     expect(within(stat('Outstanding')).getByText('£0.00')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Record a payment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create a receipt' })).toBeNull();
   });
 
   it('keeps the payment form open and shows the server sentence when a payment is refused', async () => {
@@ -439,7 +439,7 @@ describe('Issued invoice', () => {
       payment: () => { throw new Error('Payment must be positive and no larger than the outstanding balance.'); },
     });
     await open();
-    press('Record a payment');
+    press('Create a receipt');
     const dialog = within(screen.getByRole('dialog'));
     fireEvent.change(dialog.getByLabelText('Amount received (GBP)'), { target: { value: '99.00' } });
     fireEvent.click(dialog.getByRole('checkbox'));
@@ -469,7 +469,7 @@ describe('Issued invoice', () => {
     expect(bodyOf('billing/i1/void')).toEqual({ revision: 3 });
     expect(within(screen.getByRole('heading', { level: 1 })).getByText('Voided')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Send invoice/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Record a payment' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create a receipt' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'More actions for INV-0001' })).toBeNull();
   });
 
@@ -540,5 +540,33 @@ describe('Invoice page states', () => {
     expect(screen.getByText('Pick a workspace in the sidebar to see this invoice.')).toBeTruthy();
     await Promise.resolve();
     expect(sr.call).not.toHaveBeenCalled();
+  });
+});
+
+describe('the receipt, said plainly', () => {
+  it('starts a draft with its receipt switched on when the new-invoice window asked for one', async () => {
+    serve(savedDraft());
+    await open('/crm/invoices/i1?receipt=with');
+    expect((screen.getByRole('checkbox', { name: /Make a receipt with this invoice/ }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText('Amount received (GBP)')).toBeTruthy();
+    // Nothing is made until the payment is confirmed and the invoice issued.
+    expect((screen.getByRole('button', { name: 'Issue invoice' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('leaves the receipt off otherwise, and says when it is made', async () => {
+    serve(savedDraft());
+    await open();
+    expect((screen.getByRole('checkbox', { name: /Make a receipt with this invoice/ }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByText(/When the money arrives, open the invoice and choose Create a receipt/)).toBeTruthy();
+    press('Issue invoice');
+    expect(screen.getByRole('alertdialog').textContent).toContain('No receipt is made now. Create it when the money has arrived.');
+  });
+
+  it('calls the payment window what it makes: a receipt', async () => {
+    serve(issued());
+    await open();
+    press('Create a receipt');
+    expect(within(screen.getByRole('dialog')).getByRole('heading', { name: 'Create a receipt' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Record payment and create receipt' })).toBeTruthy();
   });
 });

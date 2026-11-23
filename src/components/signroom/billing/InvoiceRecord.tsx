@@ -27,7 +27,7 @@ import { useServerData, type DeliveryInfo } from './useBilling';
 interface Props {
   invoice: Invoice;
   delivery: DeliveryInfo | null;
-  /** Open the payment dialog straight away (the list's "Record a payment"). */
+  /** Open the payment dialog straight away (the list's "Create a receipt"). */
   startWithPayment?: boolean;
   /** The CRM company page, where the invoice's billing plan lives. */
   companyHref?: string | null;
@@ -126,7 +126,7 @@ export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPay
           )}
           {canPay && (
             <Button variant="outline" onClick={() => setPaying(true)} disabled={busy}>
-              <Wallet aria-hidden /> Record a payment
+              <Wallet aria-hidden /> Create a receipt
             </Button>
           )}
           <Button variant="outline" onClick={() => setShowPdf((v) => !v)}>
@@ -238,7 +238,7 @@ export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPay
       <Card title="Payments and receipts" count={invoice.payments.length}>
         {invoice.payments.length === 0 ? (
           <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            {voided ? 'No payments were recorded.' : 'No payments recorded yet. Each payment you record gets its own receipt.'}
+            {voided ? 'No payments were recorded.' : 'No payments recorded yet. When money arrives, choose Create a receipt: each payment gets its own receipt.'}
           </p>
         ) : (
           <div className="overflow-x-auto" role="region" aria-label="Payments and receipts" tabIndex={0}>

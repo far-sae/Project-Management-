@@ -70,3 +70,36 @@ export const addAccountPayment = async (input: {
   if (error) throw error;
   return mapPayment(data as PaymentRow);
 };
+
+/** Change a service. Who it belongs to (lead, workspace, organisation) never changes. */
+export const updateClientAccount = async (
+  id: string,
+  input: Omit<SaveClientAccountInput, 'organizationId' | 'workspaceId' | 'contactId' | 'createdBy'>,
+) => {
+  const { data, error } = await supabase.from('crm_client_accounts').update({
+    project_id: input.projectId ?? null, service_name: input.serviceName, billing_type: input.billingType,
+    agreed_amount: input.agreedAmount, opening_paid: input.openingPaid, service_start: input.serviceStart ?? null,
+    service_end: input.serviceEnd ?? null, notes: input.notes ?? null,
+  }).eq('id', id).select('*').single();
+  if (error) throw error;
+  return mapAccount(data as AccountRow);
+};
+
+/** Remove a service. Its payments go with it (the table removes them itself). */
+export const deleteClientAccount = async (id: string) => {
+  const { error } = await supabase.from('crm_client_accounts').delete().eq('id', id);
+  if (error) throw error;
+};
+
+export const updateAccountPayment = async (id: string, input: { paidOn: string; amount: number; notes: string | null }) => {
+  const { data, error } = await supabase.from('crm_account_payments')
+    .update({ paid_on: input.paidOn, amount: input.amount, notes: input.notes })
+    .eq('id', id).select('*').single();
+  if (error) throw error;
+  return mapPayment(data as PaymentRow);
+};
+
+export const deleteAccountPayment = async (id: string) => {
+  const { error } = await supabase.from('crm_account_payments').delete().eq('id', id);
+  if (error) throw error;
+};

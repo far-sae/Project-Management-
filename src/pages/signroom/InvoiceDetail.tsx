@@ -66,12 +66,16 @@ export const InvoiceDetailPage: React.FC = () => {
     return () => { alive = false; };
   }, [client, draftCompanyId]);
 
-  // "Record a payment" from the list arrives as ?payment=new: open the dialog once, then tidy the address.
+  // "Create a receipt" from the list arrives as ?payment=new: open the dialog once, then tidy the address.
   const startWithPayment = useRef(params.get('payment') === 'new').current;
+  // "Make a receipt with this invoice" from the new-invoice window arrives as ?receipt=with. It holds
+  // until the draft is first saved; after that the draft itself remembers the choice.
+  const [startWithReceipt, setStartWithReceipt] = useState(() => params.get('receipt') === 'with');
   useEffect(() => {
-    if (!params.has('payment')) return;
+    if (!params.has('payment') && !params.has('receipt')) return;
     const next = new URLSearchParams(params);
     next.delete('payment');
+    next.delete('receipt');
     setParams(next, { replace: true });
   }, []);
 
@@ -162,7 +166,8 @@ export const InvoiceDetailPage: React.FC = () => {
           companyHref={companyHref}
           startCurrency={defaultInvoiceCurrency(customer?.account?.currency, companyCurrency, invoice.currency)}
           delivery={delivery}
-          onChange={setInvoice}
+          startWithReceipt={startWithReceipt}
+          onChange={(next) => { setInvoice(next); setStartWithReceipt(false); }}
           onReload={() => void load()}
         />
       ) : (

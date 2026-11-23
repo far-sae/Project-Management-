@@ -49,6 +49,8 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
   const [company, setCompany] = useState('');
   const [deal, setDeal] = useState('');
   const [useDealLine, setUseDealLine] = useState(true);
+  // Whether a receipt is made together with the invoice. Off unless it is chosen: the invoice goes first.
+  const [withReceipt, setWithReceipt] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Each time it opens, start from what the page passed in.
@@ -58,6 +60,7 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
       setCompany(companyId ?? '');
       setDeal(dealId ?? '');
       setUseDealLine(true);
+      setWithReceipt(false);
     }
     wasOpen.current = open;
   }, [open, companyId, dealId]);
@@ -107,7 +110,8 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
       toast.success(`${invoice.number} created`);
       onOpenChange(false);
       onCreated?.(invoice);
-      navigate(`/crm/invoices/${invoice.id}`);
+      // The draft opens with its receipt switched on; the payment is filled in and confirmed there.
+      navigate(`/crm/invoices/${invoice.id}${withReceipt ? '?receipt=with' : ''}`);
     } catch (error) {
       toast.error(errorSentence(error, 'Could not create the invoice'));
     } finally {
@@ -171,6 +175,34 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
                 </p>
               </div>
             )}
+
+            <fieldset className="flex flex-col gap-2.5 rounded-md border border-border p-3" disabled={busy}>
+              <legend className="px-1 text-sm font-medium text-foreground">Receipt</legend>
+              <label className="flex items-start gap-2 text-sm text-foreground">
+                <input
+                  type="radio" name={`${id}-receipt`} className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                  checked={!withReceipt} onChange={() => setWithReceipt(false)}
+                />
+                <span className="min-w-0">
+                  No receipt yet
+                  <span className="block text-xs text-muted-foreground">
+                    Send the invoice first. Make the receipt when the money is in the bank.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-foreground">
+                <input
+                  type="radio" name={`${id}-receipt`} className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                  checked={withReceipt} onChange={() => setWithReceipt(true)}
+                />
+                <span className="min-w-0">
+                  Make a receipt with this invoice
+                  <span className="block text-xs text-muted-foreground">
+                    Only when the money has arrived already. You enter the payment on the next screen.
+                  </span>
+                </span>
+              </label>
+            </fieldset>
           </div>
         )}
 

@@ -2,7 +2,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { crmCompany, crmCurrency, crmDeal, crmList, customer, invoice, issued, payment, stubBrowser } from './fixtures';
 
 const sr = vi.hoisted(() => {
@@ -184,5 +184,70 @@ describe('Invoices list', () => {
     expect((screen.getByRole('button', { name: /New invoice/ }) as HTMLButtonElement).disabled).toBe(true);
     await Promise.resolve();
     expect(sr.call).not.toHaveBeenCalled();
+  });
+});
+
+describe('making a receipt from the list', () => {
+  const Where: React.FC = () => { const at = useLocation(); return <p data-testid="where">{at.pathname}{at.search}</p>; };
+  const openRouted = () => render(
+    <MemoryRouter initialEntries={['/crm/invoices']}>
+      <Routes>
+        <Route path="/crm/invoices" element={<InvoicesPage />} />
+        <Route path="*" element={<Where />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  it('offers only the invoices still waiting for money, and goes on to the payment', async () => {
+    serve();
+    openRouted();
+    await screen.findByRole('link', { name: 'INV-0002' });
+    fireEvent.click(screen.getByRole('button', { name: 'New receipt' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'New receipt' }));
+    expect((dialog.getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(dialog.getByRole('combobox', { name: 'Invoice the money is for' }), { key: 'ArrowDown' });
+    const options = (await screen.findAllByRole('option')).map((o) => o.textContent ?? '');
+    // The draft, the paid one and the voided one cannot have a receipt made.
+    expect(options).toHaveLength(2);
+    expect(options[0]).toContain('INV-0002');
+    expect(options[1]).toContain('INV-0003');
+    expect(options[1]).toContain('Harbour Dental');
+    expect(options[1]).toContain('£150.00 to pay');
+    fireEvent.keyDown(screen.getByRole('option', { name: /INV-0003/ }), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/crm/invoices/c?payment=new'));
+  });
+
+  it('says there is nothing to make a receipt for, and offers an invoice instead', async () => {
+    serve([all[0]!, all[3]!]);
+    openRouted();
+    await screen.findByRole('link', { name: 'INV-0001' });
+    fireEvent.click(screen.getByRole('button', { name: 'New receipt' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'New receipt' }));
+    expect(dialog.getByText(/No issued invoice is waiting for money/)).toBeTruthy();
+    expect(dialog.queryByRole('button', { name: 'Continue' })).toBeNull();
+    fireEvent.click(dialog.getByRole('button', { name: 'New invoice' }));
+    expect(await screen.findByRole('dialog', { name: 'New invoice' })).toBeTruthy();
+  });
+
+  it('has the same button where the receipts are listed, when there are none', async () => {
+    serve([all[1]!]);
+    openRouted();
+    await screen.findByRole('link', { name: 'INV-0002' });
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Receipts/ }), { button: 0 });
+    const panel = within(await screen.findByRole('tabpanel'));
+    expect(panel.getByText(/A receipt is made when the money for an invoice has arrived/)).toBeTruthy();
+    fireEvent.click(panel.getByRole('button', { name: 'New receipt' }));
+    // Only one invoice could be meant, so it is chosen already.
+    expect((within(screen.getByRole('dialog', { name: 'New receipt' })).getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('calls it a receipt in an invoice’s own menu too', async () => {
+    serve();
+    openRouted();
+    await screen.findByRole('link', { name: 'INV-0002' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for INV-0002' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Create a receipt' }));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/crm/invoices/b?payment=new'));
   });
 });

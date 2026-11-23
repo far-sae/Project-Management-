@@ -23,7 +23,7 @@ vi.mock('@/context/CrmCurrencyContext', () => ({ useCrmCurrency: () => crmCurren
 import { NewInvoiceDialog } from '@/components/signroom/billing/NewInvoiceDialog';
 import { InvoicesPanel } from '@/components/signroom/billing/InvoicesPanel';
 
-const Where: React.FC = () => <p data-testid="where">{useLocation().pathname}</p>;
+const Where: React.FC = () => { const at = useLocation(); return <p data-testid="where">{at.pathname}{at.search}</p>; };
 const inRouter = (ui: React.ReactNode) => render(
   <MemoryRouter initialEntries={['/start']}>
     <Routes>
@@ -171,5 +171,40 @@ describe('Invoices panel on a company or deal page', () => {
     expect(screen.getByText('Pick a workspace in the sidebar to see its invoices.')).toBeTruthy();
     await Promise.resolve();
     expect(sr.call).not.toHaveBeenCalled();
+  });
+});
+
+describe('New invoice dialog: the receipt question', () => {
+  it('asks, and makes no receipt unless that is chosen: the invoice goes first', async () => {
+    inRouter(<NewInvoiceDialog open onOpenChange={() => {}} companyId="co1" />);
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByRole('group', { name: 'Receipt' })).toBeTruthy();
+    expect((dialog.getByRole('radio', { name: /No receipt yet/ }) as HTMLInputElement).checked).toBe(true);
+    expect((dialog.getByRole('radio', { name: /Make a receipt with this invoice/ }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(dialog.getByRole('button', { name: 'Create invoice' }));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/crm/invoices/new1'));
+  });
+
+  it('opens the draft with its receipt switched on when that is chosen', async () => {
+    inRouter(<NewInvoiceDialog open onOpenChange={() => {}} companyId="co1" />);
+    const dialog = within(screen.getByRole('dialog'));
+    fireEvent.click(dialog.getByRole('radio', { name: /Make a receipt with this invoice/ }));
+    fireEvent.click(dialog.getByRole('button', { name: 'Create invoice' }));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/crm/invoices/new1?receipt=with'));
+  });
+
+  it('asks again from the start each time it opens', async () => {
+    const view = inRouter(<NewInvoiceDialog open onOpenChange={() => {}} companyId="co1" />);
+    fireEvent.click(screen.getByRole('radio', { name: /Make a receipt with this invoice/ }));
+    const again = (open: boolean) => view.rerender(
+      <MemoryRouter initialEntries={['/start']}>
+        <Routes>
+          <Route path="/start" element={<NewInvoiceDialog open={open} onOpenChange={() => {}} companyId="co1" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    again(false);
+    again(true);
+    expect((screen.getByRole('radio', { name: /No receipt yet/ }) as HTMLInputElement).checked).toBe(true);
   });
 });

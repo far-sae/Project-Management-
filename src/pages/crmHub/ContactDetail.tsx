@@ -85,7 +85,7 @@ const NONE = '__none__';
 /** How many notes / follow-ups show before "Show all". */
 const SHORT_LIST = 5;
 
-type ManualStep = 'new' | 'contacted' | 'qualified' | 'unqualified';
+type ManualStep = 'new' | 'contacted' | 'qualified' | 'customer' | 'unqualified';
 
 /** Select value standing in for "no deal" (Radix has no empty value). */
 const NO_DEAL = '__none__';
@@ -97,11 +97,11 @@ const CONVERTIBLE: LeadStep[] = ['new', 'contacted', 'qualified'];
 /** Why a step in the bar cannot be clicked. */
 const AUTOMATIC_STEP_TITLE: Partial<Record<LeadStep, string>> = {
   deal: 'Set for you when you convert this lead to a deal.',
-  customer: 'Set for you when one of this lead’s deals is won.',
 };
 
+/** "Customer" is set for you when a deal is won, and by hand for somebody who is a client already. */
 const isManualStep = (step: LeadStep): step is ManualStep =>
-  step === 'new' || step === 'contacted' || step === 'qualified' || step === 'unqualified';
+  step === 'new' || step === 'contacted' || step === 'qualified' || step === 'customer' || step === 'unqualified';
 
 const humanize = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -190,8 +190,9 @@ const Detail: React.FC<{ label: string; wide?: boolean; children?: React.ReactNo
 
 /**
  * Where the lead is: New → Contacted → Qualified → Deal open → Customer.
- * The first three are set by hand; the last two happen by converting the
- * lead and winning a deal, so they cannot be clicked.
+ * "Deal open" happens by converting the lead, so it cannot be clicked.
+ * "Customer" happens by winning a deal, and can also be clicked: somebody who
+ * is a client already needs no deal to be one.
  */
 const LeadStepBar: React.FC<{
   step: LeadStep;
@@ -492,7 +493,9 @@ export const CrmContactDetailPage: React.FC = () => {
           console.warn('[crm] could not log why the lead was marked unqualified', err);
         }
       }
-      toast.success(done ?? `${leadName(contact)} marked ${LEAD_STEPS[next].label.toLowerCase()}`);
+      toast.success(done ?? (next === 'customer'
+        ? `${leadName(contact)} marked as an existing client`
+        : `${leadName(contact)} marked ${LEAD_STEPS[next].label.toLowerCase()}`));
       await refresh();
     } catch (err) {
       toast.error(publicMessage(err, 'Could not update the lead'));
@@ -533,7 +536,8 @@ export const CrmContactDetailPage: React.FC = () => {
   // Stepping a lead back from "Deal open" or "Customer" cannot be undone
   // from the bar, so it is confirmed first.
   const pickStep = (next: ManualStep) => {
-    if (hasDeal) {
+    // Marking somebody a client takes nothing away, so it is not asked about.
+    if (hasDeal && next !== 'customer') {
       setStepBack(next);
       setConfirmStepBack(true);
     } else {
@@ -585,7 +589,7 @@ export const CrmContactDetailPage: React.FC = () => {
                 )}
                 {hasDeal && (
                   <Button variant="outline" onClick={() => setShowConvert(true)}>
-                    <Plus aria-hidden />Open another deal
+                    <Plus aria-hidden />{deals.length === 0 ? 'New deal' : 'Open another deal'}
                   </Button>
                 )}
                 <Button variant="outline" onClick={() => setShowEdit(true)}>
@@ -638,73 +642,80 @@ export const CrmContactDetailPage: React.FC = () => {
         </div>
 
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          {/* MAIN: deals, follow-ups, notes, timeline */}
+          {/* MAIN: the timeline and its tabs first (what happened with this person), then follow-ups and notes, then the deals */}
           <div className="flex min-w-0 flex-col gap-6">
-            <Section title="Deals" meta={deals.length}>
-              {deals.length === 0 ? (
-                <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
-                  <Handshake className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                  <p className="text-sm font-medium">No deals yet.</p>
-                  <p className="text-xs text-muted-foreground">
-                    {step === 'unqualified'
-                      ? 'Re-open the lead to convert it to a deal.'
-                      : 'Once the lead is worth pursuing, convert it to a deal in the pipeline.'}
-                  </p>
-                  {step !== 'unqualified' && (
-                    <Button variant="outline" className="mt-3" onClick={() => setShowConvert(true)}>
-                      Convert to deal
-                    </Button>
-                  )}
+            <Tabs value={tab} onValueChange={(v) => setTab(v as LeadTab)} className="flex min-w-0 flex-col gap-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <div className="min-w-0 max-w-full overflow-x-auto">
+                  <TabsList>
+                    {LEAD_TABS.map((t) => (
+                      <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
+                    ))}
+                  </TabsList>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[34rem] text-sm">
-                    <thead>
-                      <tr className="h-10 border-b border-border text-xs text-muted-foreground">
-                        <th className="px-4 text-left font-medium">Deal</th>
-                        <th className="px-4 text-right font-medium">Value</th>
-                        <th className="px-4 text-left font-medium">Status</th>
-                        <th className="px-4 text-left font-medium">Project</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deals.map((d) => {
-                        const badge = dealBadge(d);
-                        const converted = formatDealConverted(d);
-                        return (
-                          <tr
-                            key={d.id}
-                            className="h-12 border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
-                          >
-                            <td className="px-4 font-medium text-foreground">
-                              <Link to={`/crm/deals/${d.id}`} className="hover:text-primary hover:underline">
-                                {d.name}
-                              </Link>
-                            </td>
-                            <td className="whitespace-nowrap px-4 text-right tabular-nums">
-                              {formatDeal(d)}
-                              {converted && <span className="block text-xs text-muted-foreground">{converted}</span>}
-                            </td>
-                            <td className="px-4">
-                              <StatusPill tone={badge.tone}>{badge.label}</StatusPill>
-                            </td>
-                            <td className="whitespace-nowrap px-4">
-                              {d.projectId ? (
-                                <Link to={`/project/${d.projectId}`} className="text-primary hover:underline">
-                                  Open project
-                                </Link>
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Section>
+                {tab !== 'accounts' && (
+                  <Button
+                    variant="outline"
+                    className="mb-1.5"
+                    onClick={() => openLog(tab === 'all' ? 'call' : tab)}
+                  >
+                    <Plus aria-hidden />Log {logLabel}
+                  </Button>
+                )}
+              </div>
+
+              <TabsContent value={tab} className="mt-0">
+                {tab === 'accounts' ? (
+                  contact.workspaceId && orgId ? (
+                    <ClientAccountsTab
+                      organizationId={orgId}
+                      workspaceId={contact.workspaceId}
+                      contactId={contact.id}
+                      projects={workspaceProjects}
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                      Assign this lead to a workspace before adding account records.
+                    </div>
+                  )
+                ) : (
+                  <div className={BOX}>
+                    {filteredActivities.length === 0 ? (
+                      <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
+                        <History className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                        <p className="text-sm font-medium">No {tab === 'all' ? 'activity' : `${tab}s`} yet.</p>
+                        <Button
+                          variant="outline"
+                          className="mt-3"
+                          onClick={() => openLog(tab === 'all' ? 'call' : (tab as ActivityType))}
+                        >
+                          <Plus aria-hidden />{tab === 'all' ? 'Log activity' : `Log first ${tab}`}
+                        </Button>
+                      </div>
+                    ) : filteredActivities.map((a) => {
+                      const Icon = activityIcon(a.type);
+                      return (
+                        <div key={a.id} className={`${ROW} flex items-start gap-3`}>
+                          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground">
+                            <Icon className="h-3.5 w-3.5" aria-hidden />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                              <p className="text-sm font-medium">{ACTIVITY_LABEL[a.type] ?? humanize(a.type)}</p>
+                              <span className="text-xs tabular-nums text-muted-foreground">{formatDateTime(a.createdAt)}</span>
+                            </div>
+                            {a.description && (
+                              <p className="mt-0.5 whitespace-pre-line break-words text-sm text-muted-foreground">{a.description}</p>
+                            )}
+                            {calling.mayListen && recordedCallId(a) && <CallRecording callId={recordedCallId(a) as string} />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
 
             <Section
               title="Follow-ups"
@@ -806,78 +817,74 @@ export const CrmContactDetailPage: React.FC = () => {
               )}
             </Section>
 
-            <Tabs value={tab} onValueChange={(v) => setTab(v as LeadTab)} className="flex min-w-0 flex-col gap-3">
-              <div className="flex flex-wrap items-end justify-between gap-2">
-                <div className="min-w-0 max-w-full overflow-x-auto">
-                  <TabsList>
-                    {LEAD_TABS.map((t) => (
-                      <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
-                    ))}
-                  </TabsList>
+            <Section title="Deals" meta={deals.length}>
+              {deals.length === 0 ? (
+                <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
+                  <Handshake className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
+                  <p className="text-sm font-medium">{step === 'customer' ? 'An existing client, with no deal here.' : 'No deals yet.'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {step === 'unqualified'
+                      ? 'Re-open the lead to convert it to a deal.'
+                      : step === 'customer'
+                        ? 'Nothing to convert. Add a deal only when there is new work for them.'
+                        : 'Once the lead is worth pursuing, convert it to a deal in the pipeline.'}
+                  </p>
+                  {/* A client is never asked to be converted: they are past that. */}
+                  {step !== 'unqualified' && step !== 'customer' && (
+                    <Button variant="outline" className="mt-3" onClick={() => setShowConvert(true)}>
+                      Convert to deal
+                    </Button>
+                  )}
                 </div>
-                {tab !== 'accounts' && (
-                  <Button
-                    variant="outline"
-                    className="mb-1.5"
-                    onClick={() => openLog(tab === 'all' ? 'call' : tab)}
-                  >
-                    <Plus aria-hidden />Log {logLabel}
-                  </Button>
-                )}
-              </div>
-
-              <TabsContent value={tab} className="mt-0">
-                {tab === 'accounts' ? (
-                  contact.workspaceId && orgId ? (
-                    <ClientAccountsTab
-                      organizationId={orgId}
-                      workspaceId={contact.workspaceId}
-                      contactId={contact.id}
-                      projects={workspaceProjects}
-                    />
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-                      Assign this lead to a workspace before adding account records.
-                    </div>
-                  )
-                ) : (
-                  <div className={BOX}>
-                    {filteredActivities.length === 0 ? (
-                      <div className="flex flex-col items-center gap-1 px-4 py-10 text-center">
-                        <History className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
-                        <p className="text-sm font-medium">No {tab === 'all' ? 'activity' : `${tab}s`} yet.</p>
-                        <Button
-                          variant="outline"
-                          className="mt-3"
-                          onClick={() => openLog(tab === 'all' ? 'call' : (tab as ActivityType))}
-                        >
-                          <Plus aria-hidden />{tab === 'all' ? 'Log activity' : `Log first ${tab}`}
-                        </Button>
-                      </div>
-                    ) : filteredActivities.map((a) => {
-                      const Icon = activityIcon(a.type);
-                      return (
-                        <div key={a.id} className={`${ROW} flex items-start gap-3`}>
-                          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-muted-foreground">
-                            <Icon className="h-3.5 w-3.5" aria-hidden />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                              <p className="text-sm font-medium">{ACTIVITY_LABEL[a.type] ?? humanize(a.type)}</p>
-                              <span className="text-xs tabular-nums text-muted-foreground">{formatDateTime(a.createdAt)}</span>
-                            </div>
-                            {a.description && (
-                              <p className="mt-0.5 whitespace-pre-line break-words text-sm text-muted-foreground">{a.description}</p>
-                            )}
-                            {calling.mayListen && recordedCallId(a) && <CallRecording callId={recordedCallId(a) as string} />}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[34rem] text-sm">
+                    <thead>
+                      <tr className="h-10 border-b border-border text-xs text-muted-foreground">
+                        <th className="px-4 text-left font-medium">Deal</th>
+                        <th className="px-4 text-right font-medium">Value</th>
+                        <th className="px-4 text-left font-medium">Status</th>
+                        <th className="px-4 text-left font-medium">Project</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deals.map((d) => {
+                        const badge = dealBadge(d);
+                        const converted = formatDealConverted(d);
+                        return (
+                          <tr
+                            key={d.id}
+                            className="h-12 border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40"
+                          >
+                            <td className="px-4 font-medium text-foreground">
+                              <Link to={`/crm/deals/${d.id}`} className="hover:text-primary hover:underline">
+                                {d.name}
+                              </Link>
+                            </td>
+                            <td className="whitespace-nowrap px-4 text-right tabular-nums">
+                              {formatDeal(d)}
+                              {converted && <span className="block text-xs text-muted-foreground">{converted}</span>}
+                            </td>
+                            <td className="px-4">
+                              <StatusPill tone={badge.tone}>{badge.label}</StatusPill>
+                            </td>
+                            <td className="whitespace-nowrap px-4">
+                              {d.projectId ? (
+                                <Link to={`/project/${d.projectId}`} className="text-primary hover:underline">
+                                  Open project
+                                </Link>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
           </div>
 
           {/* SIDE: details and tags. First on phones, so the lead can be called or emailed at once. */}
@@ -1038,7 +1045,7 @@ export const CrmContactDetailPage: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className={FIELD_ROW}>
+            <div className={logType === 'call' ? FIELD_ROW : 'grid grid-cols-1 gap-3'}>
               <div className={FIELD}>
                 <Label htmlFor={`${logFieldId}-when`}>When</Label>
                 <Input
@@ -1118,10 +1125,9 @@ export const CrmContactDetailPage: React.FC = () => {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {step === 'customer'
-                ? 'This lead is a customer because a deal was won.'
-                : 'This lead has a deal open.'}
-              {' '}“Deal open” and “Customer” are set by converting the lead and winning a deal, so you
-              cannot put the lead back on that step by hand. The lead’s deals are not changed.
+                ? 'This lead is a customer. After this it is treated as a lead again, and asked to be converted to a deal.'
+                : 'This lead has a deal open. “Deal open” is set by converting the lead, so you cannot put the lead back on that step by hand.'}
+              {' '}The lead’s deals are not changed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1452,7 +1458,7 @@ const EditLeadDialog: React.FC<{
           <details className="rounded-md border border-border">
             <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-foreground">
               Advanced
-              <span className="ml-2 text-xs font-normal text-muted-foreground">HubSpot-style fields</span>
+              <span className="ml-2 text-xs font-normal text-muted-foreground">Exact stage and status</span>
             </summary>
             <div className="flex flex-col gap-3 border-t border-border px-3 py-3">
               <p className="text-xs text-muted-foreground">
@@ -1465,7 +1471,7 @@ const EditLeadDialog: React.FC<{
                     <SelectTrigger id={`${fieldId}-lifecycle`}><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {LIFECYCLE_STAGES.map((s) => (
-                        <SelectItem key={s} value={s}>{humanize(s)}</SelectItem>
+                        <SelectItem key={s} value={s}>{s === 'evangelist' ? 'Existing client' : humanize(s)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

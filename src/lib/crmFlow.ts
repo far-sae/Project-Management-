@@ -138,12 +138,12 @@ export const LEAD_STEPS: Record<LeadStep, { label: string; tone: FlowTone; hint:
   contacted: { label: 'Contacted', tone: 'warning', hint: 'In conversation; not yet qualified.' },
   qualified: { label: 'Qualified', tone: 'info', hint: 'A real opportunity with no open deal. Convert it to a deal.' },
   deal: { label: 'Deal open', tone: 'info', hint: 'Has a deal in the pipeline.' },
-  customer: { label: 'Customer', tone: 'success', hint: 'A deal was won.' },
+  customer: { label: 'Customer', tone: 'success', hint: 'A client: a deal was won, or they were marked as an existing client.' },
   unqualified: { label: 'Unqualified', tone: 'muted', hint: 'Not a fit, or not now.' },
 };
 
 /** The steps a person can set by hand, in order. */
-export const MANUAL_LEAD_STEPS: LeadStep[] = ['new', 'contacted', 'qualified', 'unqualified'];
+export const MANUAL_LEAD_STEPS: LeadStep[] = ['new', 'contacted', 'qualified', 'customer', 'unqualified'];
 
 export function leadStep(lead: { lifecycleStage: string; leadStatus: string }): LeadStep {
   if (lead.lifecycleStage === 'customer' || lead.lifecycleStage === 'evangelist') return 'customer';
@@ -174,6 +174,9 @@ export function leadPatchAfterDeals(
   lead: { lifecycleStage: string; leadStatus: string },
   dealStatuses: FlowDealStatus[],
 ): { lifecycleStage: 'customer' | 'opportunity' | 'sales_qualified_lead'; leadStatus: 'open_deal' | 'connected' } | null {
+  // Somebody marked as an existing client by hand stays one, whatever happens to
+  // a deal: losing a new piece of work does not make them a stranger again.
+  if (lead.lifecycleStage === EXISTING_CLIENT_STAGE) return null;
   const step = leadStep(lead);
   if (dealStatuses.includes('won')) {
     return step === 'customer' ? null : { lifecycleStage: 'customer', leadStatus: 'connected' };
@@ -185,12 +188,21 @@ export function leadPatchAfterDeals(
   return null;
 }
 
+/**
+ * The stage written on a lead that was marked a client by hand. A lead becomes
+ * a "customer" by winning a deal; this second value says the same thing on the
+ * page ("Customer") and records that a person said so, with no deal needed.
+ */
+export const EXISTING_CLIENT_STAGE = 'evangelist';
+
 /** What to save on the lead when someone picks a step by hand. */
-export function leadStepPatch(step: 'new' | 'contacted' | 'qualified' | 'unqualified'): {
-  lifecycleStage?: 'lead' | 'sales_qualified_lead';
+export function leadStepPatch(step: 'new' | 'contacted' | 'qualified' | 'customer' | 'unqualified'): {
+  lifecycleStage?: 'lead' | 'sales_qualified_lead' | 'evangelist';
   leadStatus: 'new' | 'connected' | 'unqualified';
 } {
   switch (step) {
+    case 'customer':
+      return { lifecycleStage: EXISTING_CLIENT_STAGE, leadStatus: 'connected' };
     case 'new':
       return { lifecycleStage: 'lead', leadStatus: 'new' };
     case 'contacted':

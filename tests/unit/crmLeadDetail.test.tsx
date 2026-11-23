@@ -147,11 +147,37 @@ describe('lead page', () => {
     await waitFor(() => expect(state.updateContact).toHaveBeenCalledWith('lead-1', leadStepPatch('qualified')));
   });
 
-  it('does not let "Deal open" or "Customer" be set by hand', async () => {
+  it('does not let "Deal open" be set by hand: that happens by converting the lead', async () => {
     await renderPage();
     expect(within(stepBar()).queryByRole('button', { name: 'Deal open' })).toBeNull();
-    expect(within(stepBar()).queryByRole('button', { name: 'Customer' })).toBeNull();
-    expect(within(stepBar()).getByText('Customer').getAttribute('title')).toMatch(/won/);
+  });
+
+  it('marks somebody who is a client already as one, with no deal needed', async () => {
+    await renderPage();
+    fireEvent.click(within(stepBar()).getByRole('button', { name: 'Customer' }));
+    await waitFor(() => expect(state.updateContact).toHaveBeenCalledWith('lead-1', { lifecycleStage: 'evangelist', leadStatus: 'connected' }));
+    expect(leadStepPatch('customer')).toEqual({ lifecycleStage: 'evangelist', leadStatus: 'connected' });
+  });
+
+  it('never asks an existing client to be converted to a deal', async () => {
+    state.lead = makeLead('evangelist', 'connected');
+    await renderPage();
+    expect(within(stepBar()).getByText('Customer').closest('li')?.getAttribute('aria-current')).toBe('step');
+    expect(screen.getByText('An existing client, with no deal here.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Convert to deal' })).toBeNull();
+    // New work for them is still one press away, said as what it is.
+    fireEvent.click(screen.getByRole('button', { name: 'New deal' }));
+    expect(screen.getByTestId('convert-dialog')).toBeTruthy();
+  });
+
+  it('puts what happened with the person first, and the deals last', async () => {
+    await renderPage();
+    const tabs = screen.getByRole('tablist');
+    const followUps = screen.getByRole('heading', { name: /Follow-ups/ });
+    const deals = screen.getByRole('heading', { name: /Deals/ });
+    const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(tabs, followUps)).toBe(true);
+    expect(before(followUps, deals)).toBe(true);
   });
 
   it('marks a lead unqualified and can re-open it', async () => {

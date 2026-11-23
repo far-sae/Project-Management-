@@ -9,6 +9,8 @@ import {
   leadName,
   leadPatchAfterDeals,
   leadStep,
+  leadStepPatch,
+  MANUAL_LEAD_STEPS,
   probabilityAfterMove,
   weightedDealValue,
 } from '@/lib/crmFlow';
@@ -166,5 +168,25 @@ describe('a lead follows its deals', () => {
     expect(leadPatchAfterDeals(lead('lead', 'new'), [])).toBeNull();
     expect(leadPatchAfterDeals(lead('lead', 'unqualified'), ['lost'])).toBeNull();
     expect(leadPatchAfterDeals(lead('sales_qualified_lead', 'connected'), ['lost'])).toBeNull();
+  });
+});
+
+describe('an existing client, marked by hand', () => {
+  const marked = { lifecycleStage: 'evangelist', leadStatus: 'connected' };
+
+  it('is a customer on the page, and is saved in a way that says a person marked it', () => {
+    expect(leadStepPatch('customer')).toEqual(marked);
+    expect(leadStep(marked)).toBe('customer');
+    expect(MANUAL_LEAD_STEPS).toContain('customer');
+  });
+
+  it('stays a client whatever happens to a deal', () => {
+    // A lead that became a customer by winning a deal goes back when that deal is lost...
+    expect(leadPatchAfterDeals({ lifecycleStage: 'customer', leadStatus: 'connected' }, ['lost'])).not.toBeNull();
+    // ...somebody who was a client all along does not: losing new work does not make them a stranger.
+    expect(leadPatchAfterDeals(marked, ['lost'])).toBeNull();
+    expect(leadPatchAfterDeals(marked, ['open'])).toBeNull();
+    expect(leadPatchAfterDeals(marked, [])).toBeNull();
+    expect(leadPatchAfterDeals(marked, ['won'])).toBeNull();
   });
 });

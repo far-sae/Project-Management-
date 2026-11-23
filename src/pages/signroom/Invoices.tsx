@@ -1,7 +1,7 @@
 // Invoices: every invoice in the workspace, what is owed, and the receipts for what was paid.
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarRange, Download, FileText, Loader2, MoreHorizontal, Plus, Search } from 'lucide-react';
+import { CalendarRange, Download, FileText, Loader2, MoreHorizontal, Plus, Receipt, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { balance } from '../../../api/_signroom/shared/invoiceMath';
 import type { Invoice } from '../../../api/_signroom/shared/types';
@@ -22,6 +22,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { NewInvoiceDialog } from '@/components/signroom/billing/NewInvoiceDialog';
+import { NewReceiptDialog } from '@/components/signroom/billing/NewReceiptDialog';
 import { PdfDialog } from '@/components/signroom/billing/PdfFrame';
 import {
   EmptyState, HEAD_ROW, InvoiceStatus, PickWorkspace, ROW, TD, TD_DATE, TD_MONEY, TH, TH_RIGHT, savePdf,
@@ -44,6 +45,7 @@ export const InvoicesPage: React.FC = () => {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [creating, setCreating] = useState(false);
+  const [receipting, setReceipting] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [sending, setSending] = useState<string | null>(null);
 
@@ -135,7 +137,7 @@ export const InvoicesPage: React.FC = () => {
       <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
         <PageHeader
           title="Invoices"
-          description="Bill a company, record what it pays and send receipts. Recording a payment does not move money."
+          description="Bill a company first. When its money arrives, create the receipt. Recording a payment does not move money."
           actions={
             <>
               <Button asChild variant="outline">
@@ -143,6 +145,9 @@ export const InvoicesPage: React.FC = () => {
               </Button>
               <Button variant="outline" onClick={exportCsv} disabled={!workspaceId}>
                 <Download aria-hidden /> Export
+              </Button>
+              <Button variant="outline" onClick={() => setReceipting(true)} disabled={!workspaceId}>
+                <Receipt aria-hidden /> New receipt
               </Button>
               <Button onClick={() => setCreating(true)} disabled={!workspaceId}>
                 <Plus aria-hidden /> New invoice
@@ -296,7 +301,7 @@ export const InvoicesPage: React.FC = () => {
                                         </DropdownMenuItem>
                                         {balance(i) > 0 && (
                                           <DropdownMenuItem onClick={() => navigate(`/crm/invoices/${i.id}?payment=new`)}>
-                                            Record a payment
+                                            Create a receipt
                                           </DropdownMenuItem>
                                         )}
                                       </>
@@ -315,10 +320,15 @@ export const InvoicesPage: React.FC = () => {
 
               <TabsContent value="receipts">
                 {receipts.length === 0 ? (
-                  <EmptyState icon={<FileText className="h-5 w-5 text-muted-foreground" aria-hidden />}>
+                  <EmptyState
+                    icon={<FileText className="h-5 w-5 text-muted-foreground" aria-hidden />}
+                    action={query.trim() || from || to
+                      ? <Button variant="outline" onClick={clearFilters}>Clear filters</Button>
+                      : <Button variant="outline" onClick={() => setReceipting(true)}><Receipt aria-hidden /> New receipt</Button>}
+                  >
                     {query.trim() || from || to
                       ? 'No receipts match these filters.'
-                      : 'No receipts yet. Record a payment on an issued invoice to make one.'}
+                      : 'No receipts yet. A receipt is made when the money for an invoice has arrived.'}
                   </EmptyState>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-border">
@@ -380,6 +390,13 @@ export const InvoicesPage: React.FC = () => {
       </div>
 
       <NewInvoiceDialog open={creating} onOpenChange={setCreating} />
+      <NewReceiptDialog
+        open={receipting}
+        onOpenChange={setReceipting}
+        invoices={invoices}
+        nameOf={nameOf}
+        onNewInvoice={() => setCreating(true)}
+      />
 
       <PdfDialog
         open={preview !== null}

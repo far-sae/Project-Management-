@@ -337,10 +337,10 @@ export const CrmContactsPage: React.FC = () => {
     }
   };
 
-  const handleSetStep = async (lead: CrmContact, step: 'new' | 'contacted' | 'qualified' | 'unqualified') => {
+  const handleSetStep = async (lead: CrmContact, step: 'new' | 'contacted' | 'qualified' | 'customer' | 'unqualified') => {
     try {
       await updateContact(lead.id, leadStepPatch(step));
-      toast.success(`${leadName(lead)} marked ${LEAD_STEPS[step].label.toLowerCase()}`);
+      toast.success(step === 'customer' ? `${leadName(lead)} marked as an existing client` : `${leadName(lead)} marked ${LEAD_STEPS[step].label.toLowerCase()}`);
       await refresh();
     } catch (err) {
       toast.error(publicMessage(err, 'Could not update the lead'));
@@ -594,9 +594,9 @@ export const CrmContactsPage: React.FC = () => {
                               {MANUAL_LEAD_STEPS.filter((s) => s !== step).map((s) => (
                                 <DropdownMenuItem
                                   key={s}
-                                  onClick={() => void handleSetStep(c, s as 'new' | 'contacted' | 'qualified' | 'unqualified')}
+                                  onClick={() => void handleSetStep(c, s as 'new' | 'contacted' | 'qualified' | 'customer' | 'unqualified')}
                                 >
-                                  Mark as {LEAD_STEPS[s].label.toLowerCase()}
+                                  {s === 'customer' ? 'Mark as an existing client' : `Mark as ${LEAD_STEPS[s].label.toLowerCase()}`}
                                 </DropdownMenuItem>
                               ))}
                               {!CONVERTIBLE.includes(step) && (

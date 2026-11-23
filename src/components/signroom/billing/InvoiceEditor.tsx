@@ -37,6 +37,8 @@ interface Props {
   /** The currency a draft with no lines yet starts in. */
   startCurrency: string;
   delivery: DeliveryInfo | null;
+  /** Start with "make a receipt with this invoice" switched on (chosen in the new-invoice window). */
+  startWithReceipt?: boolean;
   /** The newest version of the invoice after every successful step. */
   onChange: (invoice: Invoice) => void;
   /** Fetch the invoice again, after the server says this copy is out of date. */
@@ -46,7 +48,7 @@ interface Props {
 const isStale = (error: unknown): boolean => (error as { status?: number } | null)?.status === 409;
 
 export const InvoiceEditor: React.FC<Props> = ({
-  invoice, customerEmail, companyHref, startCurrency, delivery, onChange, onReload,
+  invoice, customerEmail, companyHref, startCurrency, delivery, startWithReceipt, onChange, onReload,
 }) => {
   const id = useId();
   const { client } = useSignroom();
@@ -60,7 +62,7 @@ export const InvoiceEditor: React.FC<Props> = ({
   const [dueDate, setDueDate] = useState(invoice.dueDate);
   const [project, setProject] = useState(invoice.project ?? '');
   const [notes, setNotes] = useState(invoice.notes);
-  const [withPayment, setWithPayment] = useState(Boolean(savedReceipt));
+  const [withPayment, setWithPayment] = useState(Boolean(savedReceipt) || Boolean(startWithReceipt));
   const [amount, setAmount] = useState(savedReceipt?.amount ?? '');
   const [paidOn, setPaidOn] = useState(() => savedReceipt?.paidOn || billingToday());
   const [method, setMethod] = useState(savedReceipt?.method || 'Bank transfer');
@@ -419,13 +421,14 @@ export const InvoiceEditor: React.FC<Props> = ({
         </div>
       </Card>
 
-      <Card title="Payment already received">
+      <Card title="Receipt">
         <div className="flex flex-col gap-3 p-4">
           <Tick checked={withPayment} onChange={(next) => { setWithPayment(next); setReceived(false); }} disabled={busy}>
-            Record a payment and create its receipt when this invoice is issued
+            Make a receipt with this invoice: the money has arrived already
           </Tick>
           <p className="text-xs text-muted-foreground">
-            Leave this off to issue the invoice on its own. Saving a draft never records a payment or makes a receipt.
+            Leave this off to send the invoice first. When the money arrives, open the invoice and choose Create a receipt.
+            Saving a draft never records a payment or makes a receipt.
           </p>
           {withPayment && (
             <>
@@ -530,7 +533,9 @@ export const InvoiceEditor: React.FC<Props> = ({
               {confirm === 'send'
                 ? `Your changes are saved, the invoice is locked, and it is emailed to ${customerEmail}.`
                 : 'The invoice is locked: its amounts, customer details and look cannot be edited afterwards.'}
-              {withPayment && ' The payment you entered is recorded and its receipt created.'}
+              {withPayment
+                ? ' The payment you entered is recorded and its receipt created.'
+                : ' No receipt is made now. Create it when the money has arrived.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

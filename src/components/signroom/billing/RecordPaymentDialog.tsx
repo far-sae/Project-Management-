@@ -52,10 +52,10 @@ export const RecordPaymentDialog: React.FC<Props> = ({ open, onOpenChange, invoi
           }}
         >
           <DialogHeader>
-            <DialogTitle>Record a payment</DialogTitle>
+            <DialogTitle>Create a receipt</DialogTitle>
             <DialogDescription>
               <span className="tabular-nums">{formatMinor(owed, invoice.currency)}</span> is still to pay on {invoice.number}.
-              Recording a payment makes a receipt. It does not move any money.
+              Enter the money that has arrived. Recording the payment makes its receipt. It does not move any money.
             </DialogDescription>
           </DialogHeader>
 

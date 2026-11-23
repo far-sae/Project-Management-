@@ -157,3 +157,26 @@ describe('new code keeps to the rule', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+const sourceFilesOf = (dir: string, out: string[] = []): string[] => {
+  for (const name of readdirSync(join(root, dir))) {
+    const path = `${dir}/${name}`;
+    if (statSync(join(root, path)).isDirectory()) sourceFilesOf(path, out);
+    else if (/\.tsx?$/.test(name)) out.push(path);
+  }
+  return out;
+};
+
+describe('small things a visitor would notice', () => {
+  it('keeps the calendar icon of a date box at its right edge, not on top of the date', () => {
+    const css = read('src/index.css').replace(/\s+/g, ' ');
+    // As a flex box the browser packs the icon right after the text; as a block it goes to the edge.
+    expect(css).toContain('input[type="date"], input[type="datetime-local"], input[type="month"], input[type="week"], input[type="time"] { display: block; }');
+    expect(css).toContain('input[type="datetime-local"]::-webkit-calendar-picker-indicator');
+  });
+
+  it('names no other product in the app', () => {
+    const offenders = sourceFilesOf('src').filter((file) => /HubSpot|Salesforce|Pipedrive/.test(read(file).replace(/^\s*(\/\/|\*|\/\*).*$/gm, '')));
+    expect(offenders).toEqual([]);
+  });
+});
