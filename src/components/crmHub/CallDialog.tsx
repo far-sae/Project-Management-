@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { Grip, Loader2, Mic, MicOff, Phone, PhoneOff } from 'lucide-react';
+import { Delete, Grip, Loader2, Mic, MicOff, Phone, PhoneOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { publicText } from '@/lib/publicError';
 import { endCall, errorSentence, startCall } from '@/services/voice/client';
 import { openLine, type Line } from '@/services/voice/device';
 import {
@@ -21,9 +22,10 @@ import {
 } from '../../../api/_voice/shared/types';
 
 /**
- * Rings a lead's or a company's phone from the browser. The call is recorded
- * (the person called hears a notice first) and logged on the timeline by the
- * server when it ends; here the caller adds how it went.
+ * Rings a phone from the browser: a lead's, a company's, or (as the dialer)
+ * any number typed or pressed on its keypad. The call is recorded (the person
+ * called hears a notice first) and logged on the timeline by the server when it
+ * ends; here the caller adds how it went.
  */
 
 type Phase = 'ready' | 'connecting' | 'ringing' | 'live' | 'ended';
@@ -31,17 +33,20 @@ type Phase = 'ready' | 'connecting' | 'ringing' | 'live' | 'ended';
 export interface CallDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Who is being called, for the title. */
+  /** Who is being called, for the title. Empty for the dialer. */
   name: string;
-  /** The number on the record, as it was typed there. */
+  /** The number on the record, as it was typed there. Empty for the dialer, or a number to ring again. */
   phone: string;
-  target: { contactId: string } | { companyId: string };
+  /** A lead, a company, or (the dialer) just the workspace the call is placed for. */
+  target: { contactId: string } | { companyId: string } | { workspaceId: string };
   setup: VoiceSetup;
   /** Called once the call is on the timeline. */
   onLogged?: () => void;
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+/** The dialer's own keys: a plus for the country code, and one to take a digit back. */
+const DIAL_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '0', 'back'];
 
 const clock = (seconds: number): string =>
   `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
@@ -64,6 +69,9 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
   const [outcome, setOutcome] = useState<CallOutcome>('no_answer');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  /** For a dialled number that is a lead's: that lead. The call is then theirs. */
+  const [matched, setMatched] = useState<{ id: string; name: string } | null>(null);
+  const dialer = 'workspaceId' in target;
 
   const line = useRef<Line | null>(null);
   const callId = useRef<string | null>(null);
@@ -91,6 +99,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
     setOutcome('no_answer');
     setNote('');
     setSaving(false);
+    setMatched(null);
     line.current = null;
     callId.current = null;
     answeredAt.current = null;
@@ -116,7 +125,8 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
   const checked = dialable(number, country || null);
   const noNumber = checked.ok && !setup.numbers[checked.country];
   const blocked = !setup.ready
-    ? setup.problem
+    // What is missing on the server is for the people who run the site; everybody else reads that it is not on yet.
+    ? publicText(setup.problem ?? '', 'Calling is not switched on yet.')
     : noNumber && checked.ok
       ? `You have no ${COUNTRY_NAME[checked.country]} number to call from yet.`
       : null;
@@ -139,6 +149,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
       accepted = true;
       callId.current = started.id;
       setDisplay(started.display);
+      setMatched(started.contact ?? null);
       if (abandoned.current) {
         setPhase('ended');
         return;
@@ -215,7 +226,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
         onEscapeKeyDown={(e) => { if (active) e.preventDefault(); }}
       >
         <DialogHeader>
-          <DialogTitle>Call {name}</DialogTitle>
+          <DialogTitle>{dialer ? (matched?.name ? `Call ${matched.name}` : 'Dial a number') : `Call ${name}`}</DialogTitle>
           <DialogDescription>
             {phase === 'ready'
               ? 'From your browser, with your microphone.'
@@ -234,16 +245,38 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
                 autoComplete="off"
                 value={number}
                 onChange={(e) => setNumber(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void place(); } }}
+                placeholder={dialer ? '+44 or +1, then the number' : undefined}
+                autoFocus={dialer}
                 aria-describedby={`${fieldId}-hint`}
               />
-              <p id={`${fieldId}-hint`} className={cn('text-xs', checked.ok ? 'text-muted-foreground' : 'text-destructive')}>
+              <p id={`${fieldId}-hint`} className={cn('text-xs', checked.ok || !number.trim() ? 'text-muted-foreground' : 'text-destructive')}>
                 {checked.ok
                   ? `Rings ${formatNumber(checked.e164)}, ${COUNTRY_NAME[checked.country]}.`
-                  : needsCountry && !country && number.trim()
-                    ? 'Choose the country of this number, or write it with +1 or +44.'
-                    : checked.error}
+                  : !number.trim()
+                    ? 'Type a United Kingdom or United States number, or press the keys.'
+                    : needsCountry && !country
+                      ? 'Choose the country of this number, or write it with +1 or +44.'
+                      : checked.error}
               </p>
             </div>
+            {dialer && (
+              <div role="group" aria-label="Dial pad" className="grid grid-cols-3 justify-items-center gap-2 self-center">
+                {DIAL_KEYS.map((key) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    variant="outline"
+                    className="h-11 w-16 text-base tabular-nums"
+                    aria-label={key === 'back' ? 'Delete the last digit' : key === '+' ? 'Dial plus' : `Dial ${key}`}
+                    disabled={key === 'back' && !number}
+                    onClick={() => setNumber((n) => (key === 'back' ? n.slice(0, -1) : n + key))}
+                  >
+                    {key === 'back' ? <Delete aria-hidden /> : key}
+                  </Button>
+                ))}
+              </div>
+            )}
             {needsCountry && (
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor={`${fieldId}-country`}>Country</Label>
@@ -280,6 +313,9 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
               <p className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span aria-hidden className="size-2 rounded-full bg-destructive" />Recording
               </p>
+            )}
+            {matched?.name && (
+              <p className="text-center text-xs text-muted-foreground">This is {matched.name}’s number. The call goes on their timeline.</p>
             )}
             <div className="flex items-center gap-2">
               <Button
@@ -366,7 +402,7 @@ export const CallDialog: React.FC<CallDialogProps> = ({ open, onOpenChange, name
           )}
           {phase === 'ended' && (
             <Button onClick={save} disabled={saving}>
-              {saving && <Loader2 className="animate-spin" aria-hidden />}Save to timeline
+              {saving && <Loader2 className="animate-spin" aria-hidden />}{dialer && !matched ? 'Save' : 'Save to timeline'}
             </Button>
           )}
         </DialogFooter>

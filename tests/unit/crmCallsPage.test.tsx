@@ -102,10 +102,23 @@ describe('CRM calls page', () => {
     expect(first.textContent).toContain('Sam');
     expect(within(second).getByRole('link', { name: 'Harbour Dental' }).getAttribute('href')).toBe('/crm/companies/co-1');
     expect(within(second).getByText('No answer')).toBeTruthy();
-    // A call whose lead was deleted since is still listed, with nobody to ring.
-    expect(within(third).getByText('Deleted record')).toBeTruthy();
+    // A number dialled by hand (or one whose lead was deleted since) is listed by the number itself...
+    expect(within(third).queryByRole('link')).toBeNull();
+    expect(third.textContent).toContain('+44 20 7946 0958');
     expect(within(third).getByText('Left a voicemail')).toBeTruthy();
-    expect(within(third).queryByRole('button', { name: /again/ })).toBeNull();
+    // ...and can be rung again as a number.
+    fireEvent.click(within(third).getByRole('button', { name: 'Call +44 20 7946 0958 again' }));
+    expect(screen.getByRole('dialog', { name: 'Call window' }).textContent).toContain(' · +44 20 7946 0958 · {"workspaceId":"ws-1"}');
+  });
+
+  it('opens the dialer for any number, for this workspace', async () => {
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+    fireEvent.click(screen.getByRole('button', { name: 'Dialer' }));
+    // No name and no number yet: the window is the dial pad.
+    expect(screen.getByRole('dialog', { name: 'Call window' }).textContent).toContain(' ·  · {"workspaceId":"ws-1"}');
+    fireEvent.click(screen.getByRole('button', { name: 'finish call' }));
+    await waitFor(() => expect(state.listCalls).toHaveBeenCalledTimes(2));
   });
 
   it('sums up the last 30 days', async () => {
@@ -202,6 +215,7 @@ describe('CRM calls page', () => {
     await screen.findByText('Send the quote on Friday');
     expect(screen.getByRole('status').textContent).toContain('Calling is not set up yet.');
     expect(screen.queryByRole('button', { name: 'Call a lead' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Dialer' })).toBeNull();
     expect(screen.queryByRole('button', { name: /again/ })).toBeNull();
   });
 

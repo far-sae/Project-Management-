@@ -71,12 +71,16 @@ export interface VoiceStore {
   deleteCall(id: string): Promise<void>;
   /** Every call made to one lead, newest first. */
   callsOfContact(contactId: string): Promise<Call[]>;
+  /** The phone numbers on a workspace's leads, as they were typed, to match a dialled number to its lead. */
+  leadPhones(workspaceId: string): Promise<Array<{ id: string; phone: string }>>;
 }
 
 type Row = Record<string, any>;
 
 /** Calls of one lead read at once. */
 export const PERSON_CALLS_LIMIT = 1000;
+/** Leads looked at when a dialled number is matched to its lead. */
+export const LEAD_PHONES_LIMIT = 5000;
 
 const callFrom = (r: Row): Call => ({
   id: r.id,
@@ -214,6 +218,13 @@ export function supabaseStore(sb: SupabaseClient): VoiceStore {
 
     async callsOfContact(contactId) {
       return ((must(await sb.from("crm_calls").select("*").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(PERSON_CALLS_LIMIT)) as Row[] | null) ?? []).map(callFrom);
+    },
+
+    async leadPhones(workspaceId) {
+      const data = must(
+        await sb.from("crm_contacts").select("id, phone").eq("workspace_id", workspaceId).not("phone", "is", null).order("created_at", { ascending: true }).limit(LEAD_PHONES_LIMIT),
+      ) as Row[] | null;
+      return (data ?? []).filter((r) => typeof r.phone === "string" && r.phone.trim() !== "").map((r) => ({ id: r.id as string, phone: r.phone as string }));
     },
 
     async deleteCall(id) {

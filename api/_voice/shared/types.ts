@@ -59,8 +59,20 @@ export type VoiceSetup = {
 };
 
 /** POST /api/voice/calls */
-export type StartCallInput = { contactId?: string; companyId?: string; to: string; country?: CallCountry };
-export type StartedCall = { id: string; to: string; display: string; country: CallCountry; token: string };
+/**
+ * A call is placed to a lead (`contactId`), to a company (`companyId`), or, from
+ * the dialer, to any number for a workspace (`workspaceId` alone).
+ */
+export type StartCallInput = { contactId?: string; companyId?: string; workspaceId?: string; to: string; country?: CallCountry };
+export type StartedCall = {
+  id: string;
+  to: string;
+  display: string;
+  country: CallCountry;
+  token: string;
+  /** For a dialled number that turned out to be a lead's: the lead the call now belongs to. */
+  contact: { id: string; name: string } | null;
+};
 
 /** POST /api/voice/calls/<id>/end */
 export type EndCallInput = { outcome?: CallOutcome | null; note?: string; seconds?: number; answered?: boolean };

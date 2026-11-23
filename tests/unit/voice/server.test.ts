@@ -25,7 +25,7 @@ import {
   webhook,
   type VoiceDeps,
 } from "../../../api/_voice/router";
-import { isUnansweredCallEntry, type CallList, type PersonCalls } from "../../../api/_voice/shared/types";
+import { isUnansweredCallEntry, type CallList, type PersonCalls, type StartedCall } from "../../../api/_voice/shared/types";
 import type { Call, CallPatch, Target, VoiceStore } from "../../../api/_voice/store";
 import { callToken, identityOf, TOKEN_SECONDS } from "../../../api/_voice/token";
 import { dialTwiml, noticeTwiml, RECORDING_NOTICE } from "../../../api/_voice/twiml";
@@ -72,6 +72,8 @@ function fakeStore() {
     [LEAD_NO_WS]: { kind: "contact", id: LEAD_NO_WS, organizationId: ORG, workspaceId: null },
     [COMPANY]: { kind: "company", id: COMPANY, organizationId: ORG, workspaceId: WS },
   };
+  /** The phone numbers on the workspace's leads, as people typed them. */
+  const phones: Array<{ id: string; phone: string }> = [{ id: LEAD, phone: "020 7946 0958" }, { id: LEAD_NO_WS, phone: "not a number" }];
   let n = 0;
   let tick = 0;
   const state = { ready: true, now: new Date("2026-11-20T10:00:00Z") };
@@ -115,11 +117,12 @@ function fakeStore() {
       activities.delete(id);
     },
     callsOfContact: async (contactId) => [...calls.values()].filter((c) => c.contactId === contactId).sort(newestFirst),
+    leadPhones: async (workspaceId) => (workspaceId === WS ? phones : []),
     saveActivity: async (call, description, metadata) => {
       activities.set(call.id, { id: call.id, description, metadata, contactId: call.contactId, companyId: call.companyId, workspaceId: call.workspaceId });
     },
   };
-  return { store, calls, activities, roles, state };
+  return { store, calls, activities, roles, state, phones };
 }
 
 function world() {
@@ -551,6 +554,78 @@ describe("calling: deleting a call", () => {
     // One whose end was never reported can be cleared away later.
     w.state.now = new Date(w.state.now.getTime() + 4 * 60 * 60_000);
     expect((await w.as(OWNER).del(`calls/${live}`)).status).toBe(200);
+  });
+});
+
+describe("calling: the dialer (a number that is not on a record)", () => {
+  it("rings any United Kingdom or United States number for the workspace, with no lead or company", async () => {
+    const w = world();
+    const out = await w.as(OWNER).post("calls", { workspaceId: WS, to: "+1 415 555 0199" });
+    expect(out.status).toBe(200);
+    const started = out.json as StartedCall;
+    expect(started).toMatchObject({ to: "+14155550199", country: "US", contact: null });
+    const call = w.calls.get(started.id) as Call;
+    expect(call).toMatchObject({ organizationId: ORG, workspaceId: WS, userId: OWNER, contactId: null, companyId: null, toNumber: "+14155550199" });
+  });
+
+  it("puts the call on the lead when the number is a lead's, however it was typed on the lead", async () => {
+    const w = world();
+    // The lead has "020 7946 0958"; the same phone dialled the international way.
+    const out = await w.as(ADMIN).post("calls", { workspaceId: WS, to: "+44 20 7946 0958" });
+    const started = out.json as StartedCall;
+    expect(started.contact).toEqual({ id: LEAD, name: "Elena Rossi" });
+    expect((w.calls.get(started.id) as Call).contactId).toBe(LEAD);
+  });
+
+  it("lists a dialled call by its number, and leaves no timeline entry that belongs to nobody", async () => {
+    const w = world();
+    const id = ((await w.as(OWNER).post("calls", { workspaceId: WS, to: "+1 415 555 0199" })).json as StartedCall).id;
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "30" }, { call: id });
+    await w.as(OWNER).post(`calls/${id}/end`, { outcome: "connected", note: "Asked for a brochure", seconds: 30, answered: true });
+    expect(w.activities.has(id)).toBe(false);
+    const listed = ((await w.as(OWNER).get("calls", { workspaceId: WS })).json as CallList).calls[0];
+    expect(listed).toMatchObject({ id, display: "+1 (415) 555-0199", contact: null, company: null, note: "Asked for a brochure" });
+  });
+
+  it("still writes the timeline entry of a dialled call that turned out to be a lead's", async () => {
+    const w = world();
+    const id = ((await w.as(OWNER).post("calls", { workspaceId: WS, to: "020 7946 0958", country: "GB" })).json as StartedCall).id;
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "30" }, { call: id });
+    expect(w.activities.get(id)?.contactId).toBe(LEAD);
+  });
+
+  it("is for the owner and admins of that workspace only, and needs a workspace", async () => {
+    const w = world();
+    const dial = { workspaceId: WS, to: "+1 415 555 0199" };
+    expect(await w.as(MEMBER).post("calls", dial)).toEqual({ status: 403, json: { error: OWNER_ONLY_MESSAGE } });
+    // Somebody outside the organisation learns nothing about the workspace.
+    expect(await w.as("0c000000-0000-4000-8000-000000000099").post("calls", dial)).toEqual({ status: 403, json: { error: CHOOSE_WORKSPACE_MESSAGE } });
+    expect(await w.as(OWNER).post("calls", { workspaceId: "0a000000-0000-4000-8000-0000000000ee", to: "+1 415 555 0199" })).toEqual({ status: 403, json: { error: CHOOSE_WORKSPACE_MESSAGE } });
+    expect(await w.as(OWNER).post("calls", { to: "+1 415 555 0199" })).toEqual({ status: 404, json: { error: NOT_FOUND_MESSAGE } });
+    expect(w.calls.size).toBe(0);
+  });
+
+  it("checks the number like any other call, and keeps to the listed organisations", async () => {
+    const w = world();
+    expect((await w.as(OWNER).post("calls", { workspaceId: WS, to: "+33 1 23 45 67 89" })).status).toBe(400);
+    expect((await w.as(OWNER).post("calls", { workspaceId: WS, to: "12" })).status).toBe(400);
+    w.deps.config = () => readConfig({ ...ENV, TWILIO_ALLOWED_ORGS: "0b000000-0000-4000-8000-0000000000ff" });
+    expect(await w.as(OWNER).post("calls", { workspaceId: WS, to: "+1 415 555 0199" })).toEqual({ status: 403, json: { error: ORG_NOT_ALLOWED_MESSAGE } });
+  });
+
+  it("still rings when the leads' numbers cannot be read: matching is a help, not a condition", async () => {
+    const w = world();
+    w.store.leadPhones = async () => { throw new Error("database down"); };
+    const out = await w.as(OWNER).post("calls", { workspaceId: WS, to: "+44 20 7946 0958" });
+    expect(out.status).toBe(200);
+    expect((out.json as StartedCall).contact).toBeNull();
+  });
+
+  it("a call from a lead's own page is never matched to somebody else", async () => {
+    const w = world();
+    const started = (await w.as(OWNER).post("calls", { contactId: LEAD, to: "+1 415 555 0199" })).json as StartedCall;
+    expect(started.contact).toBeNull();
+    expect((w.calls.get(started.id) as Call).contactId).toBe(LEAD);
   });
 });
 

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Phone, PhoneCall, Search, Trash2 } from 'lucide-react';
+import { Grip, Loader2, Phone, PhoneCall, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmContacts, useWorkspaceForCreate } from '@/hooks/useCrmHub';
 import { useCalling } from '@/hooks/useCalling';
 import { leadName } from '@/lib/crmFlow';
+import { publicText } from '@/lib/publicError';
 import { deleteCall, errorSentence, listCalls } from '@/services/voice/client';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
@@ -77,7 +78,7 @@ const whenOf = (iso: string): string => {
   return `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
 };
 
-type Dialing = { name: string; phone: string; target: { contactId: string } | { companyId: string } };
+type Dialing = { name: string; phone: string; target: { contactId: string } | { companyId: string } | { workspaceId: string } };
 
 const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 
@@ -208,7 +209,8 @@ export const CrmCallsPage: React.FC = () => {
   const again = (call: CallListItem): Dialing | null => {
     if (call.contact) return { name: call.contact.name, phone: call.display, target: { contactId: call.contact.id } };
     if (call.company) return { name: call.company.name, phone: call.display, target: { companyId: call.company.id } };
-    return null;
+    // A number that was dialled by hand, or whose record is gone: ring the number itself.
+    return workspaceId ? { name: '', phone: call.display, target: { workspaceId } } : null;
   };
 
   return (
@@ -239,6 +241,11 @@ export const CrmCallsPage: React.FC = () => {
                   <SelectItem value="recorded">With a recording</SelectItem>
                 </SelectContent>
               </Select>
+              {canCall && workspaceId && (
+                <Button variant="outline" onClick={() => setDialing({ name: '', phone: '', target: { workspaceId } })}>
+                  <Grip aria-hidden />Dialer
+                </Button>
+              )}
               {canCall && (
                 <Button onClick={() => { setPickQuery(''); setPicking(true); }}>
                   <PhoneCall aria-hidden />Call a lead
@@ -251,7 +258,8 @@ export const CrmCallsPage: React.FC = () => {
         {(!calling.setup.configured || calling.setup.problem) && (
           <div role="status" className="rounded-lg border border-border bg-secondary px-4 py-3 text-sm">
             {calling.setup.problem
-              ?? 'Calling is not set up yet. Once a phone provider is connected, leads can be rung from here and every call is listed with its recording.'}
+              ? publicText(calling.setup.problem, 'Calling is not switched on yet.')
+              : 'Calling is not set up yet. Once a phone provider is connected, leads can be rung from here and every call is listed with its recording.'}
           </div>
         )}
 
@@ -322,7 +330,8 @@ export const CrmCallsPage: React.FC = () => {
                           {call.company.name || 'Company'}
                         </Link>
                       ) : (
-                        <span className="text-sm font-medium text-muted-foreground">Deleted record</span>
+                        // A number dialled by hand, or one whose lead or company was deleted since.
+                        <span className="text-sm font-medium tabular-nums text-foreground">{call.display}</span>
                       )}
                       <StatusPill tone={result.tone}>{result.label}</StatusPill>
                       {call.seconds > 0 && <span className="text-xs tabular-nums text-muted-foreground">{lengthOf(call.seconds)}</span>}
@@ -334,7 +343,7 @@ export const CrmCallsPage: React.FC = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          aria-label={`Call ${redial.name} again`}
+                          aria-label={`Call ${redial.name || call.display} again`}
                           onClick={() => setDialing(redial)}
                         >
                           <Phone aria-hidden />Call again

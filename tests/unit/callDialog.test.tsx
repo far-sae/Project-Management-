@@ -209,3 +209,106 @@ describe('call window', () => {
     await waitFor(() => expect(h.endCall).toHaveBeenCalledWith('call-1', expect.objectContaining({ answered: false })));
   });
 });
+
+describe('the dialer', () => {
+  const WS = '0a000000-0000-4000-8000-000000000001';
+  const dial = (over: Partial<React.ComponentProps<typeof CallDialog>> = {}) => show({ name: '', phone: '', target: { workspaceId: WS }, ...over });
+  const press = (...keys: string[]) => {
+    for (const key of keys) fireEvent.click(screen.getByRole('button', { name: key === '+' ? 'Dial plus' : `Dial ${key}` }));
+  };
+  const field = () => screen.getByLabelText('Number') as HTMLInputElement;
+
+  beforeEach(() => {
+    h.startCall.mockResolvedValue({ id: 'call-9', to: '+14155550199', display: '+1 (415) 555-0199', country: 'US', token: 'tok', contact: null });
+  });
+
+  it('starts empty, with a pad to press the number on', () => {
+    dial();
+    expect(screen.getByRole('heading', { name: 'Dial a number' })).toBeTruthy();
+    expect(field().value).toBe('');
+    expect(screen.getByText('Type a United Kingdom or United States number, or press the keys.')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Dial pad' })).toBeTruthy();
+    expect(callButton().hasAttribute('disabled')).toBe(true);
+    // Nothing to take back yet.
+    expect(screen.getByRole('button', { name: 'Delete the last digit' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('builds the number from the keys, takes a digit back, and says where it will ring', () => {
+    dial();
+    press('+', '1', '4', '1', '5', '5', '5', '5', '0', '1', '9', '9', '9');
+    expect(field().value).toBe('+141555501999');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete the last digit' }));
+    expect(field().value).toBe('+14155550199');
+    expect(screen.getByText('Rings +1 (415) 555-0199, United States.')).toBeTruthy();
+    expect(callButton().hasAttribute('disabled')).toBe(false);
+  });
+
+  it('places the call for the workspace, with no lead or company', async () => {
+    dial();
+    fireEvent.change(field(), { target: { value: '+1 415 555 0199' } });
+    fireEvent.click(callButton());
+    await waitFor(() => expect(h.startCall).toHaveBeenCalledWith({ workspaceId: WS, to: '+14155550199', country: 'US' }));
+    act(() => h.tell?.('ringing'));
+    act(() => h.tell?.('answered'));
+    expect(screen.getByText('Recording')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Hang up' }));
+    // The number is nobody's, so there is no timeline to save to: the note stays with the call.
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.endCall).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Save to timeline' })).toBeNull();
+  });
+
+  it('places the call with the Enter key', async () => {
+    dial();
+    fireEvent.change(field(), { target: { value: '+44 20 7946 0958' } });
+    fireEvent.keyDown(field(), { key: 'Enter' });
+    await waitFor(() => expect(h.startCall).toHaveBeenCalledWith({ workspaceId: WS, to: '+442079460958', country: 'GB' }));
+  });
+
+  it('says whose number it is when the number belongs to a lead, and saves to their timeline', async () => {
+    h.startCall.mockResolvedValue({ id: 'call-9', to: '+442079460958', display: '+44 20 7946 0958', country: 'GB', token: 'tok', contact: { id: LEAD, name: 'Elena Rossi' } });
+    dial();
+    fireEvent.change(field(), { target: { value: '+44 20 7946 0958' } });
+    fireEvent.click(callButton());
+    await screen.findByRole('heading', { name: 'Call Elena Rossi' });
+    expect(screen.getByText('This is Elena Rossi’s number. The call goes on their timeline.')).toBeTruthy();
+    act(() => h.tell?.('ringing'));
+    fireEvent.click(screen.getByRole('button', { name: 'Hang up' }));
+    expect(await screen.findByRole('button', { name: 'Save to timeline' })).toBeTruthy();
+  });
+
+  it('asks for the country of a number written the local way', () => {
+    dial();
+    // Seven digits could be a number of either country.
+    press('5', '5', '5', '0', '1', '3', '2');
+    expect(screen.getByText('Choose the country of this number, or write it with +1 or +44.')).toBeTruthy();
+    expect(screen.getByLabelText('Country')).toBeTruthy();
+    expect(callButton().hasAttribute('disabled')).toBe(true);
+  });
+
+  it('rings a number again that is handed to it', () => {
+    dial({ phone: '+1 (415) 555-0199' });
+    expect(field().value).toBe('+1 (415) 555-0199');
+    expect(callButton().hasAttribute('disabled')).toBe(false);
+  });
+
+  it('has no dial pad on a lead’s own call window', () => {
+    show();
+    expect(screen.queryByRole('group', { name: 'Dial pad' })).toBeNull();
+  });
+});
+
+describe('what a person who does not run the site reads', () => {
+  it('is told calling is not switched on, never which server setting is missing', async () => {
+    const { setInternalsVisible } = await import('@/lib/publicError');
+    setInternalsVisible(false);
+    try {
+      show({ setup: { configured: true, ready: false, problem: "Calling is not set up yet: TWILIO_AUTH_TOKEN is missing in Vercel's environment variables.", numbers: { US: false, GB: false } } });
+      const alert = screen.getByRole('alert').textContent ?? '';
+      expect(alert).toContain('This is not switched on yet. Please contact support.');
+      expect(alert).not.toMatch(/TWILIO|Vercel/);
+    } finally {
+      setInternalsVisible(true);
+    }
+  });
+});

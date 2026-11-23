@@ -13,7 +13,7 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml } from "./twiml.js";
  * From the page (signed in):
  *   GET  setup                 can calls be placed, and if not, what is missing
  *   GET  calls                 the calls of a workspace, newest first, with how the month went
- *   POST calls                 start a call to a lead or a company
+ *   POST calls                 start a call to a lead, a company, or (the dialer) any number for a workspace
  *   POST calls/<id>/end        how the call went, in the caller's words
  *   GET  calls/<id>/recording  the recording, as audio
  *   DELETE calls/<id>          remove a call, its recording and its timeline entry (the owner only)
@@ -116,6 +116,8 @@ const metaOf = (call: Call): CallActivityMeta => ({
  * is read once more afterwards and the entry rewritten if it moved on.
  */
 async function writeEntry(d: VoiceDeps, call: Call): Promise<void> {
+  // A number dialled by hand that is nobody's has no timeline to be written on. The call is on the Calls page.
+  if (!call.contactId && !call.companyId) return;
   await d.store.saveActivity(call, describeCall(call), metaOf(call));
   const again = await d.store.getCall(call.id);
   if (again && again.updatedAt !== call.updatedAt) await d.store.saveActivity(again, describeCall(again), metaOf(again));
@@ -185,8 +187,17 @@ async function list(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
 
 async function start(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
   const config = readyConfig(d);
-  const { contactId, companyId, to, country } = r.body;
-  const target = isUuid(contactId) ? await d.store.contact(contactId as string) : isUuid(companyId) ? await d.store.company(companyId as string) : null;
+  const { contactId, companyId, workspaceId, to, country } = r.body;
+  let target = isUuid(contactId) ? await d.store.contact(contactId as string) : isUuid(companyId) ? await d.store.company(companyId as string) : null;
+  // The dialer: a number typed by hand, for a workspace, with no record behind it (yet).
+  const dialled = !target && contactId === undefined && companyId === undefined && workspaceId !== undefined;
+  if (dialled) {
+    const organizationId = isUuid(workspaceId) ? await d.store.workspaceOrg(workspaceId as string) : null;
+    const role = organizationId ? await d.store.orgRole(organizationId, r.user.id) : null;
+    // An outsider learns nothing about whether the workspace exists.
+    if (!organizationId || !role) throw new AppError(CHOOSE_WORKSPACE_MESSAGE, 403);
+    target = { kind: "contact", id: "", organizationId, workspaceId: workspaceId as string };
+  }
   if (!target) throw new AppError(NOT_FOUND_MESSAGE, 404);
   await refuseUnlessAdmin(d, target.organizationId, r.user.id);
   // The phone account is one for the whole site: when a list of organisations is set, only they may spend it.
@@ -203,18 +214,47 @@ async function start(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
   const since = new Date(nowOf(d).getTime() - 60_000).toISOString();
   if ((await d.store.callsSince(r.user.id, since)) >= CALLS_PER_MINUTE) throw new AppError(TOO_MANY_MESSAGE, 429);
 
+  // A dialled number that is a lead's becomes that lead's call, so it lands on their timeline.
+  const matched = dialled ? await leadWithNumber(d, target.workspaceId, number.e164, number.country) : null;
   const call = await d.store.insertCall({
     organizationId: target.organizationId,
     workspaceId: target.workspaceId,
     userId: r.user.id,
-    contactId: target.kind === "contact" ? target.id : null,
-    companyId: target.kind === "company" ? target.id : null,
+    contactId: dialled ? (matched?.id ?? null) : target.kind === "contact" ? target.id : null,
+    companyId: !dialled && target.kind === "company" ? target.id : null,
     toNumber: number.e164,
     fromNumber: from,
     country: number.country,
   });
-  const started: StartedCall = { id: call.id, to: call.toNumber, display: formatNumber(call.toNumber), country: call.country, token: d.token(config, r.user.id) };
+  const started: StartedCall = {
+    id: call.id,
+    to: call.toNumber,
+    display: formatNumber(call.toNumber),
+    country: call.country,
+    token: d.token(config, r.user.id),
+    contact: matched,
+  };
   return { status: 200, json: started };
+}
+
+/**
+ * The lead of the workspace whose phone is this number, however it was typed
+ * on the lead ("020 7946 0958" and "+44 20 7946 0958" are one phone). The
+ * oldest lead wins when two share a number. Never fails the call: when the
+ * leads cannot be read, the number is simply nobody's.
+ */
+async function leadWithNumber(d: VoiceDeps, workspaceId: string, e164: string, country: "US" | "GB"): Promise<{ id: string; name: string } | null> {
+  try {
+    const found = (await d.store.leadPhones(workspaceId)).find((lead) => {
+      const theirs = dialable(lead.phone, country);
+      return theirs.ok && theirs.e164 === e164;
+    });
+    if (!found) return null;
+    const names = await d.store.names({ contacts: [found.id], companies: [], users: [] });
+    return { id: found.id, name: names.contacts[found.id] ?? "" };
+  } catch {
+    return null;
+  }
 }
 
 /** The caller's own call, or 404; and they must still be an owner or admin. */
