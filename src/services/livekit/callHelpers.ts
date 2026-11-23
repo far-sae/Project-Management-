@@ -70,12 +70,30 @@ export function shouldEndCallWhenAlone(
   return remoteCount === 0 && status === 'connected';
 }
 
+/** LiveKit's number for "a screen" among the sources a participant may publish. */
+const SCREEN_SHARE_SOURCE = 3;
+
+/**
+ * Whether a participant may share their screen, from the permissions the
+ * server gave them. An empty list of sources means "every source". Before the
+ * permissions are known, a team member may and a guest may not.
+ */
+export function mayShareScreen(
+  permissions: { canPublish?: boolean; canPublishSources?: number[] } | null | undefined,
+  isGuest: boolean,
+): boolean {
+  if (!permissions) return !isGuest;
+  if (!permissions.canPublish) return false;
+  const sources = permissions.canPublishSources ?? [];
+  return sources.length === 0 || sources.includes(SCREEN_SHARE_SOURCE);
+}
+
 /**
  * Pick the big tile for the floating mini window. Order: a remote person
  * sharing their screen > the remote who is speaking > the first remote >
- * the local user. The local user's own screen share is never chosen (it
- * would just mirror their screen); if they are the only one, their tile is
- * returned without video so the initials show instead.
+ * the local user. The window shows a remote sharer's screen; the local
+ * user is always shown by their camera, never by their own screen (it would
+ * just mirror what they are looking at).
  */
 export function pickMiniMainTile(peers: CallPeerSnapshot[]): CallPeerSnapshot | null {
   const remotes = peers.filter((p) => !p.isLocal);
@@ -86,9 +104,7 @@ export function pickMiniMainTile(peers: CallPeerSnapshot[]): CallPeerSnapshot | 
   if (pick) return pick;
   const local = peers.find((p) => p.isLocal);
   if (!local) return null;
-  return local.isScreenSharing
-    ? { ...local, videoStream: null, isScreenSharing: false }
-    : local;
+  return local;
 }
 
 /** Role/status the server stamps into participant metadata. */

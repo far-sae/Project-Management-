@@ -68,21 +68,18 @@ export const MiniCallView: React.FC<MiniCallViewProps> = ({
   onGuestDecision,
 }) => {
   const main = pickMiniMainTile(participants);
-  // Everyone else, small. The local user appears as their camera tile, never
-  // as their own screen share.
-  const others = participants
-    .filter((p) => p.userId !== main?.userId)
-    .map((p) =>
-      p.isLocal && p.isScreenSharing
-        ? { ...p, videoStream: null, isScreenSharing: false }
-        : p,
-    );
+  // The big tile shows somebody else's screen when they share one. Your own
+  // screen is never shown here: it would only mirror what you are looking at.
+  const mainIsScreen = Boolean(main?.isScreenSharing && !main.isLocal);
+  // Everyone else, small, by their camera. When the big tile is a screen, the
+  // person sharing it is here as well, so their face stays visible.
+  const others = participants.filter((p) => mainIsScreen || p.userId !== main?.userId);
 
   return (
     <div className={cn('flex h-screen w-screen flex-col gap-1.5 p-1.5', CALL_STAGE)}>
       <div data-testid="mini-main-tile" className="relative min-h-0 flex-1">
         {main ? (
-          <ParticipantTile snap={main} compact className="h-full w-full" />
+          <ParticipantTile snap={main} compact screen={mainIsScreen} className="h-full w-full" />
         ) : (
           <div className={cn('flex h-full items-center justify-center text-xs', CALL_MUTED_TEXT)}>
             Waiting…

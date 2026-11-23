@@ -14,6 +14,11 @@ vi.mock('@/services/livekit/guestApi', () => ({
     }
   },
 }));
+// The test browser has no screen picker; the real check is the browser's own.
+vi.mock('@/services/webrtc/mediaUtils', async (original) => ({
+  ...(await original<typeof import('@/services/webrtc/mediaUtils')>()),
+  isScreenShareSupported: () => true,
+}));
 vi.mock('@/services/webrtc/BackgroundProcessor', () => ({
   isBackgroundEffectSupported: () => true,
 }));
@@ -30,6 +35,7 @@ const svc = {
   setCameraOff: vi.fn(async () => {}),
   disconnect: vi.fn(async () => {}),
   setBackgroundBlur: vi.fn(async () => {}),
+  toggleScreenShare: vi.fn(async () => {}),
 };
 const toastError = vi.fn();
 vi.mock('sonner', () => ({ toast: { error: (...a: unknown[]) => toastError(...a) } }));
@@ -44,6 +50,7 @@ vi.mock('@/services/livekit/LiveKitCallService', () => ({
     setCameraOff = svc.setCameraOff;
     disconnect = svc.disconnect;
     setBackgroundBlur = svc.setBackgroundBlur;
+    toggleScreenShare = svc.toggleScreenShare;
   },
 }));
 
@@ -186,6 +193,43 @@ describe('GuestJoin', () => {
       ]);
     });
   };
+
+  const admitMe = async (me: Record<string, unknown>, others: Record<string, unknown>[] = [snap({ userId: 'm1', displayName: 'Sam' })]) => {
+    joinAsGuest.mockResolvedValue({ token: 't', url: 'u', label: 'L', identity: 'guest:1' });
+    renderPage();
+    await askToJoin();
+    await screen.findByText(/Waiting for/);
+    act(() => {
+      svc.opts!.onParticipantsChange([snap({ userId: 'guest:1', displayName: 'Pat', isLocal: true, role: 'guest', isWaiting: false, ...me }), ...others]);
+    });
+  };
+
+  it('lets a guest share their screen once the call allows it', async () => {
+    svc.toggleScreenShare.mockClear();
+    await admitMe({ canShareScreen: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Share screen' }));
+    expect(svc.toggleScreenShare).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the guest the stop button while they share', async () => {
+    await admitMe({ canShareScreen: true, isScreenSharing: true, screenStream: {} });
+    expect(await screen.findByRole('button', { name: 'Stop screen sharing' })).toBeTruthy();
+    expect(screen.getByText('Your screen')).toBeTruthy();
+  });
+
+  it('offers no share button on a call that does not allow guests to share', async () => {
+    await admitMe({ canShareScreen: false });
+    await screen.findByRole('button', { name: /mute/i });
+    expect(screen.queryByRole('button', { name: 'Share screen' })).toBeNull();
+  });
+
+  it('shows a shared screen in the middle with everybody at the side', async () => {
+    await admitMe({}, [snap({ userId: 'm1', displayName: 'Sam', isScreenSharing: true, screenStream: {} })]);
+    expect(await screen.findByText('Sam’s screen')).toBeTruthy();
+    const side = screen.getByRole('list', { name: 'People in the call' });
+    expect(side.textContent).toContain('Sam');
+    expect(side.textContent).toContain('Pat');
+  });
 
   it('blur button toggles background blur on the service', async () => {
     await admit();

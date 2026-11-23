@@ -23,7 +23,7 @@ export interface LiveKitParticipantPermission {
   canSubscribe: boolean;
   canPublish: boolean;
   canPublishData: boolean;
-  canPublishSources: Array<"CAMERA" | "MICROPHONE">;
+  canPublishSources: Array<"CAMERA" | "MICROPHONE" | "SCREEN_SHARE" | "SCREEN_SHARE_AUDIO">;
   canUpdateMetadata: boolean;
 }
 
@@ -58,13 +58,17 @@ export function guestWaitingGrant(room: string): LiveKitVideoGrant {
   };
 }
 
-/** Admitted guests: see/hear everyone, publish camera + mic only (no screen share). */
+/**
+ * Admitted guests: see/hear everyone, publish camera, mic and their screen
+ * (with the sound of what they share). A guest is let in by a team member, and
+ * a meeting with a client is where the client shows something.
+ */
 export function guestAdmittedPermission(): LiveKitParticipantPermission {
   return {
     canSubscribe: true,
     canPublish: true,
     canPublishData: true,
-    canPublishSources: ["CAMERA", "MICROPHONE"],
+    canPublishSources: ["CAMERA", "MICROPHONE", "SCREEN_SHARE", "SCREEN_SHARE_AUDIO"],
     canUpdateMetadata: false,
   };
 }

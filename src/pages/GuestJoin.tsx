@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { CallControls } from '@/components/calling/CallControls';
 import {
   ParticipantTile,
+  ScreenShareStage,
   RemoteAudioSink,
   attachStream,
 } from '@/components/calling/CallTiles';
@@ -326,8 +327,10 @@ export const GuestJoin: React.FC = () => {
     const shown = visiblePeers(peers);
     const recording = anyoneRecording(peers);
     const local = peers.find((p) => p.isLocal);
+    const sharer = shown.find((p) => p.isScreenSharing) ?? null;
     return (
-      <div className={cn('relative flex min-h-screen flex-col', CALL_STAGE)}>
+      // While a screen is shared the page is exactly one screen tall, so the shared screen fills what is left.
+      <div className={cn('relative flex flex-col', sharer ? 'h-[100dvh]' : 'min-h-screen', CALL_STAGE)}>
         {recording && (
           <div
             role="status"
@@ -338,15 +341,21 @@ export const GuestJoin: React.FC = () => {
             Recording
           </div>
         )}
-        <div className="grid flex-1 auto-rows-fr grid-cols-1 gap-3 p-3 sm:grid-cols-2">
-          {shown.map((p) => (
-            <ParticipantTile
-              key={p.userId}
-              snap={p}
-              className="min-h-[160px]"
-            />
-          ))}
-        </div>
+        {sharer ? (
+          <div className="flex min-h-0 flex-1 p-3">
+            <ScreenShareStage sharer={sharer} peers={shown} />
+          </div>
+        ) : (
+          <div className="grid flex-1 auto-rows-fr grid-cols-1 gap-3 p-3 sm:grid-cols-2">
+            {shown.map((p) => (
+              <ParticipantTile
+                key={p.userId}
+                snap={p}
+                className="min-h-[160px]"
+              />
+            ))}
+          </div>
+        )}
         {shown.filter((p) => !p.isLocal).map((p) => (
           <RemoteAudioSink key={`a-${p.userId}`} snap={p} />
         ))}
@@ -354,14 +363,15 @@ export const GuestJoin: React.FC = () => {
         <CallControls
           isMuted={local?.isMicMuted ?? !micOn}
           isCameraOff={local?.isCameraOff ?? !camOn}
-          isScreenSharing={false}
+          isScreenSharing={local?.isScreenSharing ?? false}
           videoEffect={videoEffect}
           isApplyingEffect={isApplyingEffect}
           mediaType="video"
-          allowScreenShare={false}
+          // Offered once the call lets guests share (the server says so in the guest's permissions).
+          allowScreenShare={local?.canShareScreen ?? false}
           onToggleMute={() => void svcRef.current?.setMicMuted(!(local?.isMicMuted ?? false))}
           onToggleCamera={() => void svcRef.current?.setCameraOff(!(local?.isCameraOff ?? false))}
-          onToggleScreenShare={() => {}}
+          onToggleScreenShare={() => void svcRef.current?.toggleScreenShare()}
           onToggleBackgroundEffect={() => void toggleBlur()}
           onHangUp={() => finish('ended')}
         />

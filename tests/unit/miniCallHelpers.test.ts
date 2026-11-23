@@ -38,11 +38,11 @@ describe('pickMiniMainTile', () => {
     expect(pickMiniMainTile([peer({ userId: 'me', isLocal: true }), first, peer({ userId: 'b' })])).toBe(first);
   });
 
-  it('never returns the local screen share', () => {
+  it('returns the local user with their camera while they share: their picture stays', () => {
     const result = pickMiniMainTile([peer({ userId: 'me', isLocal: true, isScreenSharing: true })]);
     expect(result?.userId).toBe('me');
-    expect(result?.isScreenSharing).toBe(false);
-    expect(result?.videoStream).toBeNull();
+    // videoStream is the camera; the screen is a separate picture the mini window never shows for yourself.
+    expect(result?.videoStream).toBe(stream);
   });
 
   it('returns null for no participants', () => {

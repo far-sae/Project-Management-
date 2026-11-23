@@ -58,13 +58,13 @@ describe('grants and metadata', () => {
     expect(g.canUpdateOwnMetadata).toBe(false);
     expect((g as unknown as Record<string, unknown>).roomAdmin).toBeUndefined();
   });
-  it('admitted permission allows camera + mic only', () => {
+  it('admitted permission allows camera, mic and sharing a screen', () => {
     const p = guestAdmittedPermission();
     expect(p).toEqual({
       canSubscribe: true,
       canPublish: true,
       canPublishData: true,
-      canPublishSources: ['CAMERA', 'MICROPHONE'],
+      canPublishSources: ['CAMERA', 'MICROPHONE', 'SCREEN_SHARE', 'SCREEN_SHARE_AUDIO'],
       canUpdateMetadata: false,
     });
   });

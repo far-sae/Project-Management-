@@ -21,7 +21,7 @@ import { uploadFileWithProgress } from '@/services/supabase/storage';
 import { insertProjectChatMessage } from '@/services/supabase/database';
 import type { CallPeerSnapshot } from '@/services/livekit/LiveKitCallService';
 import { transcribeRecording } from '@/services/ai/transcribeRecording';
-import { ParticipantTile, RemoteAudioSink } from './CallTiles';
+import { ParticipantTile, RemoteAudioSink, ScreenShareStage } from './CallTiles';
 import { MiniCallView } from './MiniCallView';
 import { bestGridLayout } from './gridLayout';
 import { GuestAdmitBanners, type GuestDecision } from './GuestAdmitBanners';
@@ -318,7 +318,9 @@ export const CallOverlay: React.FC = () => {
       if (p.isLocal) {
         const tracks: MediaStreamTrack[] = [];
         if (p.audioStream) tracks.push(...p.audioStream.getAudioTracks());
-        if (p.videoStream) tracks.push(...p.videoStream.getVideoTracks());
+        // While sharing, the recording keeps what is being shown, as it always did.
+        const picture = p.screenStream ?? p.videoStream;
+        if (picture) tracks.push(...picture.getVideoTracks());
         local = tracks.length > 0 ? new MediaStream(tracks) : null;
       } else if (p.audioStream) {
         remoteTracks.push(...p.audioStream.getAudioTracks());
@@ -800,7 +802,13 @@ export const CallOverlay: React.FC = () => {
         ))}
         <div className={cn('relative', CALL_SURFACE)} style={{ height: PIP_VIDEO_HEIGHT }}>
           {pipSnap ? (
-            <ParticipantTile snap={pipSnap} compact className="h-full w-full rounded-none" />
+            <ParticipantTile
+              snap={pipSnap}
+              compact
+              // Somebody else's screen is worth watching here; your own would only mirror itself.
+              screen={pipSnap.isScreenSharing && !pipSnap.isLocal}
+              className="h-full w-full rounded-none"
+            />
           ) : (
             <div className={cn('flex h-full items-center justify-center text-xs', CALL_MUTED_TEXT)}>
               Waiting…
@@ -867,13 +875,9 @@ export const CallOverlay: React.FC = () => {
 
   // ── Full-screen overlay ────────────────────────────────────
 
-  // Build the tile list. For the grid we want every participant including
-  // the local user. For the screen-share layout we pull the sharer out and
-  // strip the rest along the right edge.
+  // Every participant, the local user included. While somebody shares, the
+  // screen takes the middle and all of them line up on the right.
   const allTiles: CallPeerSnapshot[] = shownPeers;
-  const otherTiles = screenSharer
-    ? shownPeers.filter((p) => p.userId !== screenSharer.userId)
-    : [];
 
   return (
     <div
@@ -948,27 +952,9 @@ export const CallOverlay: React.FC = () => {
             <p className="text-sm">{statusLabel}</p>
           </div>
         ) : screenSharer ? (
-          // Screen-share layout: presenter takes the main stage, others
-          // line up on the right strip.
-          <>
-            <ParticipantTile
-              snap={screenSharer}
-              showSpeakingRing={false}
-              className="flex-1 min-w-0 h-full aspect-video sm:aspect-auto"
-            />
-            {otherTiles.length > 0 && (
-              <div className="hidden sm:flex flex-col gap-3 w-44 lg:w-56 max-h-full overflow-y-auto">
-                {otherTiles.map((p) => (
-                  <ParticipantTile
-                    key={p.userId}
-                    snap={p}
-                    compact
-                    className="aspect-video"
-                  />
-                ))}
-              </div>
-            )}
-          </>
+          // The shared screen in the middle; everybody's camera, the sharer's
+          // too, on the right (a row underneath on a phone).
+          <ScreenShareStage sharer={screenSharer} peers={allTiles} />
         ) : allTiles.length === 1 ? (
           // Single-tile state — pre-connect or solo (everyone else left).
           <ParticipantTile

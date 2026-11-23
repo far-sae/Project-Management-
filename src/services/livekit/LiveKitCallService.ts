@@ -16,7 +16,7 @@ import {
   type ParticipantTrackPermission,
 } from 'livekit-client';
 import { fetchLiveKitToken, projectRoomName } from './fetchLiveKitToken';
-import { MediaStreamCache, parseParticipantMeta } from './callHelpers';
+import { MediaStreamCache, mayShareScreen, parseParticipantMeta } from './callHelpers';
 import type { CallParticipant } from '@/services/webrtc/types';
 
 /**
@@ -31,14 +31,18 @@ export interface CallPeerSnapshot {
   displayName: string;
   /** Combined MediaStream of any subscribed remote audio tracks. */
   audioStream: MediaStream | null;
-  /** Combined MediaStream of any subscribed remote camera/screen tracks. */
+  /** The participant's camera. Never their screen: that is `screenStream`. */
   videoStream: MediaStream | null;
+  /** The screen they are sharing, or null. Their camera stays in `videoStream` beside it. */
+  screenStream: MediaStream | null;
   /** Local mute state reported by LiveKit (mic publication muted). */
   isMicMuted: boolean;
   /** Local camera state reported by LiveKit (camera publication muted). */
   isCameraOff: boolean;
   /** True when this participant is currently presenting a screen track. */
   isScreenSharing: boolean;
+  /** True when the server lets this participant share a screen (guests: only once it allows them). */
+  canShareScreen: boolean;
   /** True when LiveKit currently flags this participant as actively speaking. */
   isSpeaking: boolean;
   /** True for the local participant — the user themself. */
@@ -153,6 +157,7 @@ export class LiveKitCallService {
     for (const s of snaps) {
       activeKeys.add(`${s.userId}:audio`);
       activeKeys.add(`${s.userId}:video`);
+      activeKeys.add(`${s.userId}:screen`);
     }
     this.streams.prune(activeKeys);
     return snaps;
@@ -422,8 +427,9 @@ export class LiveKitCallService {
     const screenPub = local.getTrackPublication(Track.Source.ScreenShare);
     const micPub = local.getTrackPublication(Track.Source.Microphone);
 
-    const videoTrack = (screenPub?.track?.mediaStreamTrack ??
-      cameraPub?.track?.mediaStreamTrack) ?? null;
+    // Sharing a screen never replaces the camera: both are published, and both are shown.
+    const videoTrack = cameraPub?.track?.mediaStreamTrack ?? null;
+    const screenTrack = screenPub?.track?.mediaStreamTrack ?? null;
     const audioTrack = micPub?.track?.mediaStreamTrack ?? null;
 
     // Role comes from the server-controlled identity, never from metadata
@@ -440,9 +446,14 @@ export class LiveKitCallService {
         `${local.identity}:video`,
         videoTrack ? [videoTrack] : [],
       ),
+      screenStream: this.streams.get(
+        `${local.identity}:screen`,
+        screenTrack ? [screenTrack] : [],
+      ),
       isMicMuted: !local.isMicrophoneEnabled,
       isCameraOff: !local.isCameraEnabled,
       isScreenSharing: local.isScreenShareEnabled,
+      canShareScreen: mayShareScreen(local.permissions, isGuest),
       isSpeaking: local.isSpeaking,
       isLocal: true,
       role: isGuest ? 'guest' : 'member',
@@ -452,9 +463,10 @@ export class LiveKitCallService {
   }
 
   private snapshotForRemote(remote: RemoteParticipant): CallPeerSnapshot {
-    // Prefer screen-share over camera when both are published — matches
-    // the Meet/Teams convention of giving the share the main tile.
+    // The camera and the screen are kept apart: the screen takes the main
+    // stage, and the person sharing keeps their own picture beside it.
     let videoTrack: MediaStreamTrack | null = null;
+    let screenTrack: MediaStreamTrack | null = null;
     // Both mic audio AND screen-share audio (system audio from the presenter)
     // are surfaced so viewers hear what the presenter is playing as well as
     // them speaking. Browsers only expose system audio on Chrome/Edge for
@@ -477,9 +489,9 @@ export class LiveKitCallService {
       const track = pub.track;
       if (track.kind === Track.Kind.Video) {
         if (isScreenSharePublication(pub)) {
-          videoTrack = track.mediaStreamTrack;
+          screenTrack = track.mediaStreamTrack;
           isScreen = true;
-        } else if (!isScreen) {
+        } else {
           videoTrack = track.mediaStreamTrack;
           isCameraOff = pub.isMuted;
         }
@@ -512,9 +524,14 @@ export class LiveKitCallService {
         `${remote.identity}:video`,
         videoTrack ? [videoTrack] : [],
       ),
+      screenStream: this.streams.get(
+        `${remote.identity}:screen`,
+        screenTrack ? [screenTrack] : [],
+      ),
       isMicMuted,
       isCameraOff,
       isScreenSharing: isScreen,
+      canShareScreen: mayShareScreen(remote.permissions, isGuestId),
       isSpeaking: remote.isSpeaking,
       isLocal: false,
       role: isGuestId ? 'guest' : 'member',

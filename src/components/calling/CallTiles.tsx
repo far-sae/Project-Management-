@@ -38,6 +38,11 @@ interface ParticipantTileProps {
   compact?: boolean;
   /** Outline the tile when LiveKit reports this peer as actively speaking. */
   showSpeakingRing?: boolean;
+  /**
+   * Show the screen this person is sharing instead of their camera. The same
+   * person then has two tiles: this one, and their camera among the others.
+   */
+  screen?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -46,21 +51,23 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
   snap,
   compact = false,
   showSpeakingRing = true,
+  screen = false,
   className,
   style,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const initials = (snap.displayName || '?').charAt(0).toUpperCase();
-  // A screen-share track should always render even when the camera is off —
-  // the `isCameraOff` flag describes the camera, not the screen.
-  const showVideo = !!snap.videoStream && (snap.isScreenSharing || !snap.isCameraOff);
+  // A camera tile shows the camera, sharing or not: sharing a screen never
+  // takes the person's own picture away. A screen tile shows only the screen.
+  const stream = (screen ? snap.screenStream : snap.videoStream) ?? null;
+  const showVideo = !!stream && (screen || !snap.isCameraOff);
 
   // Re-run when `showVideo` flips too: turning the camera back on mounts a
   // fresh <video> element while the (cached) stream object is unchanged.
   useEffect(() => {
-    attachStream(videoRef.current, showVideo ? snap.videoStream ?? null : null);
-  }, [snap.videoStream, showVideo]);
+    attachStream(videoRef.current, showVideo ? stream : null);
+  }, [stream, showVideo]);
 
   return (
     <div
@@ -83,8 +90,8 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             // Mirror only the local user's camera so they see themselves
             // selfie-style (matches Meet/Zoom). Screen-share is never
             // mirrored — text would render backwards.
-            snap.isLocal && !snap.isScreenSharing && 'scale-x-[-1]',
-            snap.isScreenSharing ? 'object-contain' : 'object-cover',
+            snap.isLocal && !screen && 'scale-x-[-1]',
+            screen ? 'object-contain' : 'object-cover',
           )}
         />
       ) : (
@@ -102,7 +109,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
 
       {/* Active speaker: a plain green ring drawn over the video, so it is
           never clipped by the stage or hidden behind the picture. */}
-      {showSpeakingRing && snap.isSpeaking && !snap.isLocal && (
+      {showSpeakingRing && !screen && snap.isSpeaking && !snap.isLocal && (
         <span
           aria-hidden
           data-testid="speaking-ring"
@@ -123,12 +130,16 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             compact ? 'h-5 px-1.5' : 'h-6 px-2',
           )}
         >
-          <span className="truncate">
-            {snap.displayName}
-            {snap.isLocal && <span className="ml-1 font-normal text-[#a3a3a3]">(you)</span>}
-          </span>
+          {screen ? (
+            <span className="truncate">{snap.isLocal ? 'Your screen' : `${snap.displayName}’s screen`}</span>
+          ) : (
+            <span className="truncate">
+              {snap.displayName}
+              {snap.isLocal && <span className="ml-1 font-normal text-[#a3a3a3]">(you)</span>}
+            </span>
+          )}
         </span>
-        {snap.role === 'guest' && (
+        {!screen && snap.role === 'guest' && (
           <span
             className={cn(
               'inline-flex shrink-0 items-center rounded bg-warning px-1.5 text-xs text-warning-foreground',
@@ -138,7 +149,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             Guest
           </span>
         )}
-        {snap.isMicMuted && (
+        {!screen && snap.isMicMuted && (
           <span
             className={cn(
               'inline-flex shrink-0 items-center justify-center rounded-md bg-black/70 text-[#fda29b]',
@@ -150,7 +161,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             <MicOff className="h-3 w-3" />
           </span>
         )}
-        {snap.isCameraOff && !snap.isScreenSharing && (
+        {!screen && snap.isCameraOff && (
           <span
             className={cn(
               'inline-flex shrink-0 items-center justify-center rounded-md bg-black/70 text-[#a3a3a3]',
@@ -162,7 +173,7 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
             <VideoOff className="h-3 w-3" />
           </span>
         )}
-        {snap.isScreenSharing && (
+        {!screen && snap.isScreenSharing && (
           <span
             className={cn(
               'inline-flex shrink-0 items-center rounded bg-success px-1.5 text-xs text-success-foreground',
@@ -173,6 +184,39 @@ export const ParticipantTile: React.FC<ParticipantTileProps> = ({
           </span>
         )}
       </div>
+    </div>
+  );
+};
+
+// ── A shared screen with everybody beside it ─────────────────
+
+/**
+ * The call while somebody shares a screen: the screen takes the middle, and
+ * everybody's camera (the sharer's too, first) lines up on the right. On a
+ * phone, where there is no room at the side, they are a row under the screen.
+ */
+export const ScreenShareStage: React.FC<{
+  sharer: CallPeerSnapshot;
+  /** Everybody in the call, the sharer included. */
+  peers: CallPeerSnapshot[];
+  className?: string;
+}> = ({ sharer, peers, className }) => {
+  const ordered = [sharer, ...peers.filter((p) => p.userId !== sharer.userId)];
+  return (
+    <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col gap-3 sm:flex-row', className)}>
+      <div data-testid="shared-screen" className="flex min-h-0 min-w-0 flex-1">
+        <ParticipantTile snap={sharer} screen showSpeakingRing={false} className="min-h-0 min-w-0 flex-1" />
+      </div>
+      <ul
+        aria-label="People in the call"
+        className="flex shrink-0 gap-3 overflow-x-auto sm:w-44 sm:flex-col sm:overflow-y-auto sm:overflow-x-hidden lg:w-56"
+      >
+        {ordered.map((p) => (
+          <li key={p.userId} className="w-36 shrink-0 list-none sm:w-full">
+            <ParticipantTile snap={p} compact className="aspect-video w-full" />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 };
