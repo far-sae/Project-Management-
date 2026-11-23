@@ -77,6 +77,33 @@ describe('sidebar: Calls and Email', () => {
     expect(hrefOf('Calls')).toBeNull();
   });
 
+  // The Social page ("New post" to every platform) had no entry in the menu at
+  // all: it could only be reached by typing its address.
+  it('shows Social right after Email for an owner or admin', () => {
+    const all = labels();
+    const names = all.map((l) => l.text);
+    expect(all.find((l) => l.text === 'Social')?.href).toBe('/social');
+    expect(names.indexOf('Social')).toBe(names.indexOf('Email') + 1);
+  });
+
+  it('shows Social on a plan without bulk email, and in a workspace with no project yet', () => {
+    state.features = new Set(['crm']);
+    state.projects.projects = [];
+    expect(hrefOf('Social')).toBe('/social');
+  });
+
+  it('keeps Social away from a member, and out of a workspace menu without the CRM', () => {
+    state.organization = { isAdmin: false, isViewer: false, isOwner: false };
+    expect(hrefOf('Social')).toBeNull();
+    cleanup();
+    state.organization = { isAdmin: true, isViewer: false, isOwner: true };
+    state.scope = { ...state.scope, menuPages: ['my_tasks', 'crm'] };
+    expect(hrefOf('Social')).toBe('/social');
+    cleanup();
+    state.scope = { ...state.scope, menuPages: ['my_tasks', 'calendar'] };
+    expect(hrefOf('Social')).toBeNull();
+  });
+
   it('goes with the CRM in a workspace that chose its own menu', () => {
     state.scope = { ...state.scope, menuPages: ['my_tasks', 'crm'] };
     const names = labels().map((l) => l.text);

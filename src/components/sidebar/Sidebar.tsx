@@ -26,6 +26,7 @@ import {
   Handshake,
   Phone,
   Mail,
+  Megaphone,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -67,6 +68,9 @@ const QUICK_ITEMS_FULL = [
   // the CRM in a workspace's menu setting: where the CRM is shown, they are shown.
   { icon: Phone, label: 'Calls', href: '/calls', feature: 'crm' as const, page: 'crm' as PageKey },
   { icon: Mail, label: 'Email', href: '/email', feature: 'email_campaigns' as const, page: 'crm' as PageKey },
+  // Posting to every social platform from one place. Like Calls and Email it goes with the CRM
+  // in a workspace's menu setting; it needs no plan feature of its own.
+  { icon: Megaphone, label: 'Social', href: '/social', page: 'crm' as PageKey },
   { icon: Calendar, label: 'Calendar', href: '/calendar', page: 'calendar' as PageKey },
   { icon: Activity, label: 'Workload', href: '/workload', page: 'workload' as PageKey },
   { icon: BarChart3, label: 'Reports', href: '/reports', page: 'reports' as PageKey },
