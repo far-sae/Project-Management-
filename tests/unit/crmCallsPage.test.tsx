@@ -278,3 +278,63 @@ describe('CRM calls page', () => {
     expect(state.listCalls).not.toHaveBeenCalled();
   });
 });
+
+describe('deleting several calls together', () => {
+  const tick = (name: string) => fireEvent.click(screen.getByRole('checkbox', { name }));
+  const open = async () => {
+    state.organization = state.owner;
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+  };
+
+  it('lets the owner tick calls, or all of them at once', async () => {
+    await open();
+    tick('Select the call to Elena Rossi');
+    expect(screen.getByText('1 selected')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete 1 call' })).toBeTruthy();
+    tick('Select every call shown');
+    expect(screen.getByText('3 selected')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(screen.queryByText(/selected/)).toBeNull();
+  });
+
+  it('deletes the ticked calls after one question, and takes them off the list without showing it loading again', async () => {
+    await open();
+    state.listCalls.mockResolvedValue({ ...LIST, calls: [LIST.calls[2]], summary: { days: 30, total: 1, answered: 1, seconds: 45 } });
+    tick('Select the call to Elena Rossi');
+    tick('Select the call to Harbour Dental');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 2 calls' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete 2 calls?' });
+    expect(dialog.textContent).toContain('their recordings');
+    expect(state.deleteCall).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete 2 calls' }));
+    await waitFor(() => expect(state.deleteCall).toHaveBeenCalledTimes(2));
+    expect(state.deleteCall.mock.calls.map((c) => c[0])).toEqual(['c1', 'c2']);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(screen.queryByText(/selected/)).toBeNull();
+    // The totals are read again, quietly: the list never goes away meanwhile.
+    await waitFor(() => expect(state.listCalls).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('region', { name: 'Calls' })).toBeTruthy();
+  });
+
+  it('stops at a call that cannot be deleted and says how far it came', async () => {
+    const { toast } = await import('sonner');
+    await open();
+    state.deleteCall.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('The recording could not be deleted at the phone provider, so the call was kept. Please try again.'));
+    tick('Select every call shown');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete 3 calls' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete 3 calls' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/^1 of 3 calls were deleted\. The recording could not be deleted/)));
+    // The third was not tried, and the two that are left are still ticked.
+    expect(state.deleteCall).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText('2 selected')).toBeTruthy());
+  });
+
+  it('offers no ticks to an admin who is not the owner', async () => {
+    state.organization = state.admin;
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+});

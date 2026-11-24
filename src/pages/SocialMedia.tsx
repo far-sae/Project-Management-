@@ -144,7 +144,7 @@ export const SocialMedia: React.FC = () => {
         if (accessToken.trim()) await saveSocialAccountToken(id, accessToken.trim(), refreshToken.trim() || undefined);
       }
       if (createKind === 'campaign') await createSocialCampaign({ organizationId: orgId, workspaceId, name: name.trim(), objective: description.trim(), userId: user?.userId });
-      toast.success('Saved'); reset(); await load();
+      toast.success('Saved'); reset(); await load(true);
     } catch (error) { toast.error(publicMessage(error, 'Could not save')); }
     finally { setBusy(false); }
   };

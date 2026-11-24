@@ -125,7 +125,10 @@ export const useWorkspaces = () => {
   );
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent ?? false;
+    // With this organisation's list already on screen a read is quiet whatever
+    // was asked. "Loading" here tells the whole app that the workspaces are not
+    // known, and pages that wait for them would blank and come back.
+    const silent = (opts?.silent ?? false) || listOrgId === orgId;
     if (!orgId) return;
     if (!silent) setLoading(true);
     try {
@@ -137,7 +140,7 @@ export const useWorkspaces = () => {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, listOrgId]);
 
   useEffect(() => {
     const onVisibility = () => {

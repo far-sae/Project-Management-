@@ -169,8 +169,14 @@ export const useProjects = () => {
     [user, effectiveOrgId],
   );
 
+  /** True once a list of projects has been shown. */
+  const everRead = useRef(false);
+
   const refreshProjects = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent ?? false;
+    // Once the projects are on screen a read is quiet whatever was asked: the
+    // list stays where it is until the new one is there, instead of the whole
+    // app showing "loading" after every project that is added or deleted.
+    const silent = (opts?.silent ?? false) || everRead.current;
     if (!user || !effectiveOrgId) return;
     if (!silent) {
       setLoading(true);
@@ -183,6 +189,7 @@ export const useProjects = () => {
         user.email,
       );
       setProjects(fetchedProjects);
+      everRead.current = true;
     } catch (err) {
       const message =
         publicMessage(err, "Failed to fetch projects");

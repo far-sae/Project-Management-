@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   /** Rows the database says it changed. */
   changed: [{ id: 'c1' }] as Array<{ id: string }>,
   error: null as null | { code: string; message: string },
+  /** The id of a campaign the database refuses to change. */
+  errorFor: null as null | string,
   listCampaigns: vi.fn(),
   listMessages: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
@@ -24,7 +26,8 @@ vi.mock('@/services/supabase/config', () => {
   const chain = (op: string, patch?: unknown) => {
     const call = { op, patch, filters: [] as Array<[string, string, unknown]> };
     h.calls.push(call);
-    const result = () => (h.error ? { data: null, error: h.error } : { data: h.changed, error: null });
+    const refused = () => h.error ?? (h.errorFor && call.filters.some((f) => f[2] === h.errorFor) ? { code: '57014', message: 'canceling statement due to statement timeout' } : null);
+    const result = () => (refused() ? { data: null, error: refused() } : { data: h.changed, error: null });
     const link: Record<string, unknown> = {
       eq: (column: string, value: unknown) => { call.filters.push(['eq', column, value]); return link; },
       in: (column: string, value: unknown) => { call.filters.push(['in', column, value]); return link; },
@@ -49,6 +52,7 @@ beforeEach(() => {
   h.calls.length = 0;
   h.changed = [{ id: 'c1' }];
   h.error = null;
+  h.errorFor = null;
   h.toast.success.mockClear();
   h.toast.error.mockClear();
 });
@@ -159,5 +163,67 @@ describe('Campaigns list', () => {
     await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Campaign deleted'));
     expect(h.calls[0]).toMatchObject({ op: 'delete', filters: [['eq', 'id', 'c2']] });
     await waitFor(() => expect(screen.queryByText('Spring news')).toBeNull());
+  });
+
+  describe('deleting several campaigns together', () => {
+    const tick = (name: string) => fireEvent.click(screen.getByRole('checkbox', { name }));
+    const three = () => [campaign('c1', 'Autumn offer', 'sent'), campaign('c2', 'Spring news', 'sent'), campaign('c3', 'Winter sale', 'paused')];
+
+    it('lets campaigns be ticked, or all of them at once', async () => {
+      await show(three());
+      tick('Select Autumn offer');
+      expect(screen.getByText('1 selected')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Delete 1 campaign' })).toBeTruthy();
+      tick('Select every campaign');
+      expect(screen.getByText('3 selected')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+      expect(screen.queryByText(/selected/)).toBeNull();
+    });
+
+    it('gives no tick to a campaign that is going out: it has to be paused first', async () => {
+      await show([campaign('c1', 'Autumn offer', 'sending'), campaign('c2', 'Spring news', 'sent')]);
+      expect(screen.queryByRole('checkbox', { name: 'Select Autumn offer' })).toBeNull();
+      tick('Select every campaign');
+      expect(screen.getByText('1 selected')).toBeTruthy();
+    });
+
+    it('deletes the ticked campaigns after one question, and takes them off the list without showing it loading again', async () => {
+      await show(three());
+      tick('Select Autumn offer');
+      tick('Select Spring news');
+      fireEvent.click(screen.getByRole('button', { name: 'Delete 2 campaigns' }));
+      const dialog = await screen.findByRole('alertdialog');
+      expect(dialog.textContent).toContain('Delete 2 campaigns?');
+      expect(dialog.textContent).toContain('stay unsubscribed');
+      expect(h.calls).toHaveLength(0);
+      h.listCampaigns.mockResolvedValue([campaign('c3', 'Winter sale', 'paused')]);
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Delete 2 campaigns' }));
+      await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('2 campaigns deleted.'));
+      expect(h.calls.map((c) => [c.op, c.filters[0][2]])).toEqual([['delete', 'c1'], ['delete', 'c2']]);
+      await waitFor(() => expect(screen.queryByText('Spring news')).toBeNull());
+      expect(screen.queryByText('Autumn offer')).toBeNull();
+      expect(screen.getByText('Winter sale')).toBeTruthy();
+      expect(screen.queryByText('Loading campaigns...')).toBeNull();
+      expect(screen.queryByText(/selected/)).toBeNull();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    it('stops at a campaign that cannot be deleted and says how far it came, in plain words', async () => {
+      await show(three());
+      h.errorFor = 'c2';
+      h.listCampaigns.mockResolvedValue(three().slice(1));
+      tick('Select every campaign');
+      fireEvent.click(screen.getByRole('button', { name: 'Delete 3 campaigns' }));
+      fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete 3 campaigns' }));
+      await waitFor(() => expect(h.toast.error).toHaveBeenCalledTimes(1));
+      const said = String(h.toast.error.mock.calls[0][0]);
+      expect(said).toMatch(/^1 of 3 campaigns were deleted\./);
+      // Nothing from the database is shown.
+      expect(said).not.toMatch(/statement|57014/);
+      // The third was not tried, and the two that are left are still ticked.
+      expect(h.calls.map((c) => c.filters[0][2])).toEqual(['c1', 'c2']);
+      await waitFor(() => expect(screen.getByText('2 selected')).toBeTruthy());
+      expect(screen.queryByText('Autumn offer')).toBeNull();
+    });
   });
 });

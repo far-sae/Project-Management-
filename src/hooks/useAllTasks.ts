@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useOrganization } from "@/context/OrganizationContext";
 import {
@@ -22,13 +22,18 @@ export const useAllTasks = () => {
     [organization?.organizationId, user?.organizationId, user?.userId],
   );
 
+  /** The person and organisation whose tasks are on screen. */
+  const readFor = useRef<string | null>(null);
+
   const refresh = useCallback(async () => {
     if (!user) {
       setTasks([]);
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Loading is shown for the first read only: a later read keeps the tasks on screen until the new list is there.
+    const scope = `${user.userId}|${orgId}`;
+    if (readFor.current !== scope) setLoading(true);
     try {
       const [orgTasks, assignedTasks] = await Promise.all([
         orgId && !orgId.startsWith("local-")
@@ -42,9 +47,10 @@ export const useAllTasks = () => {
       );
 
       setTasks(merged);
+      readFor.current = scope;
     } catch (err) {
       console.error("❌ useAllTasks error:", err);
-      setTasks([]);
+      if (readFor.current !== scope) setTasks([]);
     } finally {
       setLoading(false);
     }

@@ -102,10 +102,16 @@ export const CrmCallsPage: React.FC = () => {
   const [dialing, setDialing] = useState<Dialing | null>(null);
   const [deleting, setDeleting] = useState<CallListItem | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  /** The calls ticked to be deleted together (the owner only). */
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [askMany, setAskMany] = useState(false);
+  /** While several calls are being deleted: how many are done. */
+  const [manyDone, setManyDone] = useState<number | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
     if (!isAdmin || !workspaceId) return;
-    setLoading(true);
+    // After a delete the list is read again for its totals: what is on screen stays until the answer is there.
+    if (!quiet) setLoading(true);
     setProblem(null);
     try {
       const out = await listCalls(workspaceId);
@@ -144,13 +150,44 @@ export const CrmCallsPage: React.FC = () => {
       setCalls((list) => list.filter((c) => c.id !== deleting.id));
       setDeleting(null);
       toast.success('Call deleted.');
+      setTicked((old) => { const next = new Set(old); next.delete(deleting.id); return next; });
       // The totals above the list count this call too.
-      void load();
+      void load(true);
     } catch (err) {
       toast.error(errorSentence(err));
     } finally {
       setDeleteBusy(false);
     }
+  };
+
+  /**
+   * Deletes the ticked calls, one after the other (each takes its recording at
+   * the phone provider with it). It stops at the first one that cannot be
+   * deleted and says how far it came: what was deleted stays deleted.
+   */
+  const deleteMany = async () => {
+    const ids = calls.filter((c) => ticked.has(c.id)).map((c) => c.id);
+    if (ids.length === 0) return;
+    setManyDone(0);
+    const gone: string[] = [];
+    let stopped: unknown = null;
+    for (const id of ids) {
+      try {
+        await deleteCall(id);
+        gone.push(id);
+        setManyDone(gone.length);
+      } catch (err) {
+        stopped = err;
+        break;
+      }
+    }
+    setCalls((list) => list.filter((c) => !gone.includes(c.id)));
+    setTicked((old) => new Set([...old].filter((id) => !gone.includes(id))));
+    setManyDone(null);
+    setAskMany(false);
+    if (stopped) toast.error(`${gone.length} of ${ids.length} calls were deleted. ${errorSentence(stopped)}`);
+    else toast.success(gone.length === 1 ? 'Call deleted.' : `${gone.length} calls deleted.`);
+    if (gone.length > 0) void load(true);
   };
 
   const shown = useMemo(() => {
@@ -314,6 +351,31 @@ export const CrmCallsPage: React.FC = () => {
               )}
             </div>
           ) : (
+            <>
+            {isOwner && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox" className="h-4 w-4 accent-primary" aria-label="Select every call shown"
+                    checked={shown.length > 0 && shown.every((c) => ticked.has(c.id))}
+                    onChange={(e) => setTicked((old) => {
+                      const next = new Set(old);
+                      for (const c of shown) { if (e.target.checked) next.add(c.id); else next.delete(c.id); }
+                      return next;
+                    })}
+                  />
+                  <span className="text-muted-foreground">{ticked.size > 0 ? `${ticked.size} selected` : 'Select all'}</span>
+                </label>
+                {ticked.size > 0 && (
+                  <>
+                    <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setAskMany(true)}>
+                      <Trash2 aria-hidden />Delete {ticked.size === 1 ? '1 call' : `${ticked.size} calls`}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setTicked(new Set())}>Clear</Button>
+                  </>
+                )}
+              </div>
+            )}
             <ul>
               {shown.map((call) => {
                 const result = resultOf(call);
@@ -321,6 +383,14 @@ export const CrmCallsPage: React.FC = () => {
                 return (
                   <li key={call.id} className="flex flex-col gap-1 border-b border-border/60 px-4 py-3 last:border-0">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      {isOwner && (
+                        <input
+                          type="checkbox" className="h-4 w-4 accent-primary"
+                          aria-label={`Select the call to ${call.contact?.name || call.company?.name || call.display}`}
+                          checked={ticked.has(call.id)}
+                          onChange={() => setTicked((old) => { const next = new Set(old); if (next.has(call.id)) next.delete(call.id); else next.add(call.id); return next; })}
+                        />
+                      )}
                       {call.contact ? (
                         <Link className="text-sm font-medium text-foreground underline-offset-4 hover:underline" to={`/crm/contacts/${call.contact.id}`}>
                           {call.contact.name || 'Lead'}
@@ -371,6 +441,7 @@ export const CrmCallsPage: React.FC = () => {
                 );
               })}
             </ul>
+            </>
           )}
           {more && !loading && (
             <div className="flex flex-col items-center gap-2 border-t border-border px-4 py-3">
@@ -421,6 +492,29 @@ export const CrmCallsPage: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={askMany} onOpenChange={(open) => { if (!open && manyDone === null) setAskMany(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {ticked.size === 1 ? 'this call' : `${ticked.size} calls`}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {ticked.size === 1 ? 'It is' : 'They are'} removed for good, together with {ticked.size === 1 ? 'its recording and its entry' : 'their recordings and their entries'} on the timeline.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={manyDone !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={manyDone !== null}
+              onClick={(e) => { e.preventDefault(); void deleteMany(); }}
+            >
+              {manyDone !== null && <Loader2 className="animate-spin" aria-hidden />}
+              {manyDone !== null ? `Deleting ${manyDone + 1} of ${ticked.size}…` : `Delete ${ticked.size === 1 ? 'call' : `${ticked.size} calls`}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleting !== null} onOpenChange={(open) => { if (!open && !deleteBusy) setDeleting(null); }}>
         <AlertDialogContent>

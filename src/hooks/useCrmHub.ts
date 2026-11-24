@@ -1,5 +1,5 @@
 import { publicMessage } from '@/lib/publicError';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOrganization } from '@/context/OrganizationContext';
 import { supabase } from '@/services/supabase/config';
 import { listCompanies } from '@/services/supabase/crmHub/companies';
@@ -21,6 +21,21 @@ interface UseListResult<T> {
 }
 
 const empty: UseListResult<never> = { items: [], loading: false, error: null, refresh: async () => {} };
+
+/**
+ * Whether a list is being read for the first time. A list shows its loading
+ * state only then. A later read (after something was added or deleted, or a
+ * change by somebody else) keeps what is on screen until the new list is
+ * there, so the page does not blank and come back each time. Another
+ * organisation or workspace is another list: that one is a first read again.
+ */
+function useFirstRead(scope: string): { firstRead: () => boolean; wasRead: () => void } {
+  const readFor = useRef<string | null>(null);
+  return useMemo(() => ({
+    firstRead: () => readFor.current !== scope,
+    wasRead: () => { readFor.current = scope; },
+  }), [scope]);
+}
 
 const useOrgId = () => {
   const { organization } = useOrganization();
@@ -60,19 +75,21 @@ export const useCrmCompanies = (): UseListResult<CrmCompany> => {
   const [items, setItems] = useState<CrmCompany[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const read = useFirstRead(`${orgId}|${workspaceId}`);
 
   const refresh = useCallback(async () => {
     if (!orgId || !workspaceId) { setItems([]); return; }
-    setLoading(true);
+    if (read.firstRead()) setLoading(true);
     setError(null);
     try {
       setItems(await listCompanies(orgId, { workspaceId }));
     } catch (e) {
       setError(publicMessage(e, 'Failed to load companies'));
     } finally {
+      read.wasRead();
       setLoading(false);
     }
-  }, [orgId, workspaceId]);
+  }, [orgId, workspaceId, read]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -95,19 +112,21 @@ export const useCrmContacts = (): UseListResult<CrmContact> => {
   const [items, setItems] = useState<CrmContact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const read = useFirstRead(`${orgId}|${workspaceId}`);
 
   const refresh = useCallback(async () => {
     if (!orgId || !workspaceId) { setItems([]); return; }
-    setLoading(true);
+    if (read.firstRead()) setLoading(true);
     setError(null);
     try {
       setItems(await listContacts(orgId, { workspaceId }));
     } catch (e) {
       setError(publicMessage(e, 'Failed to load contacts'));
     } finally {
+      read.wasRead();
       setLoading(false);
     }
-  }, [orgId, workspaceId]);
+  }, [orgId, workspaceId, read]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -130,10 +149,11 @@ export const useCrmDealStages = (): UseListResult<CrmDealStage> => {
   const [items, setItems] = useState<CrmDealStage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const read = useFirstRead(`${orgId}|${workspaceId}`);
 
   const refresh = useCallback(async () => {
     if (!orgId || !workspaceId) { setItems([]); return; }
-    setLoading(true);
+    if (read.firstRead()) setLoading(true);
     setError(null);
     try {
       let stages = await listDealStages(orgId, workspaceId);
@@ -146,9 +166,10 @@ export const useCrmDealStages = (): UseListResult<CrmDealStage> => {
     } catch (e) {
       setError(publicMessage(e, 'Failed to load deal stages'));
     } finally {
+      read.wasRead();
       setLoading(false);
     }
-  }, [orgId, workspaceId]);
+  }, [orgId, workspaceId, read]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -162,19 +183,21 @@ export const useCrmDeals = (): UseListResult<CrmDeal> => {
   const [items, setItems] = useState<CrmDeal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const read = useFirstRead(`${orgId}|${workspaceId}`);
 
   const refresh = useCallback(async () => {
     if (!orgId || !workspaceId) { setItems([]); return; }
-    setLoading(true);
+    if (read.firstRead()) setLoading(true);
     setError(null);
     try {
       setItems(await listDeals(orgId, { workspaceId }));
     } catch (e) {
       setError(publicMessage(e, 'Failed to load deals'));
     } finally {
+      read.wasRead();
       setLoading(false);
     }
-  }, [orgId, workspaceId]);
+  }, [orgId, workspaceId, read]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -197,19 +220,21 @@ export const useCrmTags = (): UseListResult<CrmTag> => {
   const [items, setItems] = useState<CrmTag[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const read = useFirstRead(`${orgId}|${workspaceId}`);
 
   const refresh = useCallback(async () => {
     if (!orgId || !workspaceId) { setItems([]); return; }
-    setLoading(true);
+    if (read.firstRead()) setLoading(true);
     setError(null);
     try {
       setItems(await listTags(orgId, workspaceId));
     } catch (e) {
       setError(publicMessage(e, 'Failed to load tags'));
     } finally {
+      read.wasRead();
       setLoading(false);
     }
-  }, [orgId, workspaceId]);
+  }, [orgId, workspaceId, read]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -265,19 +290,21 @@ export const useCrmActivities = (limit = 200): UseListResult<CrmActivity> => {
   const [items, setItems] = useState<CrmActivity[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const read = useFirstRead(`${orgId}|${workspaceId}`);
 
   const refresh = useCallback(async () => {
     if (!orgId || !workspaceId) { setItems([]); return; }
-    setLoading(true);
+    if (read.firstRead()) setLoading(true);
     setError(null);
     try {
       setItems(await listActivities(orgId, { limit, workspaceId }));
     } catch (e) {
       setError(publicMessage(e, 'Failed to load activity'));
     } finally {
+      read.wasRead();
       setLoading(false);
     }
-  }, [orgId, limit, workspaceId]);
+  }, [orgId, limit, workspaceId, read]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -300,19 +327,21 @@ export const useCrmTasks = (): UseListResult<CrmTask> => {
   const [items, setItems] = useState<CrmTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const read = useFirstRead(`${orgId}|${workspaceId}`);
 
   const refresh = useCallback(async () => {
     if (!orgId || !workspaceId) { setItems([]); return; }
-    setLoading(true);
+    if (read.firstRead()) setLoading(true);
     setError(null);
     try {
       setItems(await listTasks(orgId, { workspaceId }));
     } catch (e) {
       setError(publicMessage(e, 'Failed to load tasks'));
     } finally {
+      read.wasRead();
       setLoading(false);
     }
-  }, [orgId, workspaceId]);
+  }, [orgId, workspaceId, read]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 

@@ -37,6 +37,9 @@ interface CampaignsTabProps {
 
 const POLL_MS = 15_000;
 
+/** A campaign that is going out, or waiting to, has to be paused before it can be deleted. */
+const canDelete = (c: EmailCampaign): boolean => c.status !== 'sending' && c.status !== 'scheduled';
+
 /** How many campaigns the chart covers. Beyond this the bars are too narrow
  *  to compare, which is the only thing a reader does with them. */
 const CHART_CAMPAIGNS = 10;
@@ -138,6 +141,11 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
   /** The campaign being paused, resumed or deleted, so its buttons wait. */
   const [changingId, setChangingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<EmailCampaign | null>(null);
+  /** The campaigns ticked to be deleted together. */
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [askMany, setAskMany] = useState(false);
+  /** While several campaigns are being deleted: how many are done. */
+  const [manyDone, setManyDone] = useState<number | null>(null);
 
   const load = useCallback(async (silent = false) => {
     if (!orgId) { setCampaigns([]); setLoading(false); return; }
@@ -216,8 +224,46 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
     await deleteCampaign(campaign.id);
     toast.success('Campaign deleted');
     setConfirmDelete(null);
+    setTicked((old) => { const next = new Set(old); next.delete(campaign.id); return next; });
     if (expandedId === campaign.id) setExpandedId(null);
   });
+
+  /** The ticked campaigns that are still on the list and may be deleted. */
+  const chosen = useMemo(() => campaigns.filter((c) => ticked.has(c.id) && canDelete(c)), [campaigns, ticked]);
+  const deletable = useMemo(() => campaigns.filter(canDelete), [campaigns]);
+  const countWords = (n: number) => (n === 1 ? '1 campaign' : `${n} campaigns`);
+
+  /**
+   * Deletes the ticked campaigns, one after the other. It stops at the first
+   * one that cannot be deleted and says how far it came: what was deleted
+   * stays deleted, and the rest stay ticked to try again.
+   */
+  const deleteMany = async () => {
+    const ids = chosen.map((c) => c.id);
+    if (ids.length === 0) return;
+    setManyDone(0);
+    const gone: string[] = [];
+    let stopped: unknown = null;
+    for (const id of ids) {
+      try {
+        await deleteCampaign(id);
+        gone.push(id);
+        setManyDone(gone.length);
+      } catch (err) {
+        stopped = err;
+        break;
+      }
+    }
+    // Off the list at once; the quiet read after it brings the chart and the counts in line.
+    setCampaigns((list) => list.filter((c) => !gone.includes(c.id)));
+    setTicked((old) => new Set([...old].filter((id) => !gone.includes(id))));
+    if (expandedId && gone.includes(expandedId)) setExpandedId(null);
+    setManyDone(null);
+    setAskMany(false);
+    if (stopped) toast.error(`${gone.length} of ${ids.length} campaigns were deleted. ${publicMessage(stopped, 'One could not be deleted. Please try again.')}`);
+    else toast.success(gone.length === 1 ? 'Campaign deleted' : `${gone.length} campaigns deleted.`);
+    if (gone.length > 0) void load(true);
+  };
 
   const toggleExpand = async (campaign: EmailCampaign) => {
     if (expandedId === campaign.id) { setExpandedId(null); return; }
@@ -279,6 +325,26 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
+              {deletable.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox" className="h-4 w-4 accent-primary" aria-label="Select every campaign"
+                      checked={chosen.length === deletable.length}
+                      onChange={(e) => setTicked(e.target.checked ? new Set(deletable.map((c) => c.id)) : new Set())}
+                    />
+                    <span className="text-muted-foreground">{chosen.length > 0 ? `${chosen.length} selected` : 'Select all'}</span>
+                  </label>
+                  {chosen.length > 0 && (
+                    <>
+                      <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setAskMany(true)}>
+                        <Trash2 className="w-4 h-4 mr-2" />Delete {countWords(chosen.length)}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setTicked(new Set())}>Clear</Button>
+                    </>
+                  )}
+                </div>
+              )}
               {campaigns.map((campaign) => {
                 const expanded = expandedId === campaign.id;
                 const messages = messagesByCampaign[campaign.id] ?? [];
@@ -292,6 +358,16 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
                       className="flex items-center justify-between gap-4 p-4 bg-secondary/40 hover:bg-secondary/70 cursor-pointer"
                     >
                       <div className="flex items-center gap-3 min-w-0">
+                        {canDelete(campaign) && (
+                          <input
+                            type="checkbox" className="h-4 w-4 shrink-0 accent-primary" aria-label={`Select ${campaign.name}`}
+                            checked={ticked.has(campaign.id)}
+                            // The row around it opens the campaign when pressed: a tick is not that.
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            onChange={() => setTicked((old) => { const next = new Set(old); if (next.has(campaign.id)) next.delete(campaign.id); else next.add(campaign.id); return next; })}
+                          />
+                        )}
                         {expanded ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />}
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -441,6 +517,29 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={askMany} onOpenChange={(open) => { if (!open && manyDone === null) setAskMany(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {countWords(chosen.length)}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {chosen.length === 1 ? 'The campaign and the record of its emails are' : 'The campaigns and the record of their emails are'} removed, with their opens and replies.
+              Emails already sent stay sent, and people who unsubscribed stay unsubscribed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={manyDone !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={manyDone !== null}
+              onClick={(e) => { e.preventDefault(); void deleteMany(); }}
+            >
+              {manyDone !== null && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {manyDone !== null ? `Deleting ${Math.min(manyDone + 1, chosen.length)} of ${chosen.length}…` : `Delete ${countWords(chosen.length)}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!confirmDelete} onOpenChange={(open) => { if (!open && !changingId) setConfirmDelete(null); }}>
         <AlertDialogContent>
