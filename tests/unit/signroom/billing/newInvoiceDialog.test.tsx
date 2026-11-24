@@ -20,7 +20,7 @@ vi.mock('@/hooks/useCrmHub', () => ({
 }));
 vi.mock('@/context/CrmCurrencyContext', () => ({ useCrmCurrency: () => crmCurrency }));
 
-import { NewInvoiceDialog } from '@/components/signroom/billing/NewInvoiceDialog';
+import { NewInvoiceDialog, serviceLine } from '@/components/signroom/billing/NewInvoiceDialog';
 import { InvoicesPanel } from '@/components/signroom/billing/InvoicesPanel';
 
 const Where: React.FC = () => { const at = useLocation(); return <p data-testid="where">{at.pathname}{at.search}</p>; };
@@ -89,6 +89,24 @@ describe('New invoice dialog', () => {
       project: '',
       notes: '',
     });
+  });
+
+  it('bills a client service: the invoice remembers the service and its month, and starts with a line for it', async () => {
+    const service = { accountId: 'acc-1', name: 'Digital marketing', amount: 500, billingMonth: '2026-11', monthly: true };
+    inRouter(<NewInvoiceDialog open onOpenChange={() => {}} companyId="co1" service={service} />);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create invoice' }));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/crm/invoices/new1'));
+    expect(sr.call).toHaveBeenCalledWith('billing', { clientId: 'c1', accountId: 'acc-1', billingMonth: '2026-11' });
+    expect((calls('billing/new1/save')[0]![1] as { lines: unknown[] }).lines).toEqual([
+      { description: 'Digital marketing, November 2026', quantity: '1', rate: '500.00', billingType: 'Monthly', billingLabel: '', taxPercent: '0' },
+    ]);
+  });
+
+  it('writes the first line of a service in plain words', () => {
+    expect(serviceLine({ accountId: 'a', name: ' Website ', amount: 4000, billingMonth: null, monthly: false })).toEqual({ description: 'Website', rate: '4000.00', billingType: 'One-off' });
+    expect(serviceLine({ accountId: 'a', name: 'Retainer', amount: 99.999, billingMonth: '2027-02', monthly: true })).toEqual({ description: 'Retainer, February 2027', rate: '100.00', billingType: 'Monthly' });
+    // An amount that is not a real price is left for the person to fill in.
+    expect(serviceLine({ accountId: 'a', name: 'Retainer', amount: NaN, billingMonth: 'soon', monthly: true })).toMatchObject({ description: 'Retainer', rate: '0.00' });
   });
 
   it('finds the company from the deal, and bills in the deal currency', async () => {

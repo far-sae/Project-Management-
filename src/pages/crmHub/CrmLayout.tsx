@@ -13,6 +13,7 @@ const TABS: Array<{ to: string; label: string }> = [
   { to: '/crm/deals', label: 'Deals' },
   { to: '/crm/agreements', label: 'Agreements' },
   { to: '/crm/invoices', label: 'Invoices' },
+  { to: '/crm/accounts', label: 'Accounts' },
   { to: '/crm/tasks', label: 'Follow-ups' },
   { to: '/crm/automation', label: 'Automation' },
   { to: '/crm/activity', label: 'Activity' },

@@ -44,6 +44,8 @@ export const InvoicesPage: React.FC = () => {
   const [query, setQuery] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  /** The one company whose invoices and receipts are shown. "" for every company. */
+  const [companyFilter, setCompanyFilter] = useState('');
   const [creating, setCreating] = useState(false);
   const [receipting, setReceipting] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -56,11 +58,20 @@ export const InvoicesPage: React.FC = () => {
     return companyId ? `/crm/companies/${companyId}` : null;
   };
 
+  /** The companies that have an invoice, by name, for the company filter. */
+  const companyChoices = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const invoice of invoices) if (!names.has(invoice.clientId)) names.set(invoice.clientId, customerName(invoice, clientsById));
+    return [...names.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [invoices, clientsById]);
+  /** The invoices of the chosen company, or all of them. */
+  const ofCompany = useMemo(() => (companyFilter ? invoices.filter((invoice) => invoice.clientId === companyFilter) : invoices), [invoices, companyFilter]);
+
   const totals = useMemo(() => listTotals(invoices, today), [invoices, today]);
   /** Everything except the status filter, so each status chip can show its count. */
   const scoped = useMemo(
-    () => filterInvoices(invoices, { status: 'All', query, from, to, today, nameOf }),
-    [invoices, query, from, to, today, clientsById],
+    () => filterInvoices(ofCompany, { status: 'All', query, from, to, today, nameOf }),
+    [ofCompany, query, from, to, today, clientsById],
   );
   const visible = useMemo(
     () => scoped
@@ -69,12 +80,12 @@ export const InvoicesPage: React.FC = () => {
     [scoped, status, today],
   );
   const receipts = useMemo(
-    () => filterReceipts(receiptRows(invoices), { query, from, to, nameOf }),
-    [invoices, query, from, to, clientsById],
+    () => filterReceipts(receiptRows(ofCompany), { query, from, to, nameOf }),
+    [ofCompany, query, from, to, clientsById],
   );
 
-  const filtering = Boolean(query.trim() || from || to) || status !== 'All';
-  const clearFilters = () => { setQuery(''); setFrom(''); setTo(''); setStatus('All'); };
+  const filtering = Boolean(query.trim() || from || to || companyFilter) || status !== 'All';
+  const clearFilters = () => { setQuery(''); setFrom(''); setTo(''); setStatus('All'); setCompanyFilter(''); };
 
   const send = async (invoice: Invoice, paymentId?: string) => {
     setSending(paymentId ?? invoice.id);
@@ -211,6 +222,13 @@ export const InvoicesPage: React.FC = () => {
                       className="pl-8"
                     />
                   </div>
+                  <select
+                    aria-label="Company" value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}
+                    className="h-11 max-w-56 rounded-md border border-input bg-background px-2 text-sm md:h-9"
+                  >
+                    <option value="">Every company</option>
+                    {companyChoices.map((choice) => <option key={choice.id} value={choice.id}>{choice.name}</option>)}
+                  </select>
                   <div className="flex items-center gap-1.5">
                     <Label htmlFor="invoices-from" className="text-xs text-muted-foreground">From</Label>
                     <Input id="invoices-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40 tabular-nums" />

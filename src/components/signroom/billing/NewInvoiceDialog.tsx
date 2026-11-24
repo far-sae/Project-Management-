@@ -9,7 +9,7 @@ import { useCrmCompanies, useCrmDeals } from '@/hooks/useCrmHub';
 import { useSignroom } from '@/hooks/useSignroom';
 import { formatCurrency } from '@/lib/crmCurrency';
 import { dealCurrency } from '@/lib/crmDealMoney';
-import { dealFirstLine, defaultInvoiceCurrency, errorSentence } from '@/lib/signroom/billing';
+import { dealFirstLine, defaultInvoiceCurrency, emptyLine, errorSentence } from '@/lib/signroom/billing';
 import { clientForCompany } from '@/services/signroom/clients';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -32,13 +32,43 @@ export interface NewInvoiceDialogProps {
   dealId?: string;
   /** Called with the new draft before the editor opens. */
   onCreated?: (invoice: Invoice) => void;
+  /**
+   * The client service this invoice bills (the lead's Accounts tab). The draft
+   * starts with one line for it, and a payment recorded on the invoice is then
+   * written on the service too.
+   */
+  service?: InvoiceService;
+}
+
+export interface InvoiceService {
+  accountId: string;
+  name: string;
+  /** What to bill, in major units. */
+  amount: number;
+  /** The month it bills ("2026-09"), or null for a one-time fee. */
+  billingMonth: string | null;
+  monthly: boolean;
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The first line of an invoice made for a service: "Digital marketing, November 2026". */
+export function serviceLine(service: InvoiceService): { description: string; rate: string; billingType: 'Monthly' | 'One-off' } {
+  const month = service.billingMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(service.billingMonth)
+    ? `${MONTHS[Number(service.billingMonth.slice(5, 7)) - 1]} ${service.billingMonth.slice(0, 4)}` : '';
+  const amount = Number.isFinite(service.amount) && service.amount > 0 && service.amount < 1e9 ? Math.round(service.amount * 100) / 100 : 0;
+  return {
+    description: [service.name.trim(), month].filter(Boolean).join(', ').slice(0, 1500),
+    rate: amount.toFixed(2),
+    billingType: service.monthly ? 'Monthly' : 'One-off',
+  };
 }
 
 /**
  * Who an invoice is for always comes from the CRM. Creating one makes a draft
  * on the documents server and opens it at /crm/invoices/:id.
  */
-export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpenChange, companyId, dealId, onCreated }) => {
+export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpenChange, companyId, dealId, onCreated, service }) => {
   const id = useId();
   const navigate = useNavigate();
   const { client, workspaceId } = useSignroom();
@@ -89,8 +119,28 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
     setBusy(true);
     try {
       const customer = await clientForCompany(client, company);
-      let invoice = await client.call<Invoice>('billing', { clientId: customer.id, ...(deal ? { dealId: deal } : {}) });
-      if (dealStart && useDealLine) {
+      let invoice = await client.call<Invoice>('billing', {
+        clientId: customer.id, ...(deal ? { dealId: deal } : {}),
+        ...(service ? { accountId: service.accountId, ...(service.billingMonth ? { billingMonth: service.billingMonth } : {}) } : {}),
+      });
+      if (service) {
+        // The draft starts with the service as its first line, ready to check and issue.
+        try {
+          invoice = await client.call<Invoice>(`billing/${invoice.id}/save`, {
+            revision: invoice.revision,
+            lines: [{ ...emptyLine(), ...serviceLine(service) }],
+            currency: defaultInvoiceCurrency(customer.account?.currency, companyCurrency, invoice.currency),
+            issueDate: invoice.issueDate,
+            dueDate: invoice.dueDate,
+            taxPercent: '0',
+            receiptDraft: null,
+            project: '',
+            notes: '',
+          });
+        } catch (error) {
+          toast.error(`The invoice was created, but its first line could not be added. ${errorSentence(error)}`);
+        }
+      } else if (dealStart && useDealLine) {
         try {
           invoice = await client.call<Invoice>(`billing/${invoice.id}/save`, {
             revision: invoice.revision,

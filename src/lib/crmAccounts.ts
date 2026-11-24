@@ -1,4 +1,5 @@
 import type { CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
+import { paysFor } from '@/lib/crmCollections';
 
 export interface AccountYearSummary {
   due: number;
@@ -28,8 +29,10 @@ export const summarizeClientAccount = (
 ): AccountYearSummary => {
   const monthlyPaid = Array.from({ length: 12 }, () => 0);
   for (const payment of payments) {
-    if (payment.accountId !== account.id || !inSelectedYear(payment.paidOn, year)) continue;
-    const month = Number(payment.paidOn.slice(5, 7)) - 1;
+    // A payment counts for the month it pays for, which is not always the month it arrived in.
+    const key = paysFor(payment);
+    if (payment.accountId !== account.id || !inSelectedYear(key, year)) continue;
+    const month = Number(key.slice(5, 7)) - 1;
     if (month >= 0 && month < 12) monthlyPaid[month] += payment.amount;
   }
   const yearPaid = monthlyPaid.reduce((sum, amount) => sum + amount, 0);
@@ -103,10 +106,11 @@ export const summarizeAccountPeriod = (
     return { due, paid, outstanding };
   }
   const mine = payments.filter((payment) => payment.accountId === account.id);
-  const paidIn = sum(mine.filter((payment) => paymentInPeriod(payment.paidOn, period)));
-  if (period.day !== null) return { due: null, paid: paidIn, outstanding: null };
+  // A day shows what arrived that day. A month shows what was paid FOR that month.
+  if (period.day !== null) return { due: null, paid: sum(mine.filter((payment) => paymentInPeriod(payment.paidOn, period))), outstanding: null };
 
   const key = `${period.year}-${String(period.month + 1).padStart(2, '0')}`;
+  const paidIn = sum(mine.filter((payment) => paysFor(payment) === key));
   const startKey = account.serviceStart ? account.serviceStart.slice(0, 7) : null;
   const endKey = account.serviceEnd ? account.serviceEnd.slice(0, 7) : null;
   const started = startKey === null || startKey <= key;
@@ -116,7 +120,7 @@ export const summarizeAccountPeriod = (
     const paid = paidIn + (startKey === key ? account.openingPaid : 0);
     return { due, paid, outstanding: Math.max(0, due - paid) };
   }
-  const paidBefore = sum(mine.filter((payment) => payment.paidOn.slice(0, 7) < key));
+  const paidBefore = sum(mine.filter((payment) => paysFor(payment) < key));
   const due = started ? Math.max(0, account.agreedAmount - account.openingPaid - paidBefore) : 0;
   return { due, paid: paidIn, outstanding: Math.max(0, due - paidIn) };
 };

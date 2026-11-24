@@ -674,6 +674,7 @@ export const CrmContactDetailPage: React.FC = () => {
                       workspaceId={contact.workspaceId}
                       contactId={contact.id}
                       projects={workspaceProjects}
+                      companyId={contact.companyId}
                     />
                   ) : (
                     <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">

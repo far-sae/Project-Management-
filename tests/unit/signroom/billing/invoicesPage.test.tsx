@@ -131,6 +131,25 @@ describe('Invoices list', () => {
     expect(screen.getByRole('link', { name: 'INV-0002' })).toBeTruthy();
   });
 
+  it('shows the invoices of one company, counts the statuses for it, and clears again', async () => {
+    serve();
+    open();
+    await waitFor(() => row('INV-0002'));
+    const choose = screen.getByRole('combobox', { name: 'Company' }) as HTMLSelectElement;
+    // Every company that has an invoice can be chosen, by name.
+    const harbour = [...choose.options].find((o) => /harbour/i.test(o.textContent ?? ''));
+    expect(harbour).toBeTruthy();
+    fireEvent.change(choose, { target: { value: harbour!.value } });
+    expect(screen.getByRole('link', { name: 'INV-0003' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'INV-0004' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'INV-0002' })).toBeNull();
+    // The counts on the status buttons are now this company's.
+    expect(within(screen.getByRole('group', { name: 'Filter by status' })).getByRole('button', { name: /^All 2$/ })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]!);
+    expect(choose.value).toBe('');
+    expect(screen.getByRole('link', { name: 'INV-0002' })).toBeTruthy();
+  });
+
   it('lists the receipts on their own tab', async () => {
     serve();
     open();

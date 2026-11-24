@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { AppError } from "./errors.js";
 import { currentWorkspace, type SignedInUser } from "./context.js";
 import { brandingOf } from "./branding.js";
-import { dealOf, listFilter } from "./crmLinks.js";
+import { accountOf, dealOf, listFilter } from "./crmLinks.js";
 import { visibleProject } from "./projects.js";
 import { financialPdf } from "./financialPdf.js";
 import type { BlobLoader } from "./pdf.js";
@@ -89,6 +89,8 @@ export async function billingAction(
     if (method !== "POST" || !client || client.archived) throw new AppError("Choose an existing client.");
     // Checked before a number is taken, so a refused deal uses none up.
     const dealId = await dealOf(store, workspace.id, body.dealId);
+    // The client service this invoice bills, when it was made from a lead's Accounts tab.
+    const service = await accountOf(store, workspace.id, body.accountId, body.billingMonth);
     const now = new Date();
     const number = await store.takeInvoiceNumber(workspace.id, now.getUTCFullYear());
     const t = now.toISOString();
@@ -98,6 +100,7 @@ export async function billingAction(
         workspaceId: workspace.id,
         clientId: client.id,
         dealId,
+        ...(service ? { accountId: service.accountId, billingMonth: service.billingMonth } : {}),
         createdBy: user.id,
         revision: 1,
         status: "Draft",

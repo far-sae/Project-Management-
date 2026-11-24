@@ -152,6 +152,8 @@ export interface Store {
   crmCompany(workspaceId: string, companyId: string): Promise<CrmCompany | null>;
   /** The CRM deal, only when it belongs to this workspace (crm_deals.workspace_id); null otherwise. */
   crmDeal(workspaceId: string, dealId: string): Promise<{ id: string; companyId: string | null } | null>;
+  /** The client service (crm_client_accounts), only when it belongs to this workspace; null otherwise. */
+  crmAccount(workspaceId: string, accountId: string): Promise<{ id: string } | null>;
   /** Saves the account settings only while the stored revision (0 when none) is the one given; null otherwise. */
   setClientAccount(workspaceId: string, clientId: string, revision: number, account: ClientAccountSettings): Promise<ClientAccountSettings | null>;
   /** Newest first. */
@@ -468,6 +470,8 @@ function invoiceFrom(r: Row): Invoice {
     // The billing plan link: a column migration 186 adds (absent, and so never set, before it is run).
     ...(r.project_id ? { projectId: r.project_id } : {}),
     dealId: r.crm_deal_id ?? null,
+    // The service link: columns migration 210 adds (absent, and so never set, before it is run).
+    ...(r.crm_account_id ? { accountId: r.crm_account_id, billingMonth: r.crm_billing_month ?? null } : {}),
     ...(r.receipt_draft ? { receiptDraft: r.receipt_draft } : {}),
     ...(r.branding ? { branding: r.branding } : {}),
     ...(r.customer ? { customer: r.customer } : {}),
@@ -1012,6 +1016,14 @@ export function supabaseStore(sb: SupabaseClient): Store {
       return d ? { id: d.id as string, companyId: (d.company_id ?? null) as string | null } : null;
     },
 
+    async crmAccount(workspaceId, accountId) {
+      const a = must(await sb.from("crm_client_accounts").select("id").eq("id", accountId).eq("workspace_id", workspaceId).maybeSingle()) as Row | null;
+      if (!a) return null;
+      // Asked before an invoice number is taken: a database that cannot keep the tie yet says so here, and no number is used up.
+      must(await sb.from("sr_invoices").select("crm_account_id").limit(1));
+      return { id: a.id as string };
+    },
+
     async updateClient(workspaceId, id, patch) {
       const r = await sb
         .from("sr_clients")
@@ -1057,7 +1069,11 @@ export function supabaseStore(sb: SupabaseClient): Store {
     },
 
     async insertInvoice(i, event) {
-      const row = { ...invoiceRow(i), workspace_id: i.workspaceId, created_by: i.createdBy || null, crm_deal_id: i.dealId || null };
+      const row = {
+        ...invoiceRow(i), workspace_id: i.workspaceId, created_by: i.createdBy || null, crm_deal_id: i.dealId || null,
+        // Named only for an invoice made for a service, so every other invoice saves on a database without these columns too.
+        ...(i.accountId ? { crm_account_id: i.accountId, crm_billing_month: i.billingMonth ?? null } : {}),
+      };
       const r = await sb.from("sr_invoices").insert(row).select("id").single();
       const id = (must(r) as Row).id as string;
       await addEvent(id, event);

@@ -126,6 +126,10 @@ export interface CrmClientAccount {
   serviceStart: string | null;
   serviceEnd: string | null;
   notes: string | null;
+  /** The day of the month a monthly fee is due (1 to 31). */
+  dueDay?: number | null;
+  /** The date a one-time fee is due (YYYY-MM-DD). */
+  dueDate?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -138,6 +142,14 @@ export interface CrmAccountPayment {
   paidOn: string;
   amount: number;
   notes: string | null;
+  /** The month the payment pays for ("2026-09"). Null: the month of the payment date. */
+  billingMonth?: string | null;
+  /** How it was paid: bank transfer, card, cash, ... */
+  method?: string | null;
+  /** The receipt or bank reference. */
+  reference?: string | null;
+  /** True when the payment was recorded on an invoice and written here by the database. */
+  fromInvoice?: boolean;
   createdAt: Date;
 }
 

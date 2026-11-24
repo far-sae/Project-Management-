@@ -154,6 +154,9 @@ export type InvoiceEvent = { at: string; type: string; actor: string };
 export type Invoice = {
   /** The CRM deal this invoice bills for, when it was raised from one. */
   dealId?: string | null;
+  /** The client service (the lead's Accounts tab) this invoice bills, and the month it bills ("2026-09"). Set at create, never changed. */
+  accountId?: string | null;
+  billingMonth?: string | null;
   projectId?: string;
   receiptDraft?: {
     enabled: boolean;

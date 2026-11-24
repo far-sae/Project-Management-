@@ -161,7 +161,8 @@ describe("migration 184", () => {
     for (const t of used) expect([...TABLES, ...LATER], t).toContain(t);
     // TaskCalendar's own tables, read only.
     const foreign = new Set([...store.matchAll(/\.from\("((?!sr_)\w+)"\)/g)].map((m) => m[1]));
-    expect(foreign).toEqual(new Set(["workspaces", "organizations", "crm_companies", "crm_contacts", "crm_deals"]));
+    // crm_client_accounts: the client service an invoice can be made for (the lead's Accounts tab), read only like the rest.
+    expect(foreign).toEqual(new Set(["workspaces", "organizations", "crm_companies", "crm_contacts", "crm_deals", "crm_client_accounts"]));
     for (const t of foreign) expect(store).not.toMatch(new RegExp(`\\.from\\("${t}"\\)\\s*\\.(insert|update|upsert|delete)\\(`));
   });
 

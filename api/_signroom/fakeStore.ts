@@ -57,6 +57,8 @@ export function fakeStore(): Store & {
   seedCompany(c: { id: string; workspaceId: string | null; organizationId?: string; name: string; email?: string; address?: string; city?: string; state?: string; postalCode?: string; country?: string }): void;
   seedContact(c: { companyId: string; firstName: string; lastName?: string; email?: string; created?: string }): void;
   seedDeal(d: { id: string; workspaceId: string | null; companyId?: string | null }): void;
+  /** A client service (crm_client_accounts) of a workspace. */
+  seedAccount(a: { id: string; workspaceId: string }): void;
 } {
   const workspaces = new Map<string, Workspace>();
   /** TaskCalendar's own tables: workspaces, organizations (owner_id and the members list) and the CRM. */
@@ -65,6 +67,7 @@ export function fakeStore(): Store & {
   const companies = new Map<string, { workspaceId: string | null; row: Omit<CrmCompany, "contacts"> }>();
   const contacts: { companyId: string; name: string; email: string; created: string }[] = [];
   const deals = new Map<string, { workspaceId: string | null; companyId: string | null }>();
+  const accounts = new Map<string, { workspaceId: string }>();
   const DEAL_RULE = "The linked deal cannot change.";
   const seq = new Map<string, number>();
   const clients = new Map<string, Client>();
@@ -254,6 +257,10 @@ export function fakeStore(): Store & {
     async crmDeal(workspaceId, dealId) {
       const d = deals.get(dealId);
       return d && d.workspaceId === workspaceId ? { id: dealId, companyId: d.companyId } : null;
+    },
+    async crmAccount(workspaceId, accountId) {
+      const a = accounts.get(accountId);
+      return a && a.workspaceId === workspaceId ? { id: accountId } : null;
     },
 
     async setClientAccount(workspaceId, clientId, revision, account) {
@@ -931,6 +938,9 @@ export function fakeStore(): Store & {
     },
     seedDeal(d) {
       deals.set(d.id, { workspaceId: d.workspaceId, companyId: d.companyId ?? null });
+    },
+    seedAccount(a) {
+      accounts.set(a.id, { workspaceId: a.workspaceId });
     },
   };
 }

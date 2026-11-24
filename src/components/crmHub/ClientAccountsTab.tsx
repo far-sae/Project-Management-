@@ -3,7 +3,7 @@
 // day can be looked at, and every service and payment can be changed or removed.
 import { publicMessage } from '@/lib/publicError';
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
-import { CreditCard, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CreditCard, FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
@@ -17,6 +17,8 @@ import {
   addAccountPayment, createClientAccount, deleteAccountPayment, deleteClientAccount, listAccountPayments,
   listClientAccounts, updateAccountPayment, updateClientAccount,
 } from '@/services/supabase/crmHub/accounts';
+import { collectionRow, monthKey, monthLabel } from '@/lib/crmCollections';
+import { NewInvoiceDialog, type InvoiceService } from '@/components/signroom/billing/NewInvoiceDialog';
 import { StatStrip, type StatItem } from '@/components/common/StatStrip';
 import { StatusPill } from '@/components/common/StatusPill';
 import { Button } from '@/components/ui/button';
@@ -35,6 +37,13 @@ const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 const ALL = '__all__';
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * One of the newer fields for a save: left out while it is empty and was empty,
+ * so a database that does not have the field yet still saves everything else.
+ */
+const changed = <K extends string, V>(key: K, now: V | null, before: V | null): Partial<Record<K, V | null>> =>
+  (now === null && before === null ? {} : { [key]: now } as Record<K, V | null>);
 /** "2026-03-10" → "10 Mar 2026". */
 const dayLabel = (iso: string): string =>
   `${Number(iso.slice(8, 10))} ${MONTH_NAMES[Number(iso.slice(5, 7)) - 1]?.slice(0, 3) ?? ''} ${iso.slice(0, 4)}`;
@@ -52,6 +61,10 @@ interface ServiceForm {
   serviceStart: string;
   serviceEnd: string;
   notes: string;
+  /** The day of the month a monthly fee is due. */
+  dueDay: string;
+  /** The date a one-time fee is due. */
+  dueDate: string;
 }
 
 /** The payment window: adding one to a service, or changing the one whose id it carries. */
@@ -61,7 +74,14 @@ interface PaymentForm {
   amount: string;
   paidOn: string;
   notes: string;
+  /** The month the payment pays for ("2026-09"). Empty: the month of the payment date. */
+  billingMonth: string;
+  method: string;
+  reference: string;
 }
+
+/** How a payment can have been made. */
+export const PAYMENT_METHODS = ['Bank transfer', 'Card', 'Cash', 'Cheque', 'PayPal', 'Other'];
 
 type Removing = { kind: 'service'; account: CrmClientAccount } | { kind: 'payment'; payment: CrmAccountPayment };
 
@@ -70,9 +90,11 @@ interface Props {
   workspaceId: string;
   contactId: string;
   projects: Project[];
+  /** The lead's company. An invoice for a service is made out to it. */
+  companyId?: string | null;
 }
 
-export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId, contactId, projects }) => {
+export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId, contactId, projects, companyId }) => {
   const { user } = useAuth();
   const { format: money } = useCrmCurrency();
   const [period, setPeriod] = useState<AccountPeriod>(() => ({ year: new Date().getFullYear(), month: null, day: null }));
@@ -83,6 +105,25 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
   const [service, setService] = useState<ServiceForm | null>(null);
   const [paying, setPaying] = useState<PaymentForm | null>(null);
   const [removing, setRemoving] = useState<Removing | null>(null);
+  /** The service an invoice is being made for. */
+  const [invoicing, setInvoicing] = useState<InvoiceService | null>(null);
+
+  /**
+   * Opens the New invoice window for one service. A monthly fee is billed for
+   * the month on screen (or this month); a one-time fee for what is still owed.
+   * An invoice is made out to a company, so the lead needs one.
+   */
+  const startInvoice = (account: CrmClientAccount) => {
+    if (!companyId) {
+      toast.error('Give this lead a company first (press Edit at the top). An invoice is made out to a company.');
+      return;
+    }
+    const month = period.month === null ? monthKey(new Date()) : `${period.year}-${String(period.month + 1).padStart(2, '0')}`;
+    const owed = collectionRow(account, payments, month);
+    setInvoicing(account.billingType === 'monthly'
+      ? { accountId: account.id, name: account.serviceName, amount: account.agreedAmount, billingMonth: month, monthly: true }
+      : { accountId: account.id, name: account.serviceName, amount: owed.collect > 0 ? owed.collect : account.agreedAmount, billingMonth: null, monthly: false });
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -137,12 +178,13 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
 
   const newService = (): ServiceForm => ({
     id: null, serviceName: '', projectId: '', billingType: 'monthly', agreedAmount: '', openingPaid: '0',
-    serviceStart: `${period.year}-01-01`, serviceEnd: '', notes: '',
+    serviceStart: `${period.year}-01-01`, serviceEnd: '', notes: '', dueDay: '', dueDate: '',
   });
   const editService = (account: CrmClientAccount): ServiceForm => ({
     id: account.id, serviceName: account.serviceName, projectId: account.projectId ?? '', billingType: account.billingType,
     agreedAmount: String(account.agreedAmount), openingPaid: String(account.openingPaid),
     serviceStart: account.serviceStart ?? '', serviceEnd: account.serviceEnd ?? '', notes: account.notes ?? '',
+    dueDay: account.dueDay ? String(account.dueDay) : '', dueDate: account.dueDate ?? '',
   });
 
   /** Run one change, say how it went, and read the numbers again. */
@@ -163,10 +205,13 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
   const serviceReady = Boolean(service && service.serviceName.trim() && service.agreedAmount !== '' && Number(service.agreedAmount) >= 0);
   const saveService = () => {
     if (!service || !serviceReady) return;
+    const before = accounts.find((account) => account.id === service.id);
     const fields = {
       projectId: service.projectId || null, serviceName: service.serviceName.trim(), billingType: service.billingType,
       agreedAmount: Number(service.agreedAmount), openingPaid: Number(service.openingPaid || 0),
       serviceStart: service.serviceStart || null, serviceEnd: service.serviceEnd || null, notes: service.notes.trim() || null,
+      ...changed('dueDay', service.billingType === 'monthly' && service.dueDay ? Math.min(31, Math.max(1, Math.round(Number(service.dueDay)))) : null, before?.dueDay ?? null),
+      ...changed('dueDate', service.billingType === 'one_time' && service.dueDate ? service.dueDate : null, before?.dueDate ?? null),
     };
     void (service.id
       ? run(() => updateClientAccount(service.id as string, fields), 'Service saved', 'Could not save the service', () => setService(null))
@@ -179,7 +224,13 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
   const paymentReady = Boolean(paying && Number(paying.amount) > 0 && paying.paidOn);
   const savePayment = () => {
     if (!paying || !paymentReady) return;
-    const fields = { paidOn: paying.paidOn, amount: Number(paying.amount), notes: paying.notes.trim() || null };
+    const was = payments.find((payment) => payment.id === paying.id);
+    const fields = {
+      paidOn: paying.paidOn, amount: Number(paying.amount), notes: paying.notes.trim() || null,
+      ...changed('billingMonth', paying.billingMonth || null, was?.billingMonth ?? null),
+      ...changed('method', paying.method || null, was?.method ?? null),
+      ...changed('reference', paying.reference.trim() || null, was?.reference ?? null),
+    };
     void (paying.id
       ? run(() => updateAccountPayment(paying.id as string, fields), 'Payment saved', 'Could not save the payment', () => setPaying(null))
       : run(
@@ -285,9 +336,12 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                     </StatusPill>
                     <Button
                       size="sm" variant="outline"
-                      onClick={() => setPaying({ id: null, accountId: account.id, amount: '', paidOn: today(), notes: '' })}
+                      onClick={() => setPaying({ id: null, accountId: account.id, amount: '', paidOn: today(), notes: '', billingMonth: '', method: '', reference: '' })}
                     >
                       Add payment
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => startInvoice(account)} aria-label={`Create an invoice for ${account.serviceName}`}>
+                      <FileText aria-hidden />Invoice
                     </Button>
                     <Button
                       size="icon" variant="ghost" aria-label={`Edit ${account.serviceName}`} title="Edit service"
@@ -351,7 +405,10 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                           <span className="w-28 shrink-0 tabular-nums text-muted-foreground">{dayLabel(payment.paidOn)}</span>
                           <span className="w-28 shrink-0 font-medium tabular-nums">{money(payment.amount)}</span>
                           <span className="min-w-0 flex-1 truncate text-muted-foreground" title={payment.notes ?? undefined}>
-                            {payment.notes ?? ''}
+                            {[
+                              payment.billingMonth && payment.billingMonth !== payment.paidOn.slice(0, 7) ? `for ${monthLabel(payment.billingMonth)}` : '',
+                              payment.method ?? '', payment.reference ?? '', payment.notes ?? '',
+                            ].filter(Boolean).join(' · ')}
                           </span>
                           <span className="flex shrink-0 items-center gap-1">
                             <Button
@@ -359,6 +416,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                               onClick={() => setPaying({
                                 id: payment.id, accountId: payment.accountId, amount: String(payment.amount),
                                 paidOn: payment.paidOn, notes: payment.notes ?? '',
+                                billingMonth: payment.billingMonth ?? '', method: payment.method ?? '', reference: payment.reference ?? '',
                               })}
                             >
                               <Pencil />
@@ -446,6 +504,20 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                   {(id) => <Input id={id} type="date" value={service.serviceEnd} onChange={(e) => setService({ ...service, serviceEnd: e.target.value })} />}
                 </Field>
               </div>
+              {service.billingType === 'monthly' ? (
+                <Field label="Due on day of the month">
+                  {(id) => (
+                    <Input
+                      id={id} type="number" min="1" max="31" step="1" placeholder="For example 5" value={service.dueDay}
+                      onChange={(e) => setService({ ...service, dueDay: e.target.value })}
+                    />
+                  )}
+                </Field>
+              ) : (
+                <Field label="Due date">
+                  {(id) => <Input id={id} type="date" value={service.dueDate} onChange={(e) => setService({ ...service, dueDate: e.target.value })} />}
+                </Field>
+              )}
               <Field label="Notes">
                 {(id) => <Textarea id={id} value={service.notes} onChange={(e) => setService({ ...service, notes: e.target.value })} />}
               </Field>
@@ -459,6 +531,10 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {invoicing && companyId && (
+        <NewInvoiceDialog open companyId={companyId} service={invoicing} onOpenChange={(open) => { if (!open) setInvoicing(null); }} />
+      )}
 
       <Dialog open={paying !== null} onOpenChange={(open) => { if (!open && !busy) setPaying(null); }}>
         <DialogContent className="max-w-sm">
@@ -476,6 +552,26 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
               <Field label="Payment date">
                 {(id) => <Input id={id} type="date" value={paying.paidOn} onChange={(e) => setPaying({ ...paying, paidOn: e.target.value })} />}
               </Field>
+              <Field label="Pays for the month">
+                {(id) => <Input id={id} type="month" value={paying.billingMonth} onChange={(e) => setPaying({ ...paying, billingMonth: e.target.value })} />}
+              </Field>
+              <p className="-mt-2 text-xs text-muted-foreground">Leave empty when it pays for the month it arrived in.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Method">
+                  {(id) => (
+                    <select
+                      id={id} className="h-11 md:h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                      value={paying.method} onChange={(e) => setPaying({ ...paying, method: e.target.value })}
+                    >
+                      <option value="">Not said</option>
+                      {[...new Set([...PAYMENT_METHODS, ...(paying.method ? [paying.method] : [])])].map((method) => <option key={method} value={method}>{method}</option>)}
+                    </select>
+                  )}
+                </Field>
+                <Field label="Reference">
+                  {(id) => <Input id={id} maxLength={80} placeholder="Receipt or bank reference" value={paying.reference} onChange={(e) => setPaying({ ...paying, reference: e.target.value })} />}
+                </Field>
+              </div>
               <Field label="Notes">
                 {(id) => <Textarea id={id} value={paying.notes} onChange={(e) => setPaying({ ...paying, notes: e.target.value })} />}
               </Field>

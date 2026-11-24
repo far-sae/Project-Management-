@@ -41,6 +41,7 @@ const CrmContactsPage = React.lazy(() => import('@/pages/crmHub/Contacts').then(
 const CrmCompaniesPage = React.lazy(() => import('@/pages/crmHub/Companies').then((m) => ({ default: m.CrmCompaniesPage })));
 const CrmDealsPage = React.lazy(() => import('@/pages/crmHub/Deals').then((m) => ({ default: m.CrmDealsPage })));
 const CrmTasksPage = React.lazy(() => import('@/pages/crmHub/Tasks').then((m) => ({ default: m.CrmTasksPage })));
+const CrmAccountsPage = React.lazy(() => import('@/pages/crmHub/Accounts').then((m) => ({ default: m.CrmAccountsPage })));
 const CrmReportsPage = React.lazy(() => import('@/pages/crmHub/Reports').then((m) => ({ default: m.CrmReportsPage })));
 const CrmCallsPage = React.lazy(() => import('@/pages/crmHub/Calls').then((m) => ({ default: m.CrmCallsPage })));
 const CrmActivityPage = React.lazy(() => import('@/pages/crmHub/Activity').then((m) => ({ default: m.CrmActivityPage })));
@@ -373,6 +374,7 @@ const router = createBrowserRouter(
                 { path: 'invoices',            element: lazyAppRoute(<InvoicesPage />) },
                 { path: 'invoices/:id',        element: lazyAppRoute(<InvoiceDetailPage />) },
                 { path: 'accounts-overview',   element: lazyAppRoute(<AccountsOverviewPage />) },
+                { path: 'accounts',            element: lazyAppRoute(<CrmAccountsPage />) },
                 { path: 'document-settings',   element: lazyAppRoute(<DocumentSettingsPage />) },
                 { path: 'automation',           element: lazyAppRoute(<AutomationOverviewPage />) },
                 { path: 'automation/assistant', element: lazyAppRoute(<AutomationAssistantPage />) },
