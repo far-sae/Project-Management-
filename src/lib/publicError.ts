@@ -30,7 +30,7 @@ const TECHNICAL = new RegExp(
     'row-level security', 'violates \\w[\\w -]* constraint', 'duplicate key value', 'relation "[^"]+"',
     'column "?[\\w.]+"? (of relation|does not exist)', 'schema cache', 'PGRST\\d{3}', 'permission denied for',
     '\\bJWT\\b', 'invalid input syntax', 'null value in column', 'foreign key constraint', 'syntax error at',
-    'SQLSTATE', 'canceling statement', 'statement timeout', 'deadlock detected', 'could not serialize access', 'function [\\w.]+\\(.*\\) does not exist', "could not find the (table|function|'\\w+' column)",
+    'SQLSTATE', 'record "\\w+" has no field', 'canceling statement', 'statement timeout', 'deadlock detected', 'could not serialize access', 'function [\\w.]+\\(.*\\) does not exist', "could not find the (table|function|'\\w+' column)",
     'is not a function', 'cannot read propert', 'cannot access', 'is not defined', 'is not iterable',
     'unexpected token', 'unexpected end of', 'status code \\d{3}', '\\b(Type|Reference|Syntax|Range)Error\\b',
     '^\\s*[{\\[]\\s*"', 'at [\\w.<>]+ \\(.*:\\d+:\\d+\\)',

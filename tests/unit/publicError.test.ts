@@ -23,6 +23,7 @@ describe('raw errors never reach the screen', () => {
     'JWT expired',
     'canceling statement due to statement timeout',
     'deadlock detected',
+    'record "new" has no field "campaign_id"',
     'could not serialize access due to concurrent update',
     'invalid input syntax for type uuid: "local-abc"',
     'null value in column "name" of relation "crm_deals" violates not-null constraint',
