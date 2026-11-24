@@ -1993,17 +1993,26 @@ notify pgrst, 'reload schema';
 -- merge_workspace (204) instead.
 --
 -- Two steps, so nobody deletes by accident:
---   delete_workspace_with_data(workspace)          only counts: what would go
---   delete_workspace_with_data(workspace, true)    deletes it
+--   delete_workspace_with_data(workspace)                only counts: what would go
+--   delete_workspace_with_data(workspace, true)          deletes it
+--   delete_workspace_with_data(workspace, true, true)    deletes it, and its legal records too
+--
+-- Legal records are the documents of the workspace: invoices (with their
+-- payments and receipts), agreements, billing plans and agreement templates.
+-- The count names them apart ("documents"), and they are only deleted when the
+-- third value is true: the owner has seen how many there are and said so. The
+-- documents area itself only lets an agreement or a template go together with
+-- its workspace, so this is the one way they can be removed.
 --
 -- It is all or nothing: when any part cannot be deleted, an error says so and
 -- NOTHING is changed.
 --
 -- It refuses when:
 --   * it is the organisation's only workspace (there must be one left);
---   * the workspace holds agreements, invoices, billing plans or agreement
---     templates: they are legal records, deleted one by one on their own
---     pages. The message says how many of each are still there;
+--   * the workspace holds legal records and the third value is not true. The
+--     message says how many of each there are;
+--   * an agreement is out for signature right now, or is under a legal hold:
+--     that is never deleted, whatever is asked;
 --   * the workspace has recorded calls: the recordings are kept at the phone
 --     provider, where the database cannot reach. Delete those calls on the
 --     Calls page first, which removes the recordings too.
@@ -2013,7 +2022,9 @@ notify pgrst, 'reload schema';
 
 set search_path = public;
 
-create or replace function public.delete_workspace_with_data(p_workspace uuid, p_confirm boolean default false)
+drop function if exists public.delete_workspace_with_data(uuid, boolean);
+
+create or replace function public.delete_workspace_with_data(p_workspace uuid, p_confirm boolean default false, p_documents boolean default false)
 returns jsonb
 language plpgsql
 security definer
@@ -2035,6 +2046,7 @@ declare
   v_counts jsonb := '{}'::jsonb;
   v_has_tasks boolean;
   v_documents text;
+  v_docs jsonb := '{}'::jsonb;
 begin
   if v_uid is null then
     raise exception 'Please sign in again.' using errcode = '28000';
@@ -2065,15 +2077,16 @@ begin
     raise exception 'This is your only workspace. Make another one first, then delete this one.' using errcode = 'P0001';
   end if;
 
-  -- ── What is never deleted this way ────────────────────────────────────────
-  -- Invoices and agreements are legal records. They are not swept away with a
-  -- workspace: each is deleted on its own page, by a person who looked at it.
-  -- The message says how many of each are still there, so it is clear what to do.
+  -- ── Legal records ─────────────────────────────────────────────────────────
+  -- Counted apart from everything else, and named in plain words.
   v_documents := '';
   foreach v_table in array array['sr_invoices', 'sr_agreements', 'sr_projects', 'sr_agreement_templates'] loop
     if to_regclass(format('public.%I', v_table)) is not null then
       execute format('select count(*) from public.%I where workspace_id = $1', v_table) into v_count using p_workspace;
       if v_count > 0 then
+        v_docs := v_docs || jsonb_build_object(
+          case v_table when 'sr_invoices' then 'invoices' when 'sr_agreements' then 'agreements' when 'sr_projects' then 'billing_plans' else 'agreement_templates' end,
+          v_count);
         v_documents := v_documents || case when v_documents = '' then '' else ', ' end || v_count::text || ' ' || case v_table
           when 'sr_invoices' then case when v_count = 1 then 'invoice' else 'invoices' end
           when 'sr_agreements' then case when v_count = 1 then 'agreement' else 'agreements' end
@@ -2082,9 +2095,19 @@ begin
       end if;
     end if;
   end loop;
-  if v_documents <> '' then
-    raise exception 'This workspace still has legal records: %. Delete them first (in the CRM, under Invoices and Agreements, with this workspace chosen), then delete the workspace.', v_documents
-      using errcode = 'P0001';
+
+  -- Never deleted, whatever is asked: an agreement people are signing right now, and one under a legal hold.
+  if to_regclass('public.sr_agreements') is not null then
+    select count(*) into v_count from public.sr_agreements where workspace_id = p_workspace and status in ('Awaiting signatures', 'Finalising');
+    if v_count > 0 then
+      raise exception 'An agreement of this workspace is out for signature right now. Cancel it or let it finish first, then delete the workspace.'
+        using errcode = 'P0001';
+    end if;
+    select count(*) into v_count from public.sr_agreements where workspace_id = p_workspace and legal_hold;
+    if v_count > 0 then
+      raise exception 'An agreement of this workspace is under a legal hold. Release the hold first, then delete the workspace.'
+        using errcode = 'P0001';
+    end if;
   end if;
 
   if to_regclass('public.crm_calls') is not null then
@@ -2125,12 +2148,34 @@ begin
   end if;
 
   if not coalesce(p_confirm, false) then
-    return jsonb_build_object('deleted', false, 'name', v_name, 'counts', v_counts);
+    return jsonb_build_object('deleted', false, 'name', v_name, 'counts', v_counts, 'documents', v_docs);
+  end if;
+
+  if v_documents <> '' and not coalesce(p_documents, false) then
+    raise exception 'This workspace has legal records: %. They are only deleted when you say so: tick the box for them and try again.', v_documents
+      using errcode = 'P0001';
   end if;
 
   -- ── Delete ────────────────────────────────────────────────────────────────
   -- Nothing of this workspace goes to the CRM's recycle bin (197): deleted here means no copy is kept.
   perform set_config('crm.skip_trash', 'on', true);
+
+  -- The legal records, when the owner said so. The documents area lets an
+  -- agreement or a template go only together with its workspace, so its own
+  -- row for this workspace (same id) is removed: everything of it goes with
+  -- that, and nothing of any other workspace.
+  if v_documents <> '' and to_regclass('public.sr_workspaces') is not null then
+    delete from public.sr_workspaces where id = p_workspace;
+    foreach v_table in array array['sr_invoices', 'sr_agreements', 'sr_projects', 'sr_agreement_templates'] loop
+      if to_regclass(format('public.%I', v_table)) is not null then
+        execute format('select count(*) from public.%I where workspace_id = $1', v_table) into v_count using p_workspace;
+        if v_count > 0 then
+          raise exception 'This workspace could not be deleted. Nothing was changed.'
+            using errcode = 'P0001', detail = v_table || ' still has rows';
+        end if;
+      end if;
+    end loop;
+  end if;
 
   -- The tasks of the workspace's projects, and what hangs on those tasks, the way the app removes a project.
   if v_has_tasks then
@@ -2208,12 +2253,12 @@ begin
     end;
   end if;
 
-  return jsonb_build_object('deleted', true, 'name', v_name, 'counts', v_counts);
+  return jsonb_build_object('deleted', true, 'name', v_name, 'counts', v_counts, 'documents', v_docs);
 end;
 $$;
 
-revoke all on function public.delete_workspace_with_data(uuid, boolean) from public;
-grant execute on function public.delete_workspace_with_data(uuid, boolean) to authenticated;
+revoke all on function public.delete_workspace_with_data(uuid, boolean, boolean) from public;
+grant execute on function public.delete_workspace_with_data(uuid, boolean, boolean) to authenticated;
 
 notify pgrst, 'reload schema';
 

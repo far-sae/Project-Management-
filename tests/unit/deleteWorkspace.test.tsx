@@ -23,7 +23,7 @@ vi.mock('@/hooks/useSelectedWorkspace', () => ({
 }));
 vi.mock('@/services/supabase/workspaces', () => ({ deleteWorkspaceWithData: h.deleteWorkspaceWithData }));
 
-import { DeleteWorkspaceDialog, deletedSummary } from '@/components/workspace/DeleteWorkspaceDialog';
+import { DeleteWorkspaceDialog, deletedSummary, documentSummary } from '@/components/workspace/DeleteWorkspaceDialog';
 
 const workspace = (workspaceId: string, name: string, isDefault = false): Workspace =>
   ({ workspaceId, name, isDefault, organizationId: 'org-1', createdAt: new Date(), updatedAt: new Date() }) as Workspace;
@@ -37,12 +37,12 @@ const onDeleted = vi.fn();
 const show = (workspaces: Workspace[] = [general, studio]) =>
   render(<DeleteWorkspaceDialog workspace={general} workspaces={workspaces} onOpenChange={onOpenChange} onDeleted={onDeleted} />);
 const button = () => screen.getByRole('button', { name: /^Delete General/ }) as HTMLButtonElement;
-const box = () => screen.getByRole('checkbox') as HTMLInputElement;
+const box = () => screen.getAllByRole('checkbox')[0] as HTMLInputElement;
 
 beforeEach(() => {
   for (const fn of [h.deleteWorkspaceWithData, h.refreshWorkspaces, h.select, h.toast.success, h.toast.error, onOpenChange, onDeleted]) fn.mockClear();
   h.selectedId = 'w-general';
-  h.deleteWorkspaceWithData.mockImplementation(async (_id: string, confirm: boolean) => ({ deleted: confirm, name: 'General', counts: COUNTS }));
+  h.deleteWorkspaceWithData.mockImplementation(async (_id: string, confirm: boolean) => ({ deleted: confirm, name: 'General', counts: COUNTS, documents: {} }));
 });
 afterEach(cleanup);
 
@@ -111,7 +111,7 @@ describe('deleting', () => {
 
   it('deletes, reads the list again, moves off the deleted workspace and says so', async () => {
     await confirm();
-    await waitFor(() => expect(h.deleteWorkspaceWithData).toHaveBeenCalledWith('w-general', true));
+    await waitFor(() => expect(h.deleteWorkspaceWithData).toHaveBeenCalledWith('w-general', true, false));
     await waitFor(() => expect(onDeleted).toHaveBeenCalled());
     expect(h.refreshWorkspaces).toHaveBeenCalled();
     // The person was looking at General: they are put on the workspace that is left.
@@ -147,6 +147,52 @@ describe('deleting', () => {
   });
 });
 
+describe('legal records', () => {
+  const DOCS = { invoices: 2, agreements: 1, billing_plans: 1, agreement_templates: 3 };
+  beforeEach(() => {
+    h.deleteWorkspaceWithData.mockImplementation(async (_id: string, confirm: boolean) => ({ deleted: confirm, name: 'General', counts: COUNTS, documents: DOCS }));
+  });
+
+  it('are named apart, with how many there are of each', async () => {
+    show();
+    const list = await screen.findByRole('list', { name: 'Legal records in this workspace' });
+    expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['2 invoices', '1 agreement', '1 billing plan', '3 agreement templates']);
+    expect(screen.getByText(/the law may ask you to keep them for years/)).toBeTruthy();
+    expect(documentSummary({ invoices: 1 }).map((l) => l.text)).toEqual(['1 invoice']);
+    expect(documentSummary({})).toEqual([]);
+  });
+
+  it('need a tick of their own: the first tick alone deletes nothing', async () => {
+    show();
+    await screen.findByText('3 projects');
+    const [first, second] = screen.getAllByRole('checkbox') as HTMLInputElement[];
+    fireEvent.click(first);
+    expect(button().disabled).toBe(true);
+    fireEvent.click(second);
+    expect(button().disabled).toBe(false);
+    fireEvent.click(first);
+    expect(button().disabled).toBe(true);
+    expect(h.deleteWorkspaceWithData).toHaveBeenCalledTimes(1);
+  });
+
+  it('are deleted with the workspace once both boxes are ticked', async () => {
+    show();
+    await screen.findByText('3 projects');
+    for (const tick of screen.getAllByRole('checkbox')) fireEvent.click(tick);
+    fireEvent.click(button());
+    await waitFor(() => expect(h.deleteWorkspaceWithData).toHaveBeenCalledWith('w-general', true, true));
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+  });
+
+  it('are not asked about in a workspace that has none', async () => {
+    h.deleteWorkspaceWithData.mockImplementation(async (_id: string, confirm: boolean) => ({ deleted: confirm, name: 'General', counts: COUNTS, documents: {} }));
+    show();
+    await screen.findByText('3 projects');
+    expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.queryByText(/Legal records/)).toBeNull();
+  });
+});
+
 describe('the database file', () => {
   const sql = readFileSync(resolve(process.cwd(), 'supabase/migrations/205_delete_workspace_with_data.sql'), 'utf8');
 
@@ -157,17 +203,20 @@ describe('the database file', () => {
 
   it('is for the owner only, signed in', () => {
     expect(sql).toContain('o.owner_id = v_uid');
-    expect(sql).toMatch(/revoke all on function public\.delete_workspace_with_data\(uuid, boolean\) from public/);
+    expect(sql).toMatch(/revoke all on function public\.delete_workspace_with_data\(uuid, boolean, boolean\) from public/);
     expect(sql).not.toMatch(/grant execute[^;]*to anon/);
   });
 
   it('only counts unless it is told to delete', () => {
-    expect(sql).toMatch(/p_confirm boolean default false/);
+    expect(sql).toMatch(/p_confirm boolean default false, p_documents boolean default false/);
     expect(sql.indexOf('if not coalesce(p_confirm, false) then')).toBeLessThan(sql.indexOf("'delete from public.%I where workspace_id = $1'"));
   });
 
-  it('never deletes agreements or invoices, and never leaves a recording behind', () => {
+  it('deletes legal records only when told to, never one being signed or on hold, and never leaves a recording behind', () => {
     expect(sql).toContain('legal records');
+    expect(sql).toContain('if v_documents <> \'\' and not coalesce(p_documents, false) then');
+    expect(sql).toContain("status in ('Awaiting signatures', 'Finalising')");
+    expect(sql).toContain('legal_hold');
     // It says how many of each are in the way, so the person knows what to delete first.
     expect(sql).toMatch(/v_count::text/);
     expect(sql).toContain("'invoice'");

@@ -199,23 +199,27 @@ export const mergeWorkspace = async (fromId: string, intoId: string): Promise<{ 
 };
 
 export const DELETE_WORKSPACE_NOT_SET_UP_MESSAGE =
-  'Deleting a workspace with everything in it is not set up yet: run supabase/migrations/205_delete_workspace_with_data.sql in the Supabase SQL editor.';
+  'Deleting a workspace needs the newest database update: run supabase/crm_setup.sql in the Supabase SQL editor (run it again if you ran it before), then try again.';
 
 /**
  * Deletes a workspace together with everything in it, or (confirm = false)
- * only counts what would go. The database does it in one step: all of it, or
+ * only counts what would go. Its legal records are counted apart and go only
+ * when `documents` is true. The database does it in one step: all of it, or
  * nothing (it then says why, in a sentence that is passed on as it is). Only
  * the organisation's owner may.
  */
 export const deleteWorkspaceWithData = async (
   workspaceId: string,
   confirm: boolean,
-): Promise<{ deleted: boolean; counts: Record<string, number> }> => {
-  const { data, error } = await supabase.rpc("delete_workspace_with_data", { p_workspace: workspaceId, p_confirm: confirm });
+  /** Also delete the workspace's legal records (invoices, agreements, billing plans, agreement templates). */
+  documents = false,
+): Promise<{ deleted: boolean; counts: Record<string, number>; documents: Record<string, number> }> => {
+  const { data, error } = await supabase.rpc("delete_workspace_with_data", { p_workspace: workspaceId, p_confirm: confirm, p_documents: documents });
   if (!error) {
-    const answer = (data ?? {}) as { deleted?: unknown; counts?: unknown };
-    const counts = answer.counts && typeof answer.counts === "object" && !Array.isArray(answer.counts) ? (answer.counts as Record<string, number>) : {};
-    return { deleted: answer.deleted === true, counts };
+    const answer = (data ?? {}) as { deleted?: unknown; counts?: unknown; documents?: unknown };
+    const numbers = (value: unknown): Record<string, number> =>
+      (value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, number>) : {});
+    return { deleted: answer.deleted === true, counts: numbers(answer.counts), documents: numbers(answer.documents) };
   }
   // The function is not there until migration 205 has been run.
   const missing = error.code === "PGRST202" || error.code === "42883"
