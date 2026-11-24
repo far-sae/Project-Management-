@@ -12,7 +12,9 @@ import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import { useCrmDealStages } from '@/hooks/useCrmHub';
 import { useDealMoney } from '@/hooks/useDealMoney';
 import { supabase } from '@/services/supabase/config';
-import { getCompany, deleteCompany } from '@/services/supabase/crmHub/companies';
+import { getCompany, deleteCompany, updateCompany } from '@/services/supabase/crmHub/companies';
+import { EditableFact } from '@/components/crmHub/EditableFact';
+import type { UpdateCompanyInput } from '@/types/crmHub';
 import { listContacts } from '@/services/supabase/crmHub/contacts';
 import { listDeals } from '@/services/supabase/crmHub/deals';
 import { listActivities } from '@/services/supabase/crmHub/activities';
@@ -130,6 +132,12 @@ export const CrmCompanyDetailPage: React.FC = () => {
   const [showAllLeads, setShowAllLeads] = useState(false);
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  /** Saves one fact changed in the left panel. The panel shows the new value at once. */
+  const saveFact = async (patch: UpdateCompanyInput) => {
+    if (!id) return;
+    setCompany(await updateCompany(id, patch));
+  };
 
   const refresh = React.useCallback(async () => {
     if (!id || !orgId) return;
@@ -356,43 +364,58 @@ export const CrmCompanyDetailPage: React.FC = () => {
           {/* LEFT: what is known about the company */}
           <Card title="About this company">
             <dl className="flex flex-col gap-3.5 px-4 py-4">
-              <Fact label="Website">
+              <EditableFact label="Website" kind="url" value={company.website ?? ''} placeholder="example.com" onSave={(v) => saveFact({ website: v })}>
                 {domain && siteHref
                   ? <a href={siteHref} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{domain}</a>
                   : NOT_SET}
-              </Fact>
-              <Fact label="Industry">{company.industry ?? NOT_SET}</Fact>
+              </EditableFact>
+              <EditableFact label="Industry" value={company.industry ?? ''} onSave={(v) => saveFact({ industry: v })}>{company.industry ?? NOT_SET}</EditableFact>
               <Fact label="Type">
                 {relationship.label}
                 {!relationship.chosen && <span className="text-muted-foreground"> (from the deals)</span>}
               </Fact>
               <Fact label="Company owner">{ownerLabel ?? NOT_SET}</Fact>
-              <Fact label="Phone">
+              <EditableFact label="Phone" kind="tel" value={company.phone ?? ''} onSave={(v) => saveFact({ phone: v })}>
                 {company.phone
                   ? <a href={`tel:${company.phone}`} className="tabular-nums hover:underline">{company.phone}</a>
                   : NOT_SET}
-              </Fact>
-              <Fact label="Email">
+              </EditableFact>
+              <EditableFact label="Email" kind="email" value={company.email ?? ''} onSave={(v) => saveFact({ email: v })}>
                 {company.email
                   ? <a href={`mailto:${company.email}`} className="hover:underline">{company.email}</a>
                   : NOT_SET}
-              </Fact>
-              <Fact label="LinkedIn">
+              </EditableFact>
+              <EditableFact label="LinkedIn" kind="url" value={company.linkedinUrl ?? ''} placeholder="linkedin.com/company/…" onSave={(v) => saveFact({ linkedinUrl: v })}>
                 {linkedinHref ? (
                   <a href={linkedinHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-primary hover:underline">
                     <Linkedin className="h-3.5 w-3.5" aria-hidden />Company page
                   </a>
                 ) : NOT_SET}
-              </Fact>
-              <Fact label="Address">
-                {addressLines.length > 0
-                  ? addressLines.map((line) => <span key={line} className="block">{line}</span>)
-                  : NOT_SET}
-              </Fact>
-              <Fact label="Employees">{company.companySize ?? NOT_SET}</Fact>
-              <Fact label="Annual revenue">
+              </EditableFact>
+              <div className="group flex flex-col gap-0.5">
+                <dt className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                  Address
+                  {/* An address is several lines (street, city, postcode, country): it is changed in the full form. */}
+                  <Button
+                    variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground opacity-70 hover:opacity-100 focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                    aria-label="Edit address" onClick={() => setShowEdit(true)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden />
+                  </Button>
+                </dt>
+                <dd className="min-w-0 break-words text-sm text-foreground">
+                  {addressLines.length > 0
+                    ? addressLines.map((line) => <span key={line} className="block">{line}</span>)
+                    : NOT_SET}
+                </dd>
+              </div>
+              <EditableFact label="Employees" value={company.companySize ?? ''} placeholder="11-50" onSave={(v) => saveFact({ companySize: v })}>{company.companySize ?? NOT_SET}</EditableFact>
+              <EditableFact
+                label="Annual revenue" kind="number" value={company.annualRevenue != null ? String(company.annualRevenue) : ''} placeholder="250000"
+                onSave={(v) => saveFact({ annualRevenue: v === null ? null : Number(v) })}
+              >
                 {company.annualRevenue != null ? <span className="tabular-nums">{money(company.annualRevenue)}</span> : NOT_SET}
-              </Fact>
+              </EditableFact>
               <Fact label="Added">{format(company.createdAt, 'd MMM yyyy')}</Fact>
               <Fact label="Last activity">
                 {lastActivity ? formatDistanceToNow(lastActivity, { addSuffix: true }) : NOT_SET}

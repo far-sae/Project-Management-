@@ -102,3 +102,36 @@ export const deleteNote = async (id: string): Promise<void> => {
   const { error } = await supabase.from('crm_notes').delete().eq('id', id);
   if (error) throw error;
 };
+
+/** An earlier version of a note: the words it had before a change. */
+export interface CrmNoteVersion {
+  id: string;
+  noteId: string;
+  body: string;
+  /** When those words were written. */
+  writtenAt: Date | null;
+  /** When they were replaced. */
+  changedAt: Date;
+  changedBy: string | null;
+}
+
+export const NOTE_HISTORY_NOT_SET_UP_MESSAGE = 'The history of notes is not set up yet. Run supabase/crm_setup.sql in the Supabase SQL editor, then reload.';
+
+/** The earlier versions of one note, the latest change first. */
+export const listNoteHistory = async (noteId: string): Promise<CrmNoteVersion[]> => {
+  const { data, error } = await supabase
+    .from('crm_note_history')
+    .select('id, note_id, body, written_at, changed_at, changed_by')
+    .eq('note_id', noteId)
+    .order('changed_at', { ascending: false });
+  if (error) {
+    // The table is not there: the SQL has not been run yet.
+    if (error.code === '42P01' || error.code === 'PGRST205' || /does not exist|schema cache/i.test(error.message ?? '')) throw new Error(NOTE_HISTORY_NOT_SET_UP_MESSAGE);
+    throw error;
+  }
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    id: String(r.id), noteId: String(r.note_id), body: String(r.body ?? ''),
+    writtenAt: r.written_at ? new Date(String(r.written_at)) : null,
+    changedAt: new Date(String(r.changed_at)), changedBy: r.changed_by ? String(r.changed_by) : null,
+  }));
+};

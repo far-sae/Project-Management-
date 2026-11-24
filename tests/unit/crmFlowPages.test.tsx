@@ -179,6 +179,36 @@ describe('New lead', () => {
     expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ companyId: 'c2' });
   });
 
+  it('starts a new lead as New, as before', async () => {
+    await addLead('');
+    fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ lifecycleStage: 'lead', leadStatus: 'new' });
+  });
+
+  it('adds an existing client as a customer straight away, with no deal needed', async () => {
+    await addLead('');
+    expect(screen.getByRole('radio', { name: 'A new lead' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByRole('radio', { name: 'An existing client' }));
+    expect(screen.getByRole('dialog').textContent).toContain('Saved as a customer straight away');
+    fireEvent.click(screen.getByRole('button', { name: 'Add client' }));
+    await waitFor(() => expect(svc.createContact).toHaveBeenCalled());
+    // The mark of a client set by hand: they stay a customer whatever happens to later deals.
+    expect(svc.createContact.mock.calls[0]![0]).toMatchObject({ firstName: 'Noor', lifecycleStage: 'evangelist', leadStatus: 'connected' });
+  });
+
+  it('has a button of its own for an existing client, which opens the same form ready for one', async () => {
+    svc.createContact.mockReset().mockResolvedValue({});
+    render(<MemoryRouter><CrmContactsPage /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'Existing client' }));
+    expect(screen.getByRole('dialog', { name: 'Add an existing client' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'An existing client' }).getAttribute('aria-checked')).toBe('true');
+    // Pressing "New lead" afterwards starts with a lead again.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New lead' }));
+    expect(screen.getByRole('radio', { name: 'A new lead' }).getAttribute('aria-checked')).toBe('true');
+  });
+
   it('adds a lead without a company when none is typed', async () => {
     await addLead('');
     fireEvent.click(screen.getByRole('button', { name: 'Add lead' }));

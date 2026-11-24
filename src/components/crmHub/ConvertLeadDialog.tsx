@@ -10,7 +10,7 @@ import { useCrmCurrency } from '@/context/CrmCurrencyContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { convertLeadToDeal } from '@/services/supabase/crmHub/flow';
 import { COMMON_CURRENCIES } from '@/lib/countries';
-import { conversionDefaults, leadName } from '@/lib/crmFlow';
+import { conversionDefaults, leadName, leadStep } from '@/lib/crmFlow';
 import type { CrmCompany, CrmContact, CrmDealStage } from '@/types/crmHub';
 import { Button } from '@/components/ui/button';
 import { CurrencySelect } from '@/components/ui/currency-select';
@@ -29,13 +29,18 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   /** Called after the deal exists, before the page moves to it. */
   onConverted?: () => void | Promise<void>;
+  /**
+   * Marks the lead as an existing client without opening a deal. Given for a
+   * lead that is not a customer yet; the window then offers it.
+   */
+  onMarkClient?: () => void | Promise<void>;
 }
 
 const NONE = '__none__';
 const NEW = '__new__';
 
 /** Qualified lead → deal in the pipeline, linked to the person and their company. */
-export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, open, onOpenChange, onConverted }) => {
+export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, open, onOpenChange, onConverted, onMarkClient }) => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const navigate = useNavigate();
@@ -50,6 +55,9 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
   const [companyChoice, setCompanyChoice] = useState(NONE);
   const [newCompany, setNewCompany] = useState('');
   const [busy, setBusy] = useState(false);
+  const [marking, setMarking] = useState(false);
+  /** Somebody who is a customer already (by a won deal, or marked by hand) stays one when a deal is opened. */
+  const isClient = lead !== null && leadStep(lead) === 'customer';
 
   const openStages = useMemo(
     () => stages.filter((s) => s.status === 'open').sort((a, b) => a.sortOrder - b.sortOrder),
@@ -115,11 +123,25 @@ export const ConvertLeadDialog: React.FC<Props> = ({ lead, stages, companies, op
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Convert {leadName(lead)} to a deal</DialogTitle>
+          <DialogTitle>{isClient ? `New deal for ${leadName(lead)}` : `Convert ${leadName(lead)} to a deal`}</DialogTitle>
           <DialogDescription>
-            Opens a deal in the pipeline, linked to this lead. The lead stays in your list, marked “Deal open”.
+            {isClient
+              ? 'Opens a deal in the pipeline, linked to this client. They stay a customer.'
+              : 'Opens a deal in the pipeline, linked to this lead. The lead stays in your list, marked “Deal open”.'}
           </DialogDescription>
         </DialogHeader>
+
+        {!isClient && onMarkClient && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm">
+            <span className="min-w-0 text-muted-foreground">Already a client, with no new deal to follow?</span>
+            <Button
+              type="button" variant="outline" size="sm" disabled={busy || marking}
+              onClick={async () => { setMarking(true); try { await onMarkClient(); onOpenChange(false); } finally { setMarking(false); } }}
+            >
+              {marking && <Loader2 className="animate-spin" aria-hidden />}Mark as existing client
+            </Button>
+          </div>
+        )}
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">

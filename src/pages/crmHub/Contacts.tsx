@@ -95,6 +95,8 @@ export const CrmContactsPage: React.FC = () => {
   const [email, setEmail] = useState('');
   /** True once the person has seen that this email is already in the CRM and chosen to add the lead anyway. */
   const [addAnyway, setAddAnyway] = useState(false);
+  /** The form adds an existing client (a customer from the start) instead of a new lead. */
+  const [asClient, setAsClient] = useState(false);
   const [phone, setPhone] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -303,7 +305,8 @@ export const CrmContactsPage: React.FC = () => {
     toast.success(`Exported ${filtered.length} lead${filtered.length === 1 ? '' : 's'}`);
   };
 
-  const openCreate = () => {
+  const openCreate = (client = false) => {
+    setAsClient(client);
     setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setAddAnyway(false);
     setJobTitle(''); setCompanyName(''); setSource(''); setCategory('');
     setCustomRows([]); setCustomError(null);
@@ -342,15 +345,15 @@ export const CrmContactsPage: React.FC = () => {
           phone: phone.trim() || null,
           jobTitle: jobTitle.trim() || null,
           companyId,
-          lifecycleStage: 'lead',
-          leadStatus: 'new',
+          // An existing client is a customer from the start: no deal has to be won first.
+          ...(asClient ? leadStepPatch('customer') : { lifecycleStage: 'lead' as const, leadStatus: 'new' as const }),
           source: source.trim() || null,
           category: category.trim() || null,
           customFields: custom.fields,
         },
         user?.userId ?? null,
       );
-      toast.success('Lead added');
+      toast.success(asClient ? 'Client added' : 'Lead added');
       setShowCreate(false);
       await refresh();
     } catch (err) {
@@ -421,7 +424,10 @@ export const CrmContactsPage: React.FC = () => {
               <Button variant="outline" onClick={handleExportCsv}>
                 <Download /> Export
               </Button>
-              <Button onClick={openCreate}>
+              <Button variant="outline" onClick={() => openCreate(true)}>
+                <Plus /> Existing client
+              </Button>
+              <Button onClick={() => openCreate()}>
                 <Plus /> New lead
               </Button>
             </>
@@ -514,7 +520,7 @@ export const CrmContactsPage: React.FC = () => {
               {contacts.length === 0 ? 'No leads yet. Add the first person you want to win as a customer.' : 'No leads match these filters.'}
             </p>
             {contacts.length === 0 && (
-              <Button onClick={openCreate}><Plus /> New lead</Button>
+              <Button onClick={() => openCreate()}><Plus /> New lead</Button>
             )}
           </div>
         ) : (
@@ -660,10 +666,18 @@ export const CrmContactsPage: React.FC = () => {
       <Dialog open={showCreate} onOpenChange={(o) => !busy && setShowCreate(o)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>New lead</DialogTitle>
-            <DialogDescription>Starts as “New”. Move it on as you speak with them.</DialogDescription>
+            <DialogTitle>{asClient ? 'Add an existing client' : 'New lead'}</DialogTitle>
+            <DialogDescription>
+              {asClient
+                ? 'Saved as a customer straight away. No deal has to be won first, and they stay a customer whatever happens to later deals.'
+                : 'Starts as “New”. Move it on as you speak with them.'}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4">
+            <div role="radiogroup" aria-label="This person is" className="inline-flex self-start rounded-md border border-border p-0.5">
+              <Button type="button" size="sm" role="radio" aria-checked={!asClient} variant={!asClient ? 'secondary' : 'ghost'} onClick={() => setAsClient(false)} disabled={busy}>A new lead</Button>
+              <Button type="button" size="sm" role="radio" aria-checked={asClient} variant={asClient ? 'secondary' : 'ghost'} onClick={() => setAsClient(true)} disabled={busy}>An existing client</Button>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="fn">First name</Label>
@@ -760,7 +774,7 @@ export const CrmContactsPage: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)} disabled={busy}>Cancel</Button>
             <Button onClick={handleCreate} disabled={busy || !firstName.trim()}>
-              {busy && <Loader2 className="animate-spin" />} {duplicate && addAnyway ? 'Add anyway' : 'Add lead'}
+              {busy && <Loader2 className="animate-spin" />} {duplicate && addAnyway ? 'Add anyway' : asClient ? 'Add client' : 'Add lead'}
             </Button>
           </DialogFooter>
         </DialogContent>

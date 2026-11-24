@@ -13,8 +13,10 @@ import {
   getContact, updateContact, deleteContact,
 } from '@/services/supabase/crmHub/contacts';
 import { listActivities, logActivity } from '@/services/supabase/crmHub/activities';
-import { listNotes, createNote } from '@/services/supabase/crmHub/notes';
-import { listTasks, createTask } from '@/services/supabase/crmHub/tasks';
+import { listNotes } from '@/services/supabase/crmHub/notes';
+import { LeadNotes } from '@/components/crmHub/LeadNotes';
+import { FollowUpEditDialog } from '@/components/crmHub/FollowUpEditDialog';
+import { listTasks, createTask, updateTask } from '@/services/supabase/crmHub/tasks';
 import { listDeals } from '@/services/supabase/crmHub/deals';
 import { listDealStages, seedDefaultDealStages } from '@/services/supabase/crmHub/dealStages';
 import { getCompany } from '@/services/supabase/crmHub/companies';
@@ -277,11 +279,9 @@ export const CrmContactDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const [noteBody, setNoteBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [stepBusy, setStepBusy] = useState(false);
   const [tab, setTab] = useState<LeadTab>('all');
-  const [showAllNotes, setShowAllNotes] = useState(false);
   const [showAllFollowUps, setShowAllFollowUps] = useState(false);
 
   const [showEdit, setShowEdit] = useState(false);
@@ -292,6 +292,10 @@ export const CrmContactDetailPage: React.FC = () => {
   const calling = useCalling();
   const [showCall, setShowCall] = useState(false);
   const [showNewFollowUp, setShowNewFollowUp] = useState(false);
+  /** The follow-up open in the edit window. */
+  const [editingFollowUp, setEditingFollowUp] = useState<CrmTask | null>(null);
+  /** The follow-up being marked as done. */
+  const [finishing, setFinishing] = useState<string | null>(null);
   /** A step picked for a lead that already has a deal: asked about first. */
   const [stepBack, setStepBack] = useState<ManualStep>('contacted');
   const [confirmStepBack, setConfirmStepBack] = useState(false);
@@ -396,18 +400,17 @@ export const CrmContactDetailPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [orgId, leadWorkspaceId]);
 
-  const handleAddNote = async () => {
-    if (!orgId || !noteBody.trim()) return;
-    setBusy(true);
+  /** Marks a follow-up as done from its row. A repeating one makes its next one. */
+  const finishFollowUp = async (task: CrmTask) => {
+    setFinishing(task.id);
     try {
-      await createNote({ organizationId: orgId, workspaceId: contact?.workspaceId ?? null, body: noteBody.trim(), contactId: id }, user?.userId ?? null);
-      toast.success('Note added');
-      setNoteBody('');
+      const saved = await updateTask(task.id, { status: 'completed' });
+      toast.success(saved.nextFollowUp ? 'Done. The next one was made, because it repeats.' : 'Follow-up done');
       await refresh();
     } catch (err) {
-      toast.error(publicMessage(err, 'Could not save note'));
+      toast.error(publicMessage(err, 'The follow-up could not be changed. Please try again.'));
     } finally {
-      setBusy(false);
+      setFinishing(null);
     }
   };
 
@@ -555,7 +558,6 @@ export const CrmContactDetailPage: React.FC = () => {
     if (tab === 'all') return true;
     return a.type === tab;
   });
-  const visibleNotes = showAllNotes ? notes : notes.slice(0, SHORT_LIST);
   const visibleFollowUps = showAllFollowUps ? tasks : tasks.slice(0, SHORT_LIST);
   const logLabel = tab === 'all' || tab === 'accounts' ? 'activity' : tab;
 
@@ -653,7 +655,7 @@ export const CrmContactDetailPage: React.FC = () => {
                     ))}
                   </TabsList>
                 </div>
-                {tab !== 'accounts' && (
+                {tab !== 'accounts' && tab !== 'note' && (
                   <Button
                     variant="outline"
                     className="mb-1.5"
@@ -678,6 +680,16 @@ export const CrmContactDetailPage: React.FC = () => {
                       Assign this lead to a workspace before adding account records.
                     </div>
                   )
+                ) : tab === 'note' ? (
+                  <LeadNotes
+                    organizationId={orgId ?? ''}
+                    workspaceId={contact.workspaceId ?? null}
+                    contactId={contact.id}
+                    userId={user?.userId ?? null}
+                    notes={notes}
+                    activities={activities}
+                    onChanged={refresh}
+                  />
                 ) : (
                   <div className={BOX}>
                     {filteredActivities.length === 0 ? (
@@ -763,6 +775,14 @@ export const CrmContactDetailPage: React.FC = () => {
                             <StatusPill tone={status?.tone ?? 'neutral'}>
                               {status?.label ?? humanize(t.status)}
                             </StatusPill>
+                            {!done && (
+                              <Button variant="ghost" size="sm" disabled={finishing !== null} onClick={() => void finishFollowUp(t)} aria-label={`Mark ${t.title} as done`}>
+                                {finishing === t.id ? <Loader2 className="animate-spin" aria-hidden /> : <Check aria-hidden />}Done
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="sm" onClick={() => setEditingFollowUp(t)} aria-label={`Edit ${t.title}`}>
+                              <Pencil aria-hidden />Edit
+                            </Button>
                           </div>
                         </div>
                       );
@@ -776,44 +796,6 @@ export const CrmContactDetailPage: React.FC = () => {
                     </div>
                   )}
                 </>
-              )}
-            </Section>
-
-            <Section title="Notes" meta={notes.length}>
-              <div className="flex flex-col gap-2 px-4 py-3">
-                <Textarea
-                  id="contact-note-composer"
-                  rows={3}
-                  placeholder="Add a note about this lead…"
-                  aria-label="Add note"
-                  value={noteBody}
-                  onChange={(e) => setNoteBody(e.target.value)}
-                  disabled={busy}
-                />
-                <div className="flex justify-end">
-                  <Button onClick={handleAddNote} disabled={busy || !noteBody.trim()}>
-                    {busy && <Loader2 className="animate-spin" aria-hidden />}Save note
-                  </Button>
-                </div>
-              </div>
-              {notes.length > 0 && (
-                <div className="border-t border-border">
-                  <div>
-                    {visibleNotes.map((n) => (
-                      <div key={n.id} className={ROW}>
-                        <p className="whitespace-pre-wrap break-words text-sm">{n.body}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(n.createdAt)}</p>
-                      </div>
-                    ))}
-                  </div>
-                  {notes.length > SHORT_LIST && (
-                    <div className="border-t border-border/60 px-2 py-1.5">
-                      <Button variant="ghost" size="sm" onClick={() => setShowAllNotes((v) => !v)}>
-                        {showAllNotes ? 'Show fewer' : `Show all ${notes.length} notes`}
-                      </Button>
-                    </div>
-                  )}
-                </div>
               )}
             </Section>
 
@@ -993,6 +975,7 @@ export const CrmContactDetailPage: React.FC = () => {
         open={showConvert}
         onOpenChange={setShowConvert}
         onConverted={refresh}
+        onMarkClient={() => saveStep('customer')}
       />
 
       <EditLeadDialog
@@ -1003,6 +986,7 @@ export const CrmContactDetailPage: React.FC = () => {
         onSaved={refresh}
       />
 
+      <FollowUpEditDialog task={editingFollowUp} onOpenChange={(open) => { if (!open) setEditingFollowUp(null); }} onChanged={() => void refresh()} />
       <NewFollowUpDialog
         lead={contact}
         organizationId={orgId}
