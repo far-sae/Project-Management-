@@ -9,7 +9,7 @@ import type { ConnectKind, ConnectSetup } from '../../../api/_social/shared/conn
 export const CONNECT_FAILED_MESSAGE = 'The account could not be connected. Please try again.';
 const SIGNED_OUT_MESSAGE = 'Please sign in again.';
 
-async function call<T>(route: 'setup' | 'start' | 'sync', body?: unknown): Promise<T> {
+async function call<T>(route: 'setup' | 'start' | 'sync' | 'found' | 'choose' | 'disconnect', body?: unknown): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error(SIGNED_OUT_MESSAGE);
@@ -41,4 +41,24 @@ export const startSocialConnect = async (kind: ConnectKind, organizationId: stri
 export const syncSocialAccounts = async (organizationId: string, workspaceId: string, accountIds: string[] = []): Promise<number> => {
   const { connected } = await call<{ connected?: number }>('sync', { organizationId, workspaceId, ...(accountIds.length ? { accountIds } : {}) });
   return typeof connected === 'number' ? connected : 0;
+};
+
+/** An account a log-in brought, and whether it is in the list already. */
+export type FoundSocialAccount = { serviceId: string; provider: string; name: string; added: boolean };
+
+/** What the posting service holds for this workspace after a log-in. Nothing is added by asking. */
+export const foundSocialAccounts = async (organizationId: string, workspaceId: string, accountIds: string[] = []): Promise<FoundSocialAccount[]> => {
+  const { accounts } = await call<{ accounts?: FoundSocialAccount[] }>('found', { organizationId, workspaceId, ...(accountIds.length ? { accountIds } : {}) });
+  return Array.isArray(accounts) ? accounts : [];
+};
+
+/** Adds the chosen accounts; the others are let go at the service. Answers how many were added. */
+export const chooseSocialAccounts = async (organizationId: string, workspaceId: string, add: string[], drop: string[]): Promise<number> => {
+  const { connected } = await call<{ connected?: number }>('choose', { organizationId, workspaceId, add, drop });
+  return typeof connected === 'number' ? connected : 0;
+};
+
+/** Takes one account out of the list, and tells the platform's side to let it go. */
+export const disconnectSocialAccount = async (organizationId: string, workspaceId: string, accountId: string): Promise<void> => {
+  await call<{ ok?: boolean }>('disconnect', { organizationId, workspaceId, accountId });
 };

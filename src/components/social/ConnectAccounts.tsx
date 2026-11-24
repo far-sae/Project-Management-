@@ -8,7 +8,7 @@ import { SetupHint } from '@/components/common/SetupHint';
 import { Button } from '@/components/ui/button';
 import { CONNECT_BRINGS } from '@/lib/socialConnect';
 import { publicMessage } from '@/lib/publicError';
-import { CONNECT_FAILED_MESSAGE, socialConnectSetup, startSocialConnect, syncSocialAccounts } from '@/services/social/connect';
+import { CONNECT_FAILED_MESSAGE, foundSocialAccounts, socialConnectSetup, startSocialConnect, syncSocialAccounts, type FoundSocialAccount } from '@/services/social/connect';
 import {
   CONNECT_KINDS, CONNECT_NAME, CONNECT_SETTINGS,
   type ConnectKind, type ConnectSetup, type DirectKind,
@@ -23,6 +23,8 @@ interface Props {
   go?: (url: string) => void;
   /** Called after the list of accounts was brought up to date. */
   onChanged?: () => void;
+  /** Called with what the posting service holds for the workspace, when "Refresh the list" is pressed. */
+  onFound?: (accounts: FoundSocialAccount[]) => void;
 }
 
 const leave = (url: string) => window.location.assign(url);
@@ -33,7 +35,7 @@ const missing = (setup: ConnectSetup | null, kind: ConnectKind): string[] => {
   return named?.length ? named : CONNECT_SETTINGS[kind as DirectKind] ?? [];
 };
 
-export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, canConnect, go = leave, onChanged }) => {
+export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, canConnect, go = leave, onChanged, onFound }) => {
   const [setup, setSetup] = useState<ConnectSetup | null>(null);
   const [unknown, setUnknown] = useState(false);
   const [opening, setOpening] = useState<ConnectKind | null>(null);
@@ -67,8 +69,9 @@ export const ConnectAccounts: React.FC<Props> = ({ organizationId, workspaceId, 
   const refresh = async () => {
     setRefreshing(true);
     try {
-      await syncSocialAccounts(organizationId, workspaceId);
-      onChanged?.();
+      // With somebody to choose, nothing is added by itself: the page asks which accounts are wanted.
+      if (onFound) onFound(await foundSocialAccounts(organizationId, workspaceId));
+      else { await syncSocialAccounts(organizationId, workspaceId); onChanged?.(); }
     } catch (err) {
       toast.error(publicMessage(err, 'The accounts could not be read. Please try again.'));
     } finally {

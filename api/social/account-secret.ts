@@ -39,6 +39,23 @@ export function connectStore(db: SupabaseClient, key: () => string): ConnectStor
       if (stored.error) throw new Error('key not stored');
       await db.from('social_accounts').update({ credential_ref: `social_account_secrets:${id}` }).eq('id', id);
     },
+    async serviceIdsOf(workspaceId) {
+      const { data } = await db.from('social_accounts').select('credential_ref').eq('workspace_id', workspaceId).like('credential_ref', `${SERVICE_REF}%`);
+      return ((data ?? []) as Array<{ credential_ref: string | null }>).map((row) => String(row.credential_ref ?? '').slice(SERVICE_REF.length)).filter(Boolean);
+    },
+    async account(workspaceId, accountId) {
+      // An id that is not an id finds nothing, instead of an error from the database.
+      if (!/^[0-9a-f-]{36}$/i.test(accountId)) return null;
+      const { data } = await db.from('social_accounts').select('id, display_name, credential_ref').eq('workspace_id', workspaceId).eq('id', accountId).maybeSingle();
+      if (!data) return null;
+      const ref = String(data.credential_ref ?? '');
+      return { id: String(data.id), name: String(data.display_name ?? ''), serviceId: ref.startsWith(SERVICE_REF) ? ref.slice(SERVICE_REF.length) || null : null };
+    },
+    async removeAccount(accountId) {
+      // Its keys go with it (the database removes them); its posts stay and lose their account.
+      const { error } = await db.from('social_accounts').delete().eq('id', accountId);
+      if (error) throw new Error('account not removed');
+    },
     async saveServiceAccount(account) {
       // The posting service keeps this account's keys. Our row carries only the service's id of it.
       const { error } = await db.from('social_accounts').upsert({

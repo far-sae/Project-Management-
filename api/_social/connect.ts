@@ -25,7 +25,7 @@ import {
   CONNECT_KINDS, CONNECT_SETTINGS, SERVICE_KINDS, isConnectKind, isServiceKind,
   type ConnectOutcome, type ConnectSetup, type DirectKind as ConnectKind,
 } from "./shared/connect.js";
-import { SERVICE_CONNECT_FAILED, serviceAccounts, serviceAuthUrl, serviceOn } from "./service.js";
+import { SERVICE_CONNECT_FAILED, SERVICE_DISCONNECT_FAILED, serviceAccounts, serviceAuthUrl, serviceDisconnect, serviceOn } from "./service.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -60,7 +60,16 @@ export type ConnectStore = {
   saveAccount(account: SavedAccount): Promise<void>;
   /** Stores an account of the posting service (new, or the same one connected again). */
   saveServiceAccount(account: SavedServiceAccount): Promise<void>;
+  /** The posting service's ids of the accounts that are in our list for this workspace. */
+  serviceIdsOf(workspaceId: string): Promise<string[]>;
+  /** One account of our list, when it is in this workspace. */
+  account(workspaceId: string, accountId: string): Promise<{ id: string; serviceId: string | null; name: string } | null>;
+  /** Takes an account out of our list, with its keys. Its posts stay; they lose their account. */
+  removeAccount(accountId: string): Promise<void>;
 };
+
+/** An account the posting service holds for a workspace, and whether it is in our list. */
+export type FoundAccount = { serviceId: string; provider: string; name: string; added: boolean };
 
 export type ConnectDeps = {
   fetch: typeof fetch;
@@ -267,6 +276,87 @@ export async function syncConnect(
   return { connected: found.length };
 }
 
+const ADMIN_ONLY = "Only an owner or admin can connect a social account.";
+
+/**
+ * What a log-in brought: every account the posting service holds for this
+ * workspace, with whether it is in our list already. Nothing is added here.
+ * One log-in at Facebook brings every Page of the person; which of them are
+ * used is the person's choice (see `chooseAccounts`).
+ */
+export async function foundAccounts(
+  d: ConnectDeps,
+  input: { organizationId: string; workspaceId: string; userId: string; accountIds?: unknown },
+): Promise<{ accounts: FoundAccount[] }> {
+  if (!serviceOn(d.env)) return { accounts: [] };
+  if (!(await mayConnect(d, input.organizationId, input.workspaceId, input.userId))) throw new ConnectError(403, ADMIN_ONLY);
+  try {
+    const named = Array.isArray(input.accountIds) ? input.accountIds.filter((id): id is string => typeof id === "string") : [];
+    const [found, ours] = await Promise.all([serviceAccounts(d, input.workspaceId, named), d.store.serviceIdsOf(input.workspaceId)]);
+    return { accounts: found.map((a) => ({ serviceId: a.serviceId, provider: a.provider, name: a.name, added: ours.includes(a.serviceId) })) };
+  } catch {
+    throw new ConnectError(502, "The accounts could not be read. Please try again.");
+  }
+}
+
+const idList = (value: unknown): string[] => (Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string"))].slice(0, 50) : []);
+
+/**
+ * Adds the chosen accounts to our list and lets the others go at the service.
+ * Only accounts the service holds for this workspace are touched, and an
+ * account that is in our list is never let go from here (that is "disconnect").
+ */
+export async function chooseAccounts(
+  d: ConnectDeps,
+  input: { organizationId: string; workspaceId: string; userId: string; add: unknown; drop: unknown },
+): Promise<{ connected: number }> {
+  if (!serviceOn(d.env)) return { connected: 0 };
+  if (!(await mayConnect(d, input.organizationId, input.workspaceId, input.userId))) throw new ConnectError(403, ADMIN_ONLY);
+  const add = idList(input.add);
+  const drop = idList(input.drop).filter((id) => !add.includes(id));
+  let found: Awaited<ReturnType<typeof serviceAccounts>>;
+  let ours: string[];
+  try {
+    [found, ours] = await Promise.all([serviceAccounts(d, input.workspaceId, [...add, ...drop]), d.store.serviceIdsOf(input.workspaceId)]);
+  } catch {
+    throw new ConnectError(502, "The accounts could not be read. Please try again.");
+  }
+  let connected = 0;
+  for (const account of found) {
+    if (add.includes(account.serviceId)) {
+      await d.store.saveServiceAccount({ organizationId: input.organizationId, workspaceId: input.workspaceId, userId: input.userId, ...account });
+      connected += 1;
+    } else if (drop.includes(account.serviceId) && !ours.includes(account.serviceId)) {
+      // Not wanted: the service throws its keys away. One that cannot be let go just now is offered again next time.
+      await serviceDisconnect(d, account.serviceId).catch(() => undefined);
+    }
+  }
+  return { connected };
+}
+
+/**
+ * Disconnects one account of our list. For an account of the posting service
+ * the service is told first; only when it has let the account go is it taken
+ * out of our list, so an account is never half disconnected.
+ */
+export async function disconnectAccount(
+  d: ConnectDeps,
+  input: { organizationId: string; workspaceId: string; userId: string; accountId: string },
+): Promise<{ ok: true }> {
+  if (!(await mayConnect(d, input.organizationId, input.workspaceId, input.userId))) throw new ConnectError(403, "Only an owner or admin can disconnect a social account.");
+  const account = await d.store.account(input.workspaceId, input.accountId);
+  if (!account) throw new ConnectError(404, "This account is no longer in the list.");
+  if (account.serviceId && serviceOn(d.env)) {
+    try {
+      await serviceDisconnect(d, account.serviceId);
+    } catch {
+      throw new ConnectError(502, SERVICE_DISCONNECT_FAILED);
+    }
+  }
+  await d.store.removeAccount(account.id);
+  return { ok: true };
+}
+
 // ── Coming back ──────────────────────────────────────────────────────────────
 
 type Found = Pick<SavedAccount, "provider" | "externalId" | "name" | "secret">;
@@ -433,7 +523,7 @@ export function connectHandler(d: ConnectHttpDeps) {
       res.redirect(302, location);
       return;
     }
-    if (route !== "setup" && route !== "start" && route !== "sync") {
+    if (!["setup", "start", "sync", "found", "choose", "disconnect"].includes(route)) {
       res.status(404).json({ error: "Not found" });
       return;
     }
@@ -452,6 +542,19 @@ export function connectHandler(d: ConnectHttpDeps) {
     }
     try {
       const body = obj(req.body);
+      const who = { organizationId: text(body.organizationId), workspaceId: text(body.workspaceId), userId };
+      if (route === "found") {
+        res.status(200).json(await foundAccounts(d, { ...who, accountIds: body.accountIds }));
+        return;
+      }
+      if (route === "choose") {
+        res.status(200).json(await chooseAccounts(d, { ...who, add: body.add, drop: body.drop }));
+        return;
+      }
+      if (route === "disconnect") {
+        res.status(200).json(await disconnectAccount(d, { ...who, accountId: text(body.accountId) }));
+        return;
+      }
       if (route === "sync") {
         res.status(200).json(await syncConnect(d, {
           organizationId: text(body.organizationId), workspaceId: text(body.workspaceId), userId, accountIds: body.accountIds,

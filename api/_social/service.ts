@@ -63,6 +63,24 @@ async function call(d: ServiceDeps, method: "GET" | "POST" | "PATCH", path: stri
 /** The same call, for the parts of the app that read from the service (the autopilot's study of an account's posts). */
 export const serviceCall = call;
 
+export const SERVICE_DISCONNECT_FAILED = "The account could not be disconnected. Please try again.";
+
+/**
+ * Lets an account go at the service: its keys are thrown away there. An
+ * account the service no longer knows is as good as gone.
+ */
+export async function serviceDisconnect(d: ServiceDeps, serviceId: string): Promise<void> {
+  if (!SERVICE_ID.test(serviceId)) throw new Error(SERVICE_DISCONNECT_FAILED);
+  let answer: { status: number; json: Record<string, unknown> };
+  try {
+    answer = await call(d, "POST", `/v1/social-accounts/${serviceId}/disconnect`);
+  } catch {
+    throw new Error(SERVICE_DISCONNECT_FAILED);
+  }
+  if (answer.status === 404 || (answer.status >= 200 && answer.status < 300)) return;
+  throw new Error(SERVICE_DISCONNECT_FAILED);
+}
+
 // ── Connecting ───────────────────────────────────────────────────────────────
 
 /**

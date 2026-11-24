@@ -15,7 +15,8 @@ import { SocialAnalytics } from '@/components/social/SocialAnalytics';
 import { Autopilot } from '@/components/social/Autopilot';
 import type { PostFilters } from '@/lib/socialPosts';
 import { CONNECT_FAILED, SERVICE_CONNECTED, SERVICE_NOT_CONNECTED, connectReturnMessage, readConnectReturn, readServiceReturn } from '@/lib/socialConnect';
-import { syncSocialAccounts } from '@/services/social/connect';
+import { chooseSocialAccounts, foundSocialAccounts, type FoundSocialAccount } from '@/services/social/connect';
+import { ChooseAccounts, ConnectedAccounts } from '@/components/social/ConnectedAccounts';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { groupPosts, groupSummary, isOnItsWay, type PostGroup } from '@/lib/socialCompose';
 import { PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
@@ -102,6 +103,8 @@ export const SocialMedia: React.FC = () => {
   // Back from a log-in through the posting service: bring the account into the
   // list, say how it went, and take the note out of the address.
   const [serviceBack] = useState(() => readServiceReturn(window.location.search));
+  /** The accounts a log-in brought, while the person chooses which to add. */
+  const [choosing, setChoosing] = useState<FoundSocialAccount[] | null>(null);
   const serviceHandled = useRef(false);
   useEffect(() => {
     if (!serviceBack || serviceHandled.current || !orgId || !workspaceId) return;
@@ -110,12 +113,31 @@ export const SocialMedia: React.FC = () => {
     window.history.replaceState(window.history.state, '', window.location.pathname);
     void (async () => {
       try {
-        const connected = await syncSocialAccounts(orgId, workspaceId, serviceBack.accountIds);
-        if (serviceBack.ok && connected > 0) toast.success(SERVICE_CONNECTED); else toast.error(SERVICE_NOT_CONNECTED);
-        await load(true);
+        const found = await foundSocialAccounts(orgId, workspaceId, serviceBack.accountIds);
+        const fresh = found.filter((account) => !account.added);
+        if (fresh.length === 1) {
+          // One account came back from the log-in: that is the one the person meant.
+          const connected = await chooseSocialAccounts(orgId, workspaceId, [fresh[0].serviceId], []);
+          if (connected > 0) toast.success(SERVICE_CONNECTED); else toast.error(SERVICE_NOT_CONNECTED);
+          await load(true);
+        } else if (fresh.length > 1) {
+          // Several (every Page of a Facebook log-in): the person says which ones.
+          setChoosing(fresh);
+        } else if (serviceBack.ok && found.length > 0) {
+          toast.success('That account is already in your list.');
+        } else {
+          toast.error(SERVICE_NOT_CONNECTED);
+        }
       } catch (error) { toast.error(publicMessage(error, CONNECT_FAILED)); }
     })();
   }, [serviceBack, orgId, workspaceId, load]);
+
+  /** "Refresh the list": what the service holds that is not in the list yet is offered, never added by itself. */
+  const offerFound = (found: FoundSocialAccount[]) => {
+    const fresh = found.filter((account) => !account.added);
+    if (fresh.length === 0) toast.success('The list is up to date.');
+    else setChoosing(fresh);
+  };
 
   // While a post is on its way out, look again every few seconds, so each
   // platform's result shows up by itself.
@@ -211,7 +233,11 @@ export const SocialMedia: React.FC = () => {
           onSeePosts={(campaignId) => openPosts({ campaignId })}
         />
       </TabsContent>
-      <TabsContent value="accounts" className="space-y-3"><ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} onChanged={() => void load(true)} /><SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />{accounts.length === 0 ? <Empty text="No account connected yet. Press Connect above." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
+      <TabsContent value="accounts" className="space-y-3">
+        <ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} onChanged={() => void load(true)} onFound={offerFound} />
+        <SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />
+        <ConnectedAccounts organizationId={orgId} workspaceId={workspaceId} accounts={accounts} canManage={Boolean(isAdmin)} onChanged={() => void load(true)} />
+      </TabsContent>
       <TabsContent value="analytics">
         <SocialAnalytics content={content} accounts={accounts} campaigns={campaigns} metrics={metrics} />
       </TabsContent>
@@ -228,6 +254,15 @@ export const SocialMedia: React.FC = () => {
       {createKind === 'account' ? <><Field label="Network"><Select value={provider} onValueChange={(v) => setProvider(v as SocialProvider)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROVIDERS.map((item) => <SelectItem key={item} value={item} className="capitalize">{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Provider account ID / author URN"><Input value={externalId} onChange={(e) => setExternalId(e.target.value)} /></Field><Field label="Provider access token"><Input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} /><p className="text-xs text-muted-foreground">Sent over TLS and encrypted server-side. It is never stored in the browser or readable through the app API.</p></Field>{(provider === 'youtube' || provider === 'tiktok' || provider === 'x') && <Field label="Refresh token"><Input type="password" autoComplete="off" value={refreshToken} onChange={(e) => setRefreshToken(e.target.value)} /><p className="text-xs text-muted-foreground">{PLATFORM_NAME[provider]} access tokens run out within hours. With the refresh token, a new one is fetched by itself each time.</p></Field>}</> : <>
         <Field label="What is it for?"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="More bookings in December" /><p className="text-xs text-muted-foreground">A campaign groups social media posts of one goal. Choose it in New post, or add posts to it from the posts table.</p></Field>
       </>}</div><DialogFooter><Button variant="outline" onClick={reset}>Cancel</Button><Button disabled={busy || !name.trim()} onClick={save}>{busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Save</Button></DialogFooter></DialogContent></Dialog>
+    <ChooseAccounts
+      organizationId={orgId} workspaceId={workspaceId} found={choosing}
+      onOpenChange={(open) => { if (!open) setChoosing(null); }}
+      onDone={(added) => {
+        if (added > 0) toast.success(added === 1 ? 'The account is connected.' : `${added} accounts are connected.`);
+        else toast.success('Nothing was added.');
+        void load(true);
+      }}
+    />
     <SocialComposer
       open={composing}
       onOpenChange={setComposing}

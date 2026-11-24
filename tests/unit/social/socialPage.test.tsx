@@ -14,6 +14,9 @@ const h = vi.hoisted(() => ({
   setSocialContentCampaign: vi.fn(async () => {}),
   createSocialCampaign: vi.fn(async () => {}),
   syncSocialAccounts: vi.fn(async () => 1),
+  foundSocialAccounts: vi.fn(async (): Promise<Array<{ serviceId: string; provider: string; name: string; added: boolean }>> => []),
+  chooseSocialAccounts: vi.fn(async (_org: string, _ws: string, add: string[]) => add.length),
+  disconnectSocialAccount: vi.fn(async () => undefined),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -22,6 +25,9 @@ vi.mock('@/services/social/connect', () => ({
   socialConnectSetup: async () => ({ ready: { youtube: true, meta: true, x: true, tiktok: true, linkedin: true }, callback: null }),
   startSocialConnect: vi.fn(),
   syncSocialAccounts: h.syncSocialAccounts,
+  foundSocialAccounts: h.foundSocialAccounts,
+  chooseSocialAccounts: h.chooseSocialAccounts,
+  disconnectSocialAccount: h.disconnectSocialAccount,
   CONNECT_FAILED_MESSAGE: 'The account could not be connected. Please try again.',
 }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1' } }) }));
@@ -143,7 +149,7 @@ describe('starting a post', () => {
     h.data = { ...h.data, accounts: [account('yt', 'youtube', 'Northwind channel', { status: 'error', lastError: 'YouTube did not accept the connection. Connect the YouTube account again.' })], content: [] };
     await show();
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Accounts/ }), { button: 0 });
-    expect(await screen.findByText('connect again')).toBeTruthy();
+    expect(await screen.findByText('Connect again')).toBeTruthy();
     expect(screen.getByText('YouTube did not accept the connection. Connect the YouTube account again.')).toBeTruthy();
   });
 });
@@ -178,27 +184,98 @@ describe('back from logging in at a platform', () => {
 });
 
 describe('back from the posting service', () => {
+  const found = (serviceId: string, name: string, added = false, provider = 'facebook') => ({ serviceId, provider, name, added });
   afterEach(() => { window.history.replaceState(null, '', '/'); });
-  beforeEach(() => { h.syncSocialAccounts.mockReset().mockResolvedValue(1); h.toast.success.mockClear(); });
+  beforeEach(() => {
+    h.foundSocialAccounts.mockReset().mockResolvedValue([]);
+    h.chooseSocialAccounts.mockReset().mockImplementation(async (_org: string, _ws: string, add: string[]) => add.length);
+    h.toast.success.mockClear();
+    h.toast.error.mockClear();
+  });
 
-  it('brings the new account into the list, says so, and clears the note from the address', async () => {
+  it('adds the one account the log-in brought, says so, and clears the note from the address', async () => {
+    h.foundSocialAccounts.mockResolvedValue([found('spc_1', 'Northwind channel', false, 'youtube')]);
     window.history.replaceState(null, '', '/social?provider=youtube&projectId=proj_1&isSuccess=true&accountIds=spc_1');
     render(<SocialMedia />);
     await screen.findByRole('heading', { name: 'Connected accounts' });
-    await waitFor(() => expect(h.syncSocialAccounts).toHaveBeenCalledWith('org-1', 'ws-1', ['spc_1']));
+    await waitFor(() => expect(h.foundSocialAccounts).toHaveBeenCalledWith('org-1', 'ws-1', ['spc_1']));
+    await waitFor(() => expect(h.chooseSocialAccounts).toHaveBeenCalledWith('org-1', 'ws-1', ['spc_1'], []));
     await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('The account is connected.'));
-    // The list was read again after the accounts were brought in.
+    // The list was read again after the account was brought in.
     await waitFor(() => expect(h.listSocialData.mock.calls.length).toBeGreaterThan(1));
     expect(window.location.search).toBe('');
-    expect(h.syncSocialAccounts).toHaveBeenCalledTimes(1);
+    expect(h.foundSocialAccounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks which ones to add when the log-in brought several, and adds nothing by itself', async () => {
+    h.foundSocialAccounts.mockResolvedValue([found('spc_a', 'Harbour Dental', true), found('spc_b', 'Northwind Studio'), found('spc_c', 'Fieldway Logistics')]);
+    window.history.replaceState(null, '', '/social?provider=facebook&isSuccess=true&accountIds=spc_a,spc_b,spc_c');
+    render(<SocialMedia />);
+    const dialog = await screen.findByRole('dialog', { name: 'Which accounts do you want to add?' });
+    expect(h.chooseSocialAccounts).not.toHaveBeenCalled();
+    // The one that is in the list already is not asked about again.
+    expect(within(dialog).queryByText('Harbour Dental')).toBeNull();
+    const add = within(dialog).getByRole('button', { name: 'Add' }) as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Northwind Studio/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add 1 account' }));
+    // The one that was not ticked is let go.
+    await waitFor(() => expect(h.chooseSocialAccounts).toHaveBeenCalledWith('org-1', 'ws-1', ['spc_b'], ['spc_c']));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('The account is connected.'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('can add none of them', async () => {
+    h.foundSocialAccounts.mockResolvedValue([found('spc_b', 'Northwind Studio'), found('spc_c', 'Fieldway Logistics')]);
+    window.history.replaceState(null, '', '/social?provider=facebook&isSuccess=true');
+    render(<SocialMedia />);
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Add none' }));
+    await waitFor(() => expect(h.chooseSocialAccounts).toHaveBeenCalledWith('org-1', 'ws-1', [], ['spc_b', 'spc_c']));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Nothing was added.'));
   });
 
   it('says plainly when the log-in was cancelled or failed, never the service\'s own words', async () => {
-    h.syncSocialAccounts.mockResolvedValue(0);
     window.history.replaceState(null, '', '/social?provider=tiktok&isSuccess=false&error=' + encodeURIComponent('OAuth state mismatch {"code":401}'));
     render(<SocialMedia />);
     await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('Nothing was connected. Press Connect to try again.'));
     expect(JSON.stringify(h.toast.error.mock.calls)).not.toContain('OAuth');
+    expect(h.chooseSocialAccounts).not.toHaveBeenCalled();
+  });
+});
+
+describe('disconnecting an account', () => {
+  beforeEach(() => { h.disconnectSocialAccount.mockReset().mockResolvedValue(undefined); h.toast.success.mockClear(); h.toast.error.mockClear(); });
+  const openAccounts = async () => {
+    await show();
+    const tab = screen.getByRole('tab', { name: /Accounts/ });
+    fireEvent.mouseDown(tab);
+    fireEvent.click(tab);
+    return screen.findByRole('list', { name: 'Connected accounts' });
+  };
+
+  it('asks first, says what happens to posts that are waiting, then takes it out of the list', async () => {
+    const list = await openAccounts();
+    const first = within(list).getAllByRole('button', { name: /^Disconnect / })[0];
+    const name = (first.getAttribute('aria-label') ?? '').replace('Disconnect ', '');
+    fireEvent.click(first);
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain(`Disconnect ${name}?`);
+    expect(dialog.textContent).toContain('Posts that are waiting to go out to this account will not be sent.');
+    expect(h.disconnectSocialAccount).not.toHaveBeenCalled();
+    const before = h.listSocialData.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() => expect(h.disconnectSocialAccount).toHaveBeenCalledTimes(1));
+    expect((h.disconnectSocialAccount.mock.calls[0] as unknown as string[]).slice(0, 2)).toEqual(['org-1', 'ws-1']);
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith(`${name} is disconnected.`));
+    await waitFor(() => expect(h.listSocialData.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('keeps the account and says so in plain words when it could not be disconnected', async () => {
+    h.disconnectSocialAccount.mockRejectedValue(new Error('The account could not be disconnected. Please try again.'));
+    const list = await openAccounts();
+    fireEvent.click(within(list).getAllByRole('button', { name: /^Disconnect / })[0]);
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('The account could not be disconnected. Please try again.'));
   });
 });
 

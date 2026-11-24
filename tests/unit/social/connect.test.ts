@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  ConnectError, STATE_COOKIE, STATE_MINUTES, connectHandler, connectSetup, finishConnect, startConnect, syncConnect,
+  ConnectError, STATE_COOKIE, STATE_MINUTES, chooseAccounts, connectHandler, connectSetup, disconnectAccount, finishConnect, foundAccounts, startConnect, syncConnect,
   type ConnectDeps, type SavedAccount, type SavedServiceAccount,
 } from "../../../api/_social/connect";
 import { CONNECT_KINDS, CONNECT_SETTINGS } from "../../../api/_social/shared/connect";
@@ -27,10 +27,15 @@ const NOW = Date.UTC(2026, 10, 23, 12, 0, 0);
 type Call = { url: string; method: string; headers: Record<string, string>; body: string };
 type Reply = { status?: number; json?: unknown };
 
-function setUp(over: { env?: Record<string, string | undefined>; admin?: boolean; workspaceOrg?: string | null; reply?: (call: Call) => Reply; now?: number } = {}) {
+type Ours = { id: string; workspaceId: string; serviceId: string | null; name: string };
+
+function setUp(over: { env?: Record<string, string | undefined>; admin?: boolean; workspaceOrg?: string | null; reply?: (call: Call) => Reply; now?: number; ours?: Ours[] } = {}) {
   const calls: Call[] = [];
   const saved: SavedAccount[] = [];
   const linked: SavedServiceAccount[] = [];
+  /** The accounts already in our own list. */
+  const ours: Ours[] = [...(over.ours ?? [])];
+  const removed: string[] = [];
   let admin = over.admin ?? true;
   let now = over.now ?? NOW;
   let n = 0;
@@ -49,9 +54,12 @@ function setUp(over: { env?: Record<string, string | undefined>; admin?: boolean
       workspaceOrg: async () => (over.workspaceOrg === undefined ? "org-1" : over.workspaceOrg),
       saveAccount: async (account) => { saved.push(account); },
       saveServiceAccount: async (account) => { linked.push(account); },
+      serviceIdsOf: async (workspaceId) => ours.filter((a) => a.workspaceId === workspaceId && a.serviceId).map((a) => a.serviceId as string),
+      account: async (workspaceId, accountId) => ours.find((a) => a.workspaceId === workspaceId && a.id === accountId) ?? null,
+      removeAccount: async (accountId) => { removed.push(accountId); const at = ours.findIndex((a) => a.id === accountId); if (at >= 0) ours.splice(at, 1); },
     },
   };
-  return { deps, calls, saved, linked, setAdmin: (value: boolean) => { admin = value; }, setNow: (value: number) => { now = value; } };
+  return { deps, calls, saved, linked, ours, removed, setAdmin: (value: boolean) => { admin = value; }, setNow: (value: number) => { now = value; } };
 }
 
 const begin = (deps: ConnectDeps, kind: string) => startConnect(deps, { kind, organizationId: "org-1", workspaceId: "ws-1", userId: "user-1" });
@@ -463,5 +471,106 @@ describe("on the server", () => {
     expect(existsSync(resolve(process.cwd(), "api/social/account-secret.ts"))).toBe(true);
     // No new function file: the plan allows twelve.
     expect(existsSync(resolve(process.cwd(), "api/social/connect.ts"))).toBe(false);
+  });
+});
+
+describe("choosing which accounts to add, and taking one away", () => {
+  const SERVICE = { ...ENV, POST_FOR_ME_API_KEY: "pfm_key" };
+  const TAG = "tc_ws-1";
+  const who = { organizationId: "org-1", workspaceId: "ws-1", userId: "user-1" };
+  /** A log-in at Facebook brought three Pages; one of them is in our list already. */
+  const pages = [
+    { id: "spc_a", platform: "facebook", username: "Harbour Dental", status: "connected", external_id: TAG, access_token: "secret" },
+    { id: "spc_b", platform: "facebook", username: "Northwind Studio", status: "connected", external_id: TAG },
+    { id: "spc_c", platform: "facebook", username: "Fieldway Logistics", status: "connected", external_id: TAG },
+  ];
+  const three = (over: Parameters<typeof setUp>[0] = {}) => setUp({
+    env: SERVICE, ours: [{ id: "acc-a", workspaceId: "ws-1", serviceId: "spc_a", name: "Harbour Dental" }],
+    reply: (c) => (c.url.includes("/disconnect") ? { json: { id: "x", status: "disconnected" } } : { json: { data: pages } }), ...over,
+  });
+
+  it("lists what the log-in brought and says which are in the list already, without adding any", async () => {
+    const s = three();
+    expect(await foundAccounts(s.deps, who)).toEqual({ accounts: [
+      { serviceId: "spc_a", provider: "facebook", name: "Harbour Dental", added: true },
+      { serviceId: "spc_b", provider: "facebook", name: "Northwind Studio", added: false },
+      { serviceId: "spc_c", provider: "facebook", name: "Fieldway Logistics", added: false },
+    ] });
+    expect(s.linked).toEqual([]);
+    expect(JSON.stringify(await foundAccounts(s.deps, who))).not.toContain("secret");
+  });
+
+  it("adds only the chosen ones, and lets the others go at the service", async () => {
+    const s = three();
+    expect(await chooseAccounts(s.deps, { ...who, add: ["spc_b"], drop: ["spc_c"] })).toEqual({ connected: 1 });
+    expect(s.linked).toEqual([{ ...who, provider: "facebook", serviceId: "spc_b", name: "Northwind Studio" }]);
+    const dropped = s.calls.filter((c) => c.url.includes("/disconnect"));
+    expect(dropped.map((c) => [c.method, c.url])).toEqual([["POST", "https://api.postforme.dev/v1/social-accounts/spc_c/disconnect"]]);
+  });
+
+  it("never touches an account of another workspace, or one that is in our list", async () => {
+    const s = three();
+    // spc_zz is nobody's here; spc_a is already in the list: it is not let go by a "drop".
+    expect(await chooseAccounts(s.deps, { ...who, add: ["spc_zz"], drop: ["spc_zz", "spc_a", "../../v1/x"] })).toEqual({ connected: 0 });
+    expect(s.linked).toEqual([]);
+    expect(s.calls.some((c) => c.url.includes("/disconnect"))).toBe(false);
+  });
+
+  it("is for an owner or admin, and only while the service is on", async () => {
+    const member = three({ admin: false });
+    await expect(foundAccounts(member.deps, who)).rejects.toMatchObject({ status: 403 });
+    await expect(chooseAccounts(member.deps, { ...who, add: ["spc_b"], drop: [] })).rejects.toMatchObject({ status: 403 });
+    await expect(disconnectAccount(member.deps, { ...who, accountId: "acc-a" })).rejects.toMatchObject({ status: 403 });
+    expect(await foundAccounts(setUp().deps, who)).toEqual({ accounts: [] });
+  });
+
+  it("disconnects an account: at the service first, then out of our list", async () => {
+    const s = three();
+    expect(await disconnectAccount(s.deps, { ...who, accountId: "acc-a" })).toEqual({ ok: true });
+    expect(s.calls.map((c) => [c.method, c.url])).toEqual([["POST", "https://api.postforme.dev/v1/social-accounts/spc_a/disconnect"]]);
+    expect(s.removed).toEqual(["acc-a"]);
+  });
+
+  it("keeps the account in the list when the service could not let it go, so it is not half done", async () => {
+    const s = three({ reply: () => ({ status: 500 }) });
+    await expect(disconnectAccount(s.deps, { ...who, accountId: "acc-a" })).rejects.toMatchObject({ status: 502, message: "The account could not be disconnected. Please try again." });
+    expect(s.removed).toEqual([]);
+  });
+
+  it("takes it out of the list all the same when the service no longer knows it", async () => {
+    const s = three({ reply: () => ({ status: 404 }) });
+    expect(await disconnectAccount(s.deps, { ...who, accountId: "acc-a" })).toEqual({ ok: true });
+    expect(s.removed).toEqual(["acc-a"]);
+  });
+
+  it("removes an account that was added with a key by hand without asking the service", async () => {
+    const s = setUp({ env: SERVICE, ours: [{ id: "acc-k", workspaceId: "ws-1", serviceId: null, name: "Old page" }] });
+    expect(await disconnectAccount(s.deps, { ...who, accountId: "acc-k" })).toEqual({ ok: true });
+    expect(s.calls).toEqual([]);
+    expect(s.removed).toEqual(["acc-k"]);
+  });
+
+  it("says so for an account that is not in this workspace", async () => {
+    const s = three();
+    await expect(disconnectAccount(s.deps, { ...who, accountId: "acc-of-somebody-else" })).rejects.toMatchObject({ status: 404 });
+    expect(s.removed).toEqual([]);
+  });
+
+  it("has an address for each, for a signed-in person only", async () => {
+    const s = three();
+    const sent: { status: number; body: unknown } = { status: 0, body: null };
+    const res = { setHeader: () => res, status: (code: number) => { sent.status = code; return res; }, json: (body: unknown) => { sent.body = body; return res; } };
+    const ask = (route: string, body: unknown, user: string | null = "user-1") =>
+      connectHandler({ ...s.deps, userOf: async () => user })({ method: "POST", query: {}, body, headers: {} } as never, res as never, route);
+    const base = { organizationId: "org-1", workspaceId: "ws-1" };
+    await ask("found", base);
+    expect(sent.status).toBe(200);
+    expect((sent.body as { accounts: unknown[] }).accounts).toHaveLength(3);
+    await ask("choose", { ...base, add: ["spc_b"], drop: ["spc_c"] });
+    expect(sent).toEqual({ status: 200, body: { connected: 1 } });
+    await ask("disconnect", { ...base, accountId: "acc-a" });
+    expect(sent).toEqual({ status: 200, body: { ok: true } });
+    await ask("disconnect", { ...base, accountId: "acc-a" }, null);
+    expect(sent.status).toBe(401);
   });
 });
