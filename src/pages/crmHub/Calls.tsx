@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Grip, Loader2, Phone, PhoneCall, Search, Trash2 } from 'lucide-react';
+import { Grip, Loader2, Phone, PhoneCall, Search, Trash2, PhoneIncoming } from 'lucide-react';
 import { toast } from 'sonner';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useCrmContacts, useWorkspaceForCreate } from '@/hooks/useCrmHub';
@@ -9,6 +9,7 @@ import { leadName } from '@/lib/crmFlow';
 import { publicText } from '@/lib/publicError';
 import { deleteCall, errorSentence, listCalls } from '@/services/voice/client';
 import { PageHeader } from '@/components/common/PageHeader';
+import { CallBacksDialog } from '@/components/crmHub/CallBacksDialog';
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { CallDialog } from '@/components/crmHub/CallDialog';
 import { CallRecording } from '@/components/crmHub/CallRecording';
@@ -57,6 +58,8 @@ const OUTCOME_TONE: Record<CallOutcome, StatusTone> = {
 /** What the call's pill says: the caller's own words when they gave them, else how the line ended. */
 const resultOf = (call: CallListItem): { label: string; tone: StatusTone } => {
   if (call.outcome) return { label: OUTCOME_LABEL[call.outcome], tone: OUTCOME_TONE[call.outcome] };
+  // A call back nobody took is worth a look: it is a lead who wanted to talk.
+  if (call.direction === 'in' && !call.answeredBy && !(call.status === 'completed' && call.seconds > 0)) return { label: 'Missed', tone: 'danger' };
   if (call.status === 'completed') return { label: STATUS_LABEL.completed, tone: 'success' };
   if (call.status === 'failed') return { label: STATUS_LABEL.failed, tone: 'danger' };
   return { label: STATUS_LABEL[call.status], tone: 'neutral' };
@@ -85,6 +88,8 @@ const BOX = 'overflow-hidden rounded-lg border border-border bg-card';
 export const CrmCallsPage: React.FC = () => {
   // Deleting a call (with its recording) is for the organisation's owner alone.
   const { isAdmin, isOwner } = useOrganization();
+  /** The window that says who takes the calls that come in. */
+  const [callBacksOpen, setCallBacksOpen] = useState(false);
   const workspaceId = useWorkspaceForCreate();
   const calling = useCalling();
   const { items: leads } = useCrmContacts();
@@ -198,7 +203,8 @@ export const CrmCallsPage: React.FC = () => {
       if (filter === 'missed' && wasAnswered(call)) return false;
       if (filter === 'recorded' && !call.recorded) return false;
       if (!words) return true;
-      const text = `${call.contact?.name ?? ''} ${call.company?.name ?? ''} ${call.caller.name} ${call.note}`.toLowerCase();
+      const who = call.direction === 'in' ? call.answeredBy ?? '' : call.caller.name;
+      const text = `${call.contact?.name ?? ''} ${call.company?.name ?? ''} ${who} ${call.note}`.toLowerCase();
       return text.includes(words) || (digits.length >= 3 && call.to.replace(/\D/g, '').includes(digits));
     });
   }, [calls, filter, query]);
@@ -278,6 +284,11 @@ export const CrmCallsPage: React.FC = () => {
                   <SelectItem value="recorded">With a recording</SelectItem>
                 </SelectContent>
               </Select>
+              {canCall && workspaceId && (
+                <Button variant="outline" onClick={() => setCallBacksOpen(true)}>
+                  <PhoneIncoming aria-hidden />Call-backs
+                </Button>
+              )}
               {canCall && workspaceId && (
                 <Button variant="outline" onClick={() => setDialing({ name: '', phone: '', target: { workspaceId } })}>
                   <Grip aria-hidden />Dialer
@@ -403,11 +414,15 @@ export const CrmCallsPage: React.FC = () => {
                         // A number dialled by hand, or one whose lead or company was deleted since.
                         <span className="text-sm font-medium tabular-nums text-foreground">{call.display}</span>
                       )}
+                      {call.direction === 'in' && (
+                        <StatusPill tone="info" dot={false}><PhoneIncoming className="mr-1 inline h-3 w-3" aria-hidden />Called back</StatusPill>
+                      )}
                       <StatusPill tone={result.tone}>{result.label}</StatusPill>
+                      {call.direction === 'in' && call.answeredBy && <span className="text-xs text-muted-foreground">Answered by {call.answeredBy}</span>}
                       {call.seconds > 0 && <span className="text-xs tabular-nums text-muted-foreground">{lengthOf(call.seconds)}</span>}
                       <span className="ml-auto text-xs tabular-nums text-muted-foreground">
                         <time dateTime={call.at}>{whenOf(call.at)}</time>
-                        {call.caller.name ? ` · ${call.caller.name}` : ''}
+                        {call.direction !== 'in' && call.caller.name ? ` · ${call.caller.name}` : ''}
                       </span>
                       {canCall && redial && (
                         <Button
@@ -492,6 +507,8 @@ export const CrmCallsPage: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {workspaceId && <CallBacksDialog open={callBacksOpen} workspaceId={workspaceId} onOpenChange={setCallBacksOpen} />}
 
       <AlertDialog open={askMany} onOpenChange={(open) => { if (!open && manyDone === null) setAskMany(false); }}>
         <AlertDialogContent>

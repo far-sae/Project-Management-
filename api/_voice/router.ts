@@ -6,6 +6,8 @@ import { NO_REASON_DETAIL, OUTCOME_LABEL, OUTCOMES, STATUS_SENTENCE, type CallAc
 import type { Call, CallPatch, VoiceStore } from "./store.js";
 import { isIdentity } from "./token.js";
 import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml, RING_SECONDS } from "./twiml.js";
+import { DEFAULT_FORWARDING, INBOUND_WEBHOOKS, inboundWebhook, incomingAddress, linkNumbers, readForwarding, type InboundWebhook } from "./inbound.js";
+import type { CallBackSettings } from "./shared/types.js";
 
 /**
  * The calling server's routes.
@@ -13,6 +15,8 @@ import { dialTwiml, emptyTwiml, hangupTwiml, noticeTwiml, RING_SECONDS } from ".
  * From the page (signed in):
  *   GET  setup                 can calls be placed, and if not, what is missing
  *   GET  calls                 the calls of a workspace, newest first, with how the month went
+ *   GET  callbacks             who takes the calls that come in (owner and admins)
+ *   POST callbacks             save that, and point our numbers at this server
  *   POST calls                 start a call to a lead, a company, or (the dialer) any number for a workspace
  *   POST calls/<id>/end        how the call went, in the caller's words
  *   GET  calls/<id>/recording  the recording, as audio
@@ -66,6 +70,8 @@ export type VoiceDeps = {
   /** Asks the provider whether the settings really work; a sentence naming what is wrong, or null. Nothing is asked when omitted. */
   check?: (config: VoiceConfig) => Promise<string | null>;
   now?: () => Date;
+  /** This site's own address, which the provider is given for calls that come in. */
+  site?: () => string | null;
 };
 
 export type RouteRequest = { method: string; path: string[]; body: Record<string, unknown>; query?: Record<string, string>; user: { id: string } };
@@ -93,7 +99,18 @@ const DURATION = (seconds: number): string => {
 };
 
 /** The timeline entry of a call: who was rung, how long, how it went, then the caller's own note. */
-export function describeCall(call: Pick<Call, "toNumber" | "seconds" | "status" | "outcome" | "note">): string {
+export function describeCall(call: Pick<Call, "toNumber" | "seconds" | "status" | "outcome" | "note"> & Partial<Pick<Call, "direction" | "fromNumber" | "answeredBy">>): string {
+  if (call.direction === "in") {
+    // A call back: who rang, and who took it (or that nobody did).
+    const from = call.fromNumber ? formatNumber(call.fromNumber) : "them";
+    const taken = call.status === "completed" && call.seconds > 0;
+    const parts = [taken ? `Call back from ${from}.` : `Missed call back from ${from}.`];
+    if (taken && call.answeredBy) parts.push(`Answered by ${call.answeredBy}.`);
+    if (taken) parts.push(`${DURATION(call.seconds)}.`);
+    if (call.outcome) parts.push(`${OUTCOME_LABEL[call.outcome]}.`);
+    const said = call.note.trim();
+    return said ? `${parts.join(" ")}\n${said}` : parts.join(" ");
+  }
   const parts = [`Called ${formatNumber(call.toNumber)}.`];
   if (call.seconds > 0) parts.push(`${DURATION(call.seconds)}.`);
   if (call.outcome) parts.push(`${OUTCOME_LABEL[call.outcome]}.`);
@@ -170,9 +187,12 @@ async function list(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
     seconds: c.seconds,
     outcome: c.outcome,
     note: c.note,
-    to: c.toNumber,
-    display: formatNumber(c.toNumber),
+    // The other side of the call: the number we rang, or the number that rang us.
+    to: c.direction === "in" ? c.fromNumber : c.toNumber,
+    display: formatNumber(c.direction === "in" ? c.fromNumber : c.toNumber),
     country: c.country,
+    direction: c.direction,
+    answeredBy: c.answeredBy,
     recorded: Boolean(c.recordingSid),
     contact: c.contactId && c.contactId in names.contacts ? { id: c.contactId, name: names.contacts[c.contactId] } : null,
     company: c.companyId && c.companyId in names.companies ? { id: c.companyId, name: names.companies[c.companyId] } : null,
@@ -462,6 +482,7 @@ export async function route(d: VoiceDeps, r: RouteRequest): Promise<RouteResult>
     const [a, b, c] = r.path;
     if (r.path.length === 1 && a === "setup" && r.method === "GET") return await setup(d);
     if (r.path.length === 1 && a === "calls" && r.method === "GET") return await list(d, r);
+    if (r.path.length === 1 && a === "callbacks" && (r.method === "GET" || r.method === "POST")) return await callBacks(d, r);
     if (r.path.length === 1 && a === "calls" && r.method === "POST") return await start(d, r);
     if (r.path.length === 2 && a === "calls" && r.method === "DELETE") return await remove(d, r, b);
     if (r.path.length === 3 && a === "calls" && c === "end" && r.method === "POST") return await end(d, r, b);
@@ -476,9 +497,46 @@ export async function route(d: VoiceDeps, r: RouteRequest): Promise<RouteResult>
   }
 }
 
+// ── Call-backs: who takes a call that comes in ──────────────────────────────
+
+export const CALL_BACKS_OWNER_ONLY_MESSAGE = "Only the owner and admins can change who takes call-backs.";
+export const CALL_BACKS_NOT_SET_UP_MESSAGE = "Call-backs are not set up yet: run supabase/crm_setup.sql in the Supabase SQL editor.";
+
+/** GET: who takes the calls that come in. POST: save it, and tell the provider to send those calls here. */
+async function callBacks(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
+  const state = d.config();
+  const config = state.config;
+  if (!config) return { status: 503, json: { error: state.problem ?? "Calling is not switched on." } };
+  const workspaceId = r.method === "GET" ? r.query?.workspaceId ?? "" : String(r.body.workspaceId ?? "");
+  const organizationId = isUuid(workspaceId) ? await d.store.workspaceOrg(workspaceId) : null;
+  const role = organizationId ? await d.store.orgRole(organizationId, r.user.id) : null;
+  if (!organizationId || (role !== "owner" && role !== "admin")) throw new AppError(CALL_BACKS_OWNER_ONLY_MESSAGE, 403);
+  if (config.allowedOrgs.length > 0 && !config.allowedOrgs.includes(organizationId)) throw new AppError(ORG_NOT_ALLOWED_MESSAGE, 403);
+  const numbers = [...new Set(Object.values(config.numbers).filter((n): n is string => Boolean(n)))].map(formatNumber);
+  const ready = await d.store.forwardingReady();
+
+  if (r.method === "GET") {
+    const now = ready ? await d.store.forwarding(organizationId) : { ...DEFAULT_FORWARDING };
+    const out: CallBackSettings = { ready, ...now, numbers, linked: null };
+    return { status: 200, json: out };
+  }
+
+  if (!ready) throw new AppError(CALL_BACKS_NOT_SET_UP_MESSAGE, 503);
+  const read = readForwarding(r.body);
+  if (read.problem) throw new AppError(read.problem, 400);
+  await d.store.saveForwarding(organizationId, read.value, r.user.id);
+  // Switching it on is also what points the numbers at this server. Switching it off leaves them be: a call then hears that nobody is free.
+  const base = (d.site?.() ?? "").replace(/\/+$/, "");
+  const linked = read.value.enabled && base
+    ? await linkNumbers({ fetch: d.fetch, accountSid: config.accountSid, authToken: config.authToken, numbers: config.numbers, base })
+    : null;
+  const out: CallBackSettings = { ready, ...read.value, numbers, linked, ...(base ? { address: incomingAddress(base) } : {}) };
+  return { status: 200, json: out };
+}
+
 // ── The phone provider's requests ───────────────────────────────────────────
 
-export const WEBHOOKS = ["twiml", "notice", "done", "recording"] as const;
+export const WEBHOOKS = ["twiml", "notice", "done", "recording", ...INBOUND_WEBHOOKS] as const;
 export type Webhook = (typeof WEBHOOKS)[number];
 
 export type WebhookRequest = {
@@ -509,6 +567,14 @@ export async function webhook(d: VoiceDeps, r: WebhookRequest): Promise<string> 
   if (!config || r.params.AccountSid !== config.accountSid) return hangupTwiml();
 
   if (r.what === "notice") return noticeTwiml(r.query.country === "GB" ? "GB" : "US");
+
+  // Somebody called one of our numbers: who is rung, and what happens when they do not answer.
+  if ((INBOUND_WEBHOOKS as readonly string[]).includes(r.what)) {
+    return inboundWebhook(
+      { store: d.store, numbers: config.numbers, now: () => nowOf(d), writeEntry: (call) => writeEntry(d, call) },
+      { what: r.what as InboundWebhook, base: r.base, query: r.query, params: r.params },
+    );
+  }
 
   if (r.what === "twiml") {
     // The browser sends only the id of the call it was given; what to ring comes from our own row.

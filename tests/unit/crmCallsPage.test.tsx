@@ -52,6 +52,11 @@ vi.mock('@/components/crmHub/CallDialog', () => ({
     ) : null),
 }));
 
+vi.mock('@/components/crmHub/CallBacksDialog', () => ({
+  CallBacksDialog: ({ open, workspaceId }: { open: boolean; workspaceId: string }) =>
+    (open ? <div role="dialog" aria-label="Call-backs window">who takes call-backs · {workspaceId}</div> : null),
+}));
+
 import { CrmCallsPage } from '@/pages/crmHub/Calls';
 
 const call = (over: Partial<CallListItem>): CallListItem => ({
@@ -276,6 +281,62 @@ describe('CRM calls page', () => {
     await renderPage();
     expect(screen.getByText('Only the owner and admins can see calls and their recordings.')).toBeTruthy();
     expect(state.listCalls).not.toHaveBeenCalled();
+  });
+});
+
+describe('calls that come in', () => {
+  const INCOMING: CallList = {
+    calls: [
+      call({ id: 'in-1', direction: 'in', answeredBy: 'Priya', outcome: null, seconds: 184, caller: { id: 'u9', name: 'Dana' }, contact: { id: 'lead-2', name: 'Priya Nair' }, to: '+14155550132', display: '+1 (415) 555-0132', country: 'US' }),
+      call({ id: 'in-2', direction: 'in', answeredBy: null, status: 'no_answer', outcome: null, seconds: 0, caller: { id: 'u9', name: 'Dana' }, contact: null, to: '+14155550177', display: '+1 (415) 555-0177', country: 'US' }),
+      call({ id: 'out-1', status: 'no_answer', seconds: 0, outcome: null }),
+    ],
+    more: false,
+    summary: { days: 30, total: 3, answered: 1, seconds: 184 },
+  };
+
+  it('marks a call back, says who answered it, and shows a missed one as missed', async () => {
+    state.listCalls.mockResolvedValue(INCOMING);
+    await renderPage();
+    await screen.findByText('Answered by Priya');
+    const [answered, missed, outgoing] = rows();
+    expect(within(answered).getByText('Called back')).toBeTruthy();
+    expect(within(answered).getByRole('link', { name: 'Priya Nair' }).getAttribute('href')).toBe('/crm/contacts/lead-2');
+    expect(within(answered).getByText('3 min 4 s')).toBeTruthy();
+    expect(within(answered).queryByText('Missed')).toBeNull();
+    // Nobody here placed this call: the owner the row is filed under is not shown as the caller.
+    expect(answered.textContent).not.toContain('Dana');
+    expect(missed.textContent).not.toContain('Dana');
+    expect(outgoing.textContent).toContain('Sam');
+    expect(within(missed).getByText('Called back')).toBeTruthy();
+    expect(within(missed).getByText('Missed')).toBeTruthy();
+    expect(missed.textContent).toContain('+1 (415) 555-0177');
+    // A call we made that was not picked up is not a missed call back.
+    expect(within(outgoing).queryByText('Called back')).toBeNull();
+    expect(within(outgoing).queryByText('Missed')).toBeNull();
+    expect(within(outgoing).getByText('No answer')).toBeTruthy();
+  });
+
+  it('does not call a call back missed while the person who took it is still talking', async () => {
+    // Taken (a key was pressed) but not over yet: no length so far.
+    state.listCalls.mockResolvedValue({ ...INCOMING, calls: [call({ id: 'in-3', direction: 'in', answeredBy: 'Sam', outcome: null, status: 'completed', seconds: 0, caller: { id: 'u9', name: 'Dana' } })] });
+    await renderPage();
+    await screen.findByText('Answered by Sam');
+    expect(within(rows()[0]).queryByText('Missed')).toBeNull();
+  });
+
+  it('opens the window that says who takes call-backs, for this workspace', async () => {
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+    expect(screen.queryByRole('dialog', { name: 'Call-backs window' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Call-backs' }));
+    expect(screen.getByRole('dialog', { name: 'Call-backs window' }).textContent).toContain('who takes call-backs · ws-1');
+  });
+
+  it('offers no call-backs button while calling is not set up', async () => {
+    state.calling = state.off;
+    await renderPage();
+    expect(screen.queryByRole('button', { name: 'Call-backs' })).toBeNull();
   });
 });
 

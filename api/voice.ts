@@ -188,7 +188,7 @@ const check = accountChecker(fetch, siteOrigin);
 
 function buildDeps(): VoiceDeps | null {
   const sb = adminClient();
-  return sb ? { store: supabaseStore(sb), config: () => readConfig(), token: callToken, fetch, check } : null;
+  return sb ? { store: supabaseStore(sb), config: () => readConfig(), token: callToken, fetch, check, site: siteOrigin } : null;
 }
 
 export default voiceHandler({

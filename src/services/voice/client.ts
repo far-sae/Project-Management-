@@ -7,7 +7,7 @@
  */
 import { publicMessage } from '@/lib/publicError';
 import { supabase } from '@/services/supabase/config';
-import type { CallList, CallResult, EndCallInput, PersonCalls, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
+import type { CallBackPerson, CallBackSettings, CallList, CallResult, EndCallInput, PersonCalls, StartCallInput, StartedCall, VoiceSetup } from '../../../api/_voice/shared/types';
 
 const BASE = '/api/voice/';
 
@@ -95,6 +95,14 @@ export const endCall = (id: string, input: EndCallInput): Promise<void> => json<
 /** The calls of a workspace, newest first; `before` (the time of the last one shown) asks for the older ones. */
 export const listCalls = (workspaceId: string, before?: string): Promise<CallList> =>
   json<CallList>(`calls?workspaceId=${encodeURIComponent(workspaceId)}${before ? `&before=${encodeURIComponent(before)}` : ''}`);
+
+/** Who takes the calls that come in when a lead calls back. Owner and admins. */
+export const callBacks = (workspaceId: string): Promise<CallBackSettings> =>
+  json<CallBackSettings>(`callbacks?workspaceId=${encodeURIComponent(workspaceId)}`);
+
+/** Saves who takes call-backs. Switching it on also tells the phone provider to send incoming calls here. */
+export const saveCallBacks = (workspaceId: string, input: { enabled: boolean; people: CallBackPerson[]; ringSeconds: number; screen: boolean }): Promise<CallBackSettings> =>
+  json<CallBackSettings>('callbacks', { workspaceId, ...input });
 
 /** Removes a call for good, with its recording and its timeline entry. The owner only. */
 export const deleteCall = (id: string): Promise<void> => send(`calls/${id}`, undefined, 'DELETE').then(() => undefined);

@@ -3,6 +3,7 @@ import { orgRoleOf, type OrgRole } from "../_signroom/context.js";
 import { StoreError } from "../_signroom/errors.js";
 import type { CallCountry } from "./shared/numbers.js";
 import type { CallActivityMeta, CallOutcome, CallStatus } from "./shared/types.js";
+import { forwardingOf, type Forwarding, type InboundStore } from "./inbound.js";
 
 /**
  * What the calling server keeps: one row per call (crm_calls, migration 188)
@@ -38,17 +39,24 @@ export type Call = {
   createdAt: string;
   endedAt: string | null;
   updatedAt: string;
+  /** 'out': a call we placed. 'in': somebody called one of our numbers back. */
+  direction: "out" | "in";
+  /** The name of the person who took a call back. */
+  answeredBy: string | null;
 };
 
 export type NewCall = Pick<Call, "organizationId" | "workspaceId" | "userId" | "contactId" | "companyId" | "toNumber" | "fromNumber" | "country">;
-export type CallPatch = Partial<Pick<Call, "status" | "callSid" | "seconds" | "recordingSid" | "recordingSeconds" | "outcome" | "note" | "endedAt">>;
+export type CallPatch = Partial<Pick<Call, "status" | "callSid" | "seconds" | "recordingSid" | "recordingSeconds" | "outcome" | "note" | "endedAt" | "answeredBy">>;
 
 /** The names behind the ids on a list of calls. An id that is missing was deleted since. */
 export type Names = { contacts: Record<string, string>; companies: Record<string, string>; users: Record<string, string> };
 
-export interface VoiceStore {
+export interface VoiceStore extends InboundStore {
   /** False until migration 188 has been run. */
   tablesReady(): Promise<boolean>;
+  /** False until the call-backs table (migration 211) is there. */
+  forwardingReady(): Promise<boolean>;
+  saveForwarding(organizationId: string, value: Forwarding, userId: string): Promise<void>;
   /** The organisation a workspace belongs to, or null when there is no such workspace. */
   workspaceOrg(workspaceId: string): Promise<string | null>;
   /** The calls of a workspace that reached the provider, newest first, older than `before` when given. */
@@ -102,6 +110,9 @@ const callFrom = (r: Row): Call => ({
   createdAt: r.created_at,
   endedAt: r.ended_at ?? null,
   updatedAt: r.updated_at,
+  // Columns migration 211 adds: absent before it is run, and every call is then one we placed.
+  direction: r.direction === "in" ? "in" : "out",
+  answeredBy: r.answered_by ?? null,
 });
 
 const COLUMN: Record<keyof CallPatch, string> = {
@@ -113,6 +124,7 @@ const COLUMN: Record<keyof CallPatch, string> = {
   outcome: "outcome",
   note: "note",
   endedAt: "ended_at",
+  answeredBy: "answered_by",
 };
 
 export function supabaseStore(sb: SupabaseClient): VoiceStore {
@@ -225,6 +237,82 @@ export function supabaseStore(sb: SupabaseClient): VoiceStore {
         await sb.from("crm_contacts").select("id, phone").eq("workspace_id", workspaceId).not("phone", "is", null).order("created_at", { ascending: true }).limit(LEAD_PHONES_LIMIT),
       ) as Row[] | null;
       return (data ?? []).filter((r) => typeof r.phone === "string" && r.phone.trim() !== "").map((r) => ({ id: r.id as string, phone: r.phone as string }));
+    },
+
+    // ── Call-backs (migration 211) ──────────────────────────────────────
+
+    async forwardingReady() {
+      const { error } = await sb.from("crm_call_forwarding").select("organization_id").limit(1);
+      return !error;
+    },
+
+    async forwarding(organizationId) {
+      // A database without the table simply has no call-backs: nobody is rung.
+      const { data, error } = await sb.from("crm_call_forwarding").select("enabled, people, ring_seconds, screen").eq("organization_id", organizationId).maybeSingle();
+      return forwardingOf(error ? null : (data as Row | null));
+    },
+
+    async saveForwarding(organizationId, value, userId) {
+      must(await sb.from("crm_call_forwarding").upsert({
+        organization_id: organizationId, enabled: value.enabled, people: value.people, ring_seconds: value.ringSeconds, screen: value.screen,
+        updated_by: userId, updated_at: new Date().toISOString(),
+      }, { onConflict: "organization_id" }));
+    },
+
+    async forwardingOrgs() {
+      const { data, error } = await sb.from("crm_call_forwarding").select("organization_id, people").eq("enabled", true).limit(50);
+      if (error) return [];
+      return ((data ?? []) as Row[]).filter((r) => Array.isArray(r.people) && r.people.length > 0).map((r) => String(r.organization_id));
+    },
+
+    async lastCallTo(number) {
+      // Only calls we placed: a call back is never the reason the next one finds its organisation.
+      const { data, error } = await sb.from("crm_calls").select("organization_id, workspace_id, user_id, contact_id, company_id, direction")
+        .eq("to_number", number).order("created_at", { ascending: false }).limit(5);
+      if (error) return null;
+      const r = ((data ?? []) as Row[]).find((row) => row.direction !== "in");
+      return r ? { organizationId: r.organization_id, workspaceId: r.workspace_id ?? null, userId: r.user_id, contactId: r.contact_id ?? null, companyId: r.company_id ?? null } : null;
+    },
+
+    async orgOwner(organizationId) {
+      const o = must(await sb.from("organizations").select("owner_id").eq("organization_id", organizationId).maybeSingle()) as Row | null;
+      return o && typeof o.owner_id === "string" ? o.owner_id : null;
+    },
+
+    async orgAdmins(organizationId) {
+      const o = must(await sb.from("organizations").select("owner_id, members").eq("organization_id", organizationId).maybeSingle()) as Row | null;
+      if (!o) return [];
+      const members = Array.isArray(o.members) ? (o.members as Row[]) : [];
+      const admins = members.filter((m) => ["owner", "admin"].includes(String(m.role))).map((m) => String(m.userId ?? m.user_id ?? "")).filter(Boolean);
+      return [...new Set([...(typeof o.owner_id === "string" ? [o.owner_id] : []), ...admins])];
+    },
+
+    async insertIncoming(c) {
+      const data = must(
+        await sb.from("crm_calls").insert({
+          organization_id: c.organizationId, workspace_id: c.workspaceId, user_id: c.userId, contact_id: c.contactId, company_id: c.companyId,
+          to_number: c.toNumber, from_number: c.fromNumber, country: c.country, status: "ringing", twilio_call_sid: c.callSid, direction: "in",
+        }).select().single(),
+      ) as Row;
+      return callFrom(data);
+    },
+
+    async nameOf(call) {
+      if (call.contactId) {
+        const r = must(await sb.from("crm_contacts").select("first_name, last_name").eq("id", call.contactId).maybeSingle()) as Row | null;
+        const name = r ? `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() : "";
+        if (name) return name;
+      }
+      if (call.companyId) {
+        const r = must(await sb.from("crm_companies").select("name").eq("id", call.companyId).maybeSingle()) as Row | null;
+        if (r?.name) return String(r.name);
+      }
+      return "";
+    },
+
+    async notify(userIds, title, message, link) {
+      if (userIds.length === 0) return;
+      must(await sb.from("notifications").insert(userIds.map((userId) => ({ user_id: userId, type: "crm_call", title, message: message.slice(0, 300), read: false, link }))));
     },
 
     async deleteCall(id) {

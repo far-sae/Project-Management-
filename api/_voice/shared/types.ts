@@ -120,6 +120,30 @@ export type CallListItem = {
   contact: { id: string; name: string } | null;
   company: { id: string; name: string } | null;
   caller: { id: string; name: string };
+  /** 'out': a call we placed. 'in': somebody called one of our numbers back. Absent on an older server: 'out'. */
+  direction?: "out" | "in";
+  /** Who took a call back. Null when nobody did, and for a call we placed. */
+  answeredBy?: string | null;
+};
+
+/** Who takes the calls that come in, and how. */
+export type CallBackPerson = { name: string; number: string };
+export type CallBackSettings = {
+  /** False until the database has been given the call-backs table (211). */
+  ready: boolean;
+  enabled: boolean;
+  /** The people rung, in order. */
+  people: CallBackPerson[];
+  /** How long each phone rings before the next person is tried. */
+  ringSeconds: number;
+  /** The person who picks up presses a key to take the call, so a phone's voicemail cannot. */
+  screen: boolean;
+  /** Which of our numbers people can call back. */
+  numbers: string[];
+  /** After a save: whether the phone provider was told to send incoming calls here. Null when nothing was asked. */
+  linked?: boolean | null;
+  /** The address to give the phone provider by hand when `linked` is false. */
+  address?: string;
 };
 
 export type CallSummary = { days: number; total: number; answered: number; seconds: number };
