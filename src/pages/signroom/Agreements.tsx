@@ -340,7 +340,7 @@ export const AgreementsPage: React.FC = () => {
                               <span className="block text-xs text-muted-foreground">{activityNote(a)}</span>
                             </td>
                             <td className="px-3 py-1.5 text-right">
-                              <AgreementRowActions agreement={a} onView={() => void view(a)} onChange={changed} />
+                              <AgreementRowActions agreement={a} onView={() => void view(a)} onChange={changed} onDeleted={(gone) => setAgreements((list) => list.filter((x) => x.id !== gone))} />
                             </td>
                           </tr>
                         );

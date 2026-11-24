@@ -54,6 +54,49 @@ export async function scheduleDeletion(store: Store, user: SignedInUser, id: str
   );
 }
 
+export const DELETE_HOLD_MESSAGE = "Release the documented legal hold before deleting this agreement.";
+export const DELETE_SIGNING_MESSAGE = "Cancel or complete this agreement first.";
+
+/**
+ * Deletes an agreement now, with its stored files. The owner asked for it,
+ * as for invoices, and only the owner may: a signed agreement is evidence, and
+ * whether it may go is theirs to answer for. It does not wait for an export or
+ * for the retention time, which is what scheduleDeletion is for.
+ *
+ * Two things are never deleted this way, and the database refuses them too:
+ * an agreement people are signing right now, and one under a legal hold.
+ */
+export async function deleteAgreementNow(store: Store, user: SignedInUser, id: string): Promise<{ deleted: true; title: string }> {
+  await currentWorkspace(store, user, { owner: true });
+  const { a } = await openAgreement(store, user, id, "delete");
+  if (a.legalHold) throw new AppError(DELETE_HOLD_MESSAGE, 409);
+  if (["Awaiting signatures", "Finalising"].includes(a.status)) throw new AppError(DELETE_SIGNING_MESSAGE, 409);
+
+  const hashes = [
+    ...new Set([a.documentHash, a.senderSignedHash, a.frozen?.sourceHash, ...Object.values(a.artifacts ?? {})].filter((h): h is string => !!h)),
+  ];
+  // The database lets an agreement go only once its deletion date has come.
+  // The owner says it has: a minute ago, so that two clocks a little apart agree.
+  const due = await writeAgreement(store, a, {
+    deletionAt: new Date(Date.now() - 60_000).toISOString(),
+    events: withEvent(a, "Deleted by the owner", user.email).events,
+  });
+  if (!(await store.deleteAgreement(due.workspaceId, due.id))) {
+    // Refused after all (it changed in between): the date is taken back, so nothing deletes it later by itself.
+    await store.updateAgreement(due.workspaceId, due.id, due.rowVersion, { deletionAt: "" }).catch(() => null);
+    throw new AppError("The agreement could not be deleted. Reload it and try again.", 409);
+  }
+  // Its stored files go too, each one unless something else still uses the same file.
+  for (const hash of hashes) {
+    try {
+      if (!(await store.blobInUse(due.workspaceId, hash))) await store.removeBlob(due.workspaceId, hash);
+    } catch {
+      console.error("[signroom] a file of a deleted agreement could not be removed");
+    }
+  }
+  return { deleted: true, title: a.title };
+}
+
 /** What a delete job keeps, encrypted, between deleting the row and removing its blobs. */
 type Pending = { hashes: string[]; workspaceId: string; agreementId: string };
 

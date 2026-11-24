@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import type { Agreement, AgreementSummary } from '../../../../api/_signroom/shared/types';
 import { messageOf } from './files';
+import { DeleteAgreementDialog } from './DeleteAgreement';
 
 export const TRASH_BLOCKED_NOTE =
   'Active signing must be cancelled or completed before deletion. Legal holds prevent deletion.';
@@ -28,13 +29,16 @@ interface AgreementRowActionsProps {
   onView?: () => void;
   /** Called with the agreement as the server returned it after a change. */
   onChange: (agreement: Agreement) => void;
+  /** Called once the agreement was deleted for good, so the list can drop its row. Without it, the menu does not offer deleting. */
+  onDeleted?: (id: string) => void;
 }
 
 /** The menu on a row of the list: open, archive or unarchive, move to Trash or restore. */
-export const AgreementRowActions: React.FC<AgreementRowActionsProps> = ({ agreement: a, onView, onChange }) => {
+export const AgreementRowActions: React.FC<AgreementRowActionsProps> = ({ agreement: a, onView, onChange, onDeleted }) => {
   const { client } = useSignroom();
   const [busy, setBusy] = useState(false);
   const [confirmTrash, setConfirmTrash] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const run = async (name: 'archive' | 'unarchive' | 'trash' | 'restore') => {
     setBusy(true);
@@ -84,8 +88,17 @@ export const AgreementRowActions: React.FC<AgreementRowActionsProps> = ({ agreem
               </DropdownMenuItem>
             </>
           )}
+          {onDeleted && (
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleting(true)}>
+              Delete for good
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {onDeleted && (
+        <DeleteAgreementDialog agreement={deleting ? a : null} onOpenChange={setDeleting} onDeleted={() => onDeleted(a.id)} />
+      )}
 
       <AlertDialog open={confirmTrash} onOpenChange={(open) => { if (!busy) setConfirmTrash(open); }}>
         <AlertDialogContent>

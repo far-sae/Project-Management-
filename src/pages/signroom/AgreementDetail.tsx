@@ -21,6 +21,7 @@ import { AgreementStatusPill, RecipientPill } from '@/components/signroom/agreem
 import { Card, Notice } from '@/components/signroom/agreements/Card';
 import { SenderFirstSigning } from '@/components/signroom/agreements/SenderFirstSigning';
 import { TextPromptDialog } from '@/components/signroom/agreements/TextPromptDialog';
+import { DeleteAgreementButton } from '@/components/signroom/agreements/DeleteAgreement';
 import {
   downloadAgreementPdf, exportEvidence, messageOf, type AgreementArtifactKind,
 } from '@/components/signroom/agreements/files';
@@ -196,6 +197,8 @@ export const AgreementDetailPage: React.FC = () => {
                   <Copy aria-hidden /> Duplicate as draft
                 </Button>
               )}
+              {/* For the workspace's owners; the server checks again. */}
+              {owner && <DeleteAgreementButton agreement={a} onDeleted={() => navigate('/crm/agreements')} />}
             </div>
           </div>
         </div>

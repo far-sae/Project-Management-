@@ -13,7 +13,7 @@ import { emailConnectionAction } from "./emailConnection.js";
 import { finishAuthorization } from "./oauthConnection.js";
 import { accountsOverview, projectAction } from "./projects.js";
 import { billingGuestAction, billingGuestArtifact } from "./guest.js";
-import { exportEvidence, scheduleDeletion } from "./retention.js";
+import { deleteAgreementNow, exportEvidence, scheduleDeletion } from "./retention.js";
 import type { MailDeps } from "./mail.js";
 import { agreementGuestAction, agreementGuestArtifactUrl, agreementGuestExport, type SignGuestAction } from "./signGuest.js";
 import type { Invoice } from "./shared/types.js";
@@ -203,6 +203,7 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     if (n === 3 && method === "POST" && third === "release-first") return ok(await releaseFirst(deps.mail, user, second, r.origin));
     if (n === 3 && method === "POST" && third === "export") return ok(await exportEvidence(store, user, second));
     if (n === 3 && method === "POST" && third === "delete") return ok(await scheduleDeletion(store, user, second));
+    if (n === 3 && method === "POST" && third === "delete-now") return ok(await deleteAgreementNow(store, user, second));
     if (n === 3 && method === "POST" && third === "ai-draft") return ok(await draftAgreement(deps.mail, deps.draft ?? { claude: null }, user, second, body));
     const action = AGREEMENT_ACTIONS.find((a) => a === third);
     if (n === 3 && method === "POST" && action) return ok(await agreementAction(store, user, second, action, body));
