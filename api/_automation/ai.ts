@@ -63,13 +63,14 @@ export function aiAppError(e: AiError): AppError {
   return new AppError(e.kind === "refused" ? AI_REFUSED_MESSAGE : AI_INCOMPLETE_MESSAGE, 400);
 }
 
-export type AiDeps = { store: AutoStore; claude: AutoClaude | null };
+/** Only the usage row is written here, so a caller with a store of its own (the social autopilot) passes just that part. */
+export type AiDeps = { store: Pick<AutoStore, "insertUsage">; claude: AutoClaude | null };
 
 /** Whose call it is, for the usage row. */
 export type AiTag = { workspaceId: string; feature: UsageFeature; runId?: string | null; agentId?: string | null; userId?: string | null };
 
 /** One auto_usage row per reply. A failed write is logged by name and never fails the call. */
-async function recordUsage(store: AutoStore, tag: AiTag, message: Reply): Promise<void> {
+async function recordUsage(store: AiDeps["store"], tag: AiTag, message: Reply): Promise<void> {
   try {
     const u = message.usage;
     const tokens = {

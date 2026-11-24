@@ -57,7 +57,14 @@ describe("the posting service: connecting an account", () => {
     expect(s.calls[0].url).toBe("https://api.postforme.dev/v1/social-accounts/auth-url");
     expect(s.calls[0].method).toBe("POST");
     expect(s.calls[0].headers.Authorization).toBe("Bearer pfm_key");
-    expect(s.calls[0].body).toEqual({ platform: "youtube", external_id: workspaceTag(WS) });
+    // It also asks to read the account's own posts and numbers: the autopilot learns from them.
+    expect(s.calls[0].body).toEqual({ platform: "youtube", external_id: workspaceTag(WS), permissions: ["posts", "feeds"] });
+  });
+
+  it("connects for posting alone when reading the account's posts is not accepted", async () => {
+    const s = setUp((call, n) => (n === 1 ? { status: 400, json: { message: "feeds is not supported" } } : { json: { url: "https://accounts.google.com/o/oauth2/auth?x=2" } }));
+    expect(await serviceAuthUrl(s.deps, "youtube", WS)).toBe("https://accounts.google.com/o/oauth2/auth?x=2");
+    expect(s.calls[1].body).toEqual({ platform: "youtube", external_id: workspaceTag(WS) });
   });
 
   it("connects LinkedIn the way the service's own apps require", async () => {
@@ -70,7 +77,7 @@ describe("the posting service: connecting an account", () => {
     const s = setUp((call, n) => (n === 1 ? { status: 400, json: { message: "bad" } } : { json: { url: "https://www.instagram.com/oauth/authorize?x=1" } }));
     expect(await serviceAuthUrl(s.deps, "instagram", WS)).toContain("instagram.com");
     expect(s.calls[0].body).toMatchObject({ platform: "instagram", platform_data: { instagram: { connection_type: "instagram" } } });
-    expect(s.calls[1].body).toEqual({ platform: "instagram", external_id: workspaceTag(WS) });
+    expect(s.calls[1].body).toEqual({ platform: "instagram", external_id: workspaceTag(WS), permissions: ["posts", "feeds"] });
   });
 
   it("says plainly when no address can be had, and only accepts an https address", async () => {

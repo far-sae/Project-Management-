@@ -60,6 +60,9 @@ async function call(d: ServiceDeps, method: "GET" | "POST" | "PATCH", path: stri
   return { status: response.status, json };
 }
 
+/** The same call, for the parts of the app that read from the service (the autopilot's study of an account's posts). */
+export const serviceCall = call;
+
 // ── Connecting ───────────────────────────────────────────────────────────────
 
 /**
@@ -77,11 +80,17 @@ const EXTRA: Partial<Record<ServiceKind, Array<Record<string, unknown> | null>>>
 
 /** The platform's log-in address for connecting an account to this workspace. */
 export async function serviceAuthUrl(d: ServiceDeps, kind: ServiceKind, workspaceId: string): Promise<string> {
-  for (const extra of EXTRA[kind] ?? [null]) {
+  // "feeds" lets the account's own posts and their numbers be read: the autopilot
+  // learns from them. Where the service does not take that for a platform, the
+  // account is connected for posting alone, as before.
+  const asks: Array<{ extra: Record<string, unknown> | null; feeds: boolean }> = [];
+  for (const feeds of [true, false]) for (const extra of EXTRA[kind] ?? [null]) asks.push({ extra, feeds });
+  for (const ask of asks) {
     let answer: { status: number; json: Record<string, unknown> };
     try {
       answer = await call(d, "POST", "/v1/social-accounts/auth-url", {
-        platform: kind, external_id: workspaceTag(workspaceId), ...(extra ? { platform_data: extra } : {}),
+        platform: kind, external_id: workspaceTag(workspaceId), ...(ask.extra ? { platform_data: ask.extra } : {}),
+        ...(ask.feeds ? { permissions: ["posts", "feeds"] } : {}),
       });
     } catch {
       break;

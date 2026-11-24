@@ -1,4 +1,5 @@
 import type { PostMedia } from '../../api/_social/shared/platforms';
+import type { PostIdea } from '../../api/_social/shared/autopilot';
 
 export type SocialProvider = 'linkedin' | 'facebook' | 'instagram' | 'x' | 'youtube' | 'tiktok' | 'other';
 export type SocialContentStatus = 'draft' | 'in_review' | 'approved' | 'scheduled' | 'publishing' | 'published' | 'failed';
@@ -27,6 +28,10 @@ export interface SocialContent {
   options: Record<string, unknown>;
   /** Once posted: where the post is (its address, when the platform gave one). */
   externalPostId: string | null;
+  /** Who made the post. Not set on a post made before the autopilot: a person made it. */
+  origin?: 'person' | 'autopilot';
+  /** Why the autopilot made it, and what it tries out. */
+  idea?: PostIdea | null;
 }
 export interface SocialMetric {
   contentId: string; impressions: number; reach: number; clicks: number;

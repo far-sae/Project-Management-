@@ -4,6 +4,10 @@ import { decryptSecret, encryptSecret } from '../_lib/crypto';
 import { env, serviceClient } from '../_lib/context';
 import type { SocialAccountRow } from '../_social/publishers';
 import { runWorker, type ContentRow, type RunResult, type WorkerDeps, type WorkerStore } from '../_social/worker';
+import { randomUUID } from 'node:crypto';
+import { claudeClient } from '../_automation/ai';
+import { pilotHandler } from '../_social/autopilot/router';
+import { supabasePilotStore } from '../_social/autopilot/supabaseStore';
 
 /**
  * Sends the social posts that are due (see _social/worker.ts).
@@ -100,11 +104,13 @@ const realDeps = (): WorkerDeps => ({
   now: () => Date.now(),
 });
 
-export default publishHandler({
-  isWorker: (req) => {
-    const expected = process.env.SOCIAL_WORKER_SECRET ?? process.env.CRON_SECRET;
-    return Boolean(expected) && bearerOf(req) === expected;
-  },
+const isWorker = (req: VercelRequest): boolean => {
+  const expected = process.env.SOCIAL_WORKER_SECRET ?? process.env.CRON_SECRET;
+  return Boolean(expected) && bearerOf(req) === expected;
+};
+
+const publish = publishHandler({
+  isWorker,
   isSignedIn: async (req) => {
     const bearer = bearerOf(req);
     if (!bearer) return false;
@@ -113,3 +119,41 @@ export default publishHandler({
   },
   run: (limit) => runWorker(supabaseStore(serviceClient(), () => env('INTEGRATION_TOKEN_KEY')), realDeps(), limit),
 });
+
+/** /api/social/autopilot/<route> arrives here as ?autopilot=<route> (see vercel.json). */
+const autopilot = (req: VercelRequest, res: VercelResponse, route: string) => {
+  const db = serviceClient();
+  return pilotHandler({
+    engine: { fetch, env: process.env, now: () => Date.now(), uuid: () => randomUUID(), claude: claudeClient(process.env.ANTHROPIC_API_KEY) },
+    store: supabasePilotStore(db),
+    isWorker,
+    userOf: async (request) => {
+      const bearer = bearerOf(request);
+      if (!bearer) return null;
+      const { data, error } = await db.auth.getUser(bearer);
+      return error || !data.user ? null : data.user.id;
+    },
+    organizationOf: async (workspaceId) => {
+      const { data } = await db.from('workspaces').select('organization_id').eq('workspace_id', workspaceId).maybeSingle();
+      return data?.organization_id ? String(data.organization_id) : null;
+    },
+    isAdmin: async (organizationId, userId) => {
+      const { data: org } = await db.from('organizations').select('owner_id, members').eq('organization_id', organizationId).maybeSingle();
+      if (!org) return false;
+      const members = Array.isArray(org.members) ? org.members as Array<Record<string, unknown>> : [];
+      return org.owner_id === userId || members.some((member) =>
+        String(member.userId ?? member.user_id ?? '') === userId && ['owner', 'admin'].includes(String(member.role)));
+    },
+  })(req, res, route);
+};
+
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  const route = String((Array.isArray(req.query.autopilot) ? req.query.autopilot[0] : req.query.autopilot) ?? '');
+  if (!route) return publish(req, res);
+  try {
+    await autopilot(req, res, route);
+  } catch (e) {
+    console.error('[autopilot] the request failed', e instanceof Error ? e.name : 'unknown');
+    res.status(500).json({ error: 'The autopilot could not do that just now. Please try again.' });
+  }
+}

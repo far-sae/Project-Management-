@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/social/publish", "schedule": "*/5 * * * *" },
+    { "path": "/api/social/publish?autopilot=tick", "schedule": "*/5 * * * *" },
     { "path": "/api/signroom?path=ops/run", "schedule": "*/5 * * * *" },
     { "path": "/api/automation?path=ops/run", "schedule": "*/5 * * * *" }
   ],
@@ -17,6 +18,7 @@
     { "source": "/api/automation/:path*", "destination": "/api/automation?path=:path*" },
     { "source": "/api/voice/:path*", "destination": "/api/voice?path=:path*" },
     { "source": "/api/social/connect/:path*", "destination": "/api/social/account-secret?connect=:path*" },
+    { "source": "/api/social/autopilot/:path*", "destination": "/api/social/publish?autopilot=:path*" },
     {
       "source": "/((?!api/|google[a-z0-9]+\\.html$).*)",
       "destination": "/index.html"

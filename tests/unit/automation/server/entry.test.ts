@@ -282,7 +282,9 @@ describe("vercel.json", () => {
     expect(v.crons).toContainEqual({ path: "/api/automation?path=ops/run", schedule: "*/5 * * * *" });
     expect(v.crons).toContainEqual({ path: "/api/signroom?path=ops/run", schedule: "*/5 * * * *" });
     expect(v.crons).toContainEqual({ path: "/api/social/publish", schedule: "*/5 * * * *" });
-    expect(v.crons).toHaveLength(3);
+    // The social media autopilot has a timer of its own (tests/unit/social/autopilot.test.ts).
+    expect(v.crons).toContainEqual({ path: "/api/social/publish?autopilot=tick", schedule: "*/5 * * * *" });
+    expect(v.crons).toHaveLength(4);
   });
 
   it("rewrites /api/automation/* to the function before the SPA rewrite, and leaves the documents rewrite alone", () => {
@@ -293,8 +295,11 @@ describe("vercel.json", () => {
     expect(spa).toBeGreaterThan(at);
     expect(v.rewrites).toContainEqual({ source: "/api/signroom/:path*", destination: "/api/signroom?path=:path*" });
     // The calling server's rewrite sits beside them (tests/unit/voice/server.test.ts),
-    // and the one for connecting social accounts (tests/unit/social/connect.test.ts).
-    expect(v.rewrites).toHaveLength(5);
+    // the one for connecting social accounts (tests/unit/social/connect.test.ts),
+    // and the one for the social media autopilot.
+    expect(v.rewrites).toContainEqual({ source: "/api/social/autopilot/:path*", destination: "/api/social/publish?autopilot=:path*" });
+    expect(v.rewrites.findIndex((r: { source: string }) => r.source === "/api/social/autopilot/:path*")).toBeLessThan(spa);
+    expect(v.rewrites).toHaveLength(6);
   });
 
   it("gives the function 300 seconds and leaves the documents function as it was", () => {

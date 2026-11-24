@@ -377,7 +377,7 @@ describe("through the posting service", () => {
     expect(url).toBe("https://www.tiktok.com/v2/auth/authorize?x=1");
     expect(cookie).toBe("");
     expect(s.calls[0].url).toBe("https://api.postforme.dev/v1/social-accounts/auth-url");
-    expect(JSON.parse(s.calls[0].body)).toEqual({ platform: "tiktok", external_id: TAG });
+    expect(JSON.parse(s.calls[0].body)).toEqual({ platform: "tiktok", external_id: TAG, permissions: ["posts", "feeds"] });
     expect(s.calls[0].headers.Authorization).toBe("Bearer pfm_key");
   });
 

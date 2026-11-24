@@ -1,6 +1,6 @@
 import { publicMessage, publicText } from '@/lib/publicError';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, CalendarDays, Check, Clock, Film, ImageIcon, LayoutList, Library, Loader2, Plus, RotateCcw, Rows3, Share2 } from 'lucide-react';
+import { BarChart3, CalendarDays, Check, Clock, Film, ImageIcon, LayoutList, Library, Loader2, Plus, RotateCcw, Rows3, Share2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -12,6 +12,7 @@ import { PostsTable } from '@/components/social/PostsTable';
 import { SocialCalendar } from '@/components/social/SocialCalendar';
 import { CampaignsTable } from '@/components/social/CampaignsTable';
 import { SocialAnalytics } from '@/components/social/SocialAnalytics';
+import { Autopilot } from '@/components/social/Autopilot';
 import type { PostFilters } from '@/lib/socialPosts';
 import { CONNECT_FAILED, SERVICE_CONNECTED, SERVICE_NOT_CONNECTED, connectReturnMessage, readConnectReturn, readServiceReturn } from '@/lib/socialConnect';
 import { syncSocialAccounts } from '@/services/social/connect';
@@ -182,7 +183,7 @@ export const SocialMedia: React.FC = () => {
 
   return <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 md:p-8">
     <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-3xl font-bold">Social Media Marketing</h1><p className="text-muted-foreground">Plan, approve and measure content for <b>{selected.name}</b>.</p></div><Button onClick={() => setComposing(true)}><Plus className="mr-1 h-4 w-4" />New post</Button></div>
-    {loading ? <div className="py-20 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /></div> : <Tabs value={tab} onValueChange={setTab}><TabsList className="flex flex-wrap h-auto"><TabsTrigger value="library"><Library className="mr-1 h-4 w-4" />Posts</TabsTrigger><TabsTrigger value="calendar"><CalendarDays className="mr-1 h-4 w-4" />Calendar</TabsTrigger><TabsTrigger value="campaigns">Campaigns</TabsTrigger><TabsTrigger value="accounts"><Share2 className="mr-1 h-4 w-4" />Accounts</TabsTrigger><TabsTrigger value="analytics"><BarChart3 className="mr-1 h-4 w-4" />Analytics</TabsTrigger></TabsList>
+    {loading ? <div className="py-20 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /></div> : <Tabs value={tab} onValueChange={setTab}><TabsList className="flex flex-wrap h-auto"><TabsTrigger value="library"><Library className="mr-1 h-4 w-4" />Posts</TabsTrigger><TabsTrigger value="calendar"><CalendarDays className="mr-1 h-4 w-4" />Calendar</TabsTrigger><TabsTrigger value="campaigns">Campaigns</TabsTrigger><TabsTrigger value="accounts"><Share2 className="mr-1 h-4 w-4" />Accounts</TabsTrigger><TabsTrigger value="analytics"><BarChart3 className="mr-1 h-4 w-4" />Analytics</TabsTrigger><TabsTrigger value="autopilot"><Sparkles className="mr-1 h-4 w-4" />Autopilot</TabsTrigger></TabsList>
       <TabsContent value="library" className="space-y-3">
         <div className="flex justify-end pt-3">
           <div role="group" aria-label="How the posts are shown" className="inline-flex rounded-md border border-border p-0.5">
@@ -213,6 +214,12 @@ export const SocialMedia: React.FC = () => {
       <TabsContent value="accounts" className="space-y-3"><ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} onChanged={() => void load(true)} /><SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />{accounts.length === 0 ? <Empty text="No account connected yet. Press Connect above." /> : accounts.map((item) => <Card key={item.id}><CardContent className="flex items-center justify-between p-4"><div><p className="font-semibold">{item.displayName}</p><p className="text-sm capitalize text-muted-foreground">{item.provider}</p></div><div className="flex max-w-[60%] flex-col items-end gap-1"><Badge variant={item.status === 'connected' ? 'default' : 'outline'}>{item.status === 'error' ? 'connect again' : item.status}</Badge>{item.status === 'error' && item.lastError && <p className="text-right text-xs text-destructive">{publicText(item.lastError, 'This account needs to be connected again.')}</p>}</div></CardContent></Card>)}</TabsContent>
       <TabsContent value="analytics">
         <SocialAnalytics content={content} accounts={accounts} campaigns={campaigns} metrics={metrics} />
+      </TabsContent>
+      <TabsContent value="autopilot">
+        <Autopilot
+          organizationId={orgId} workspaceId={workspaceId} accounts={accounts} content={content} canEdit={Boolean(isAdmin)} userId={user?.userId}
+          onChanged={() => void load(true)} onDelete={removePosts}
+        />
       </TabsContent>
     </Tabs>}
 
