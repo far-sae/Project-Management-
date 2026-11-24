@@ -279,6 +279,31 @@ export async function billingAction(
 const loader = (store: Store): BlobLoader => (w, h) => store.getBlob(w, h);
 
 /** A draft's PDF, rendered on the spot and never stored. Other states return the stored artifact. */
+/**
+ * Removes an invoice for good: the invoice, its payments and receipts, its
+ * history, its private links, its sending history and its stored PDFs. Any
+ * invoice, whatever its state. The owner decides, and only the owner may: an
+ * issued invoice is a business record, and whether it may go is theirs to
+ * answer for. Its number is not handed out again.
+ */
+export async function deleteInvoice(store: Store, user: SignedInUser, id: string): Promise<{ deleted: true; number: string }> {
+  const ctx = await currentWorkspace(store, user);
+  if (ctx.role !== "Owner") throw new AppError("Only the owner can delete an invoice.", 403);
+  const i = await visibleInvoice(store, ctx, id);
+  const files = [...new Set([i.invoiceHash, ...i.payments.map((p) => p.receiptHash)].filter((hash): hash is string => Boolean(hash)))];
+  if (!(await store.deleteInvoice(ctx.workspace.id, i.id))) throw new AppError("Invoice not found.", 404);
+  // Its stored files go too, each one unless something else still uses the same file.
+  for (const hash of files) {
+    try {
+      if (!(await store.blobInUse(ctx.workspace.id, hash))) await store.removeBlob(ctx.workspace.id, hash);
+    } catch {
+      // The invoice is gone already: a file that could not be removed is only logged, by what it is.
+      console.error("[signroom] a file of a deleted invoice could not be removed");
+    }
+  }
+  return { deleted: true, number: i.number };
+}
+
 export async function billingPreview(store: Store, user: SignedInUser, id: string): Promise<Uint8Array> {
   const ctx = await currentWorkspace(store, user);
   const i = await visibleInvoice(store, ctx, id);

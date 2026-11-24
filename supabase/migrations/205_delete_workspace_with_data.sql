@@ -15,7 +15,9 @@
 --
 -- It refuses when:
 --   * it is the organisation's only workspace (there must be one left);
---   * the workspace holds agreements or invoices: they are legal records;
+--   * the workspace holds agreements, invoices, billing plans or agreement
+--     templates: they are legal records, deleted one by one on their own
+--     pages. The message says how many of each are still there;
 --   * the workspace has recorded calls: the recordings are kept at the phone
 --     provider, where the database cannot reach. Delete those calls on the
 --     Calls page first, which removes the recordings too.
@@ -46,6 +48,7 @@ declare
   v_count bigint;
   v_counts jsonb := '{}'::jsonb;
   v_has_tasks boolean;
+  v_documents text;
 begin
   if v_uid is null then
     raise exception 'Please sign in again.' using errcode = '28000';
@@ -77,15 +80,26 @@ begin
   end if;
 
   -- ── What is never deleted this way ────────────────────────────────────────
+  -- Invoices and agreements are legal records. They are not swept away with a
+  -- workspace: each is deleted on its own page, by a person who looked at it.
+  -- The message says how many of each are still there, so it is clear what to do.
+  v_documents := '';
   foreach v_table in array array['sr_invoices', 'sr_agreements', 'sr_projects', 'sr_agreement_templates'] loop
     if to_regclass(format('public.%I', v_table)) is not null then
       execute format('select count(*) from public.%I where workspace_id = $1', v_table) into v_count using p_workspace;
       if v_count > 0 then
-        raise exception 'This workspace has agreements, invoices or billing plans. They are legal records, so the workspace cannot be deleted.'
-          using errcode = 'P0001';
+        v_documents := v_documents || case when v_documents = '' then '' else ', ' end || v_count::text || ' ' || case v_table
+          when 'sr_invoices' then case when v_count = 1 then 'invoice' else 'invoices' end
+          when 'sr_agreements' then case when v_count = 1 then 'agreement' else 'agreements' end
+          when 'sr_projects' then case when v_count = 1 then 'billing plan' else 'billing plans' end
+          else case when v_count = 1 then 'agreement template' else 'agreement templates' end end;
       end if;
     end if;
   end loop;
+  if v_documents <> '' then
+    raise exception 'This workspace still has legal records: %. Delete them first (in the CRM, under Invoices and Agreements, with this workspace chosen), then delete the workspace.', v_documents
+      using errcode = 'P0001';
+  end if;
 
   if to_regclass('public.crm_calls') is not null then
     select count(*) into v_count from public.crm_calls where workspace_id = p_workspace and recording_sid is not null;
@@ -196,6 +210,17 @@ begin
     update public.workspaces set is_default = true, updated_at = now() where workspace_id = v_other;
   end if;
   delete from public.workspaces where workspace_id = p_workspace;
+
+  -- The documents area keeps a row of its own for each workspace (same id), with
+  -- the customers and settings of that workspace. No invoice or agreement is
+  -- left in it (see above), so it goes too. Never the reason the delete fails.
+  if to_regclass('public.sr_workspaces') is not null then
+    begin
+      delete from public.sr_workspaces where id = p_workspace;
+    exception when others then
+      null;
+    end;
+  end if;
 
   return jsonb_build_object('deleted', true, 'name', v_name, 'counts', v_counts);
 end;

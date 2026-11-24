@@ -1,6 +1,6 @@
 // One invoice at /crm/invoices/:id. A draft opens in the editor; once issued it is a read-only record.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, FileX, Loader2 } from 'lucide-react';
 import type { Client, Invoice } from '../../../api/_signroom/shared/types';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
 import { InvoiceEditor } from '@/components/signroom/billing/InvoiceEditor';
 import { InvoiceRecord } from '@/components/signroom/billing/InvoiceRecord';
+import { DeleteInvoiceButton } from '@/components/signroom/billing/DeleteInvoiceButton';
 import { EmptyState, InvoiceStatus, PickWorkspace } from '@/components/signroom/billing/shared';
 import { useBillingClients, useDelivery } from '@/components/signroom/billing/useBilling';
 
@@ -20,6 +21,7 @@ const LINK = 'font-medium text-foreground underline-offset-4 hover:underline';
 export const InvoiceDetailPage: React.FC = () => {
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const { client, workspaceId } = useSignroom();
   const { code: companyCurrency } = useCrmCurrency();
   const { items: deals } = useCrmDeals();
@@ -152,6 +154,7 @@ export const InvoiceDetailPage: React.FC = () => {
               : 'This invoice has been issued, so its details can no longer be changed.'}
           </>
         }
+        actions={<DeleteInvoiceButton invoice={invoice} onDeleted={() => navigate('/crm/invoices')} />}
       />
 
       {[clientsError, deliveryError].filter(Boolean).map((sentence, n) => (

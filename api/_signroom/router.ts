@@ -5,7 +5,7 @@ import { finishUpload, prepareAgreement, uploadUrl } from "./agreementDocument.j
 import { deleteTemplate, getTemplate, renameTemplate } from "./agreementTemplates.js";
 import { draftAgreement, type DraftDeps } from "./aiDraft.js";
 import { cancelAgreement, releaseFirst, resendInvitations, sendAgreement, signFirst } from "./agreementSend.js";
-import { billingAction, billingArtifact, billingDelivery, billingPreview, billingSend } from "./billing.js";
+import { billingAction, billingArtifact, billingDelivery, billingPreview, billingSend, deleteInvoice } from "./billing.js";
 import { clientAction, clientFromCompany } from "./clients.js";
 import { clientAccount } from "./clientAccounts.js";
 import { agreementDeliveries, invoiceDeliveries } from "./deliveries.js";
@@ -229,6 +229,7 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     if (n === 3 && method === "POST" && (third === "send" || third === "send-receipt")) {
       return ok(await billingSend(deps.mail, user, second, third, body, r.origin));
     }
+    if (n === 3 && method === "POST" && third === "delete") return ok(await deleteInvoice(store, user, second));
     if (n === 3 && method === "POST" && BILLING_ACTIONS.includes(third)) {
       return ok(await billingAction(store, user, "POST", second, third, body));
     }

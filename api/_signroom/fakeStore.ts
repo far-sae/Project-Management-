@@ -275,6 +275,17 @@ export function fakeStore(): Store & {
       const i = invoices.get(id);
       return i && i.workspaceId === workspaceId ? assemble(i) : null;
     },
+    async deleteInvoice(workspaceId, id) {
+      const inv = invoices.get(id);
+      if (!inv || inv.workspaceId !== workspaceId) return false;
+      invoices.delete(id);
+      for (const [k, x] of [...payments]) if (x.invoiceId === id) payments.delete(k);
+      for (let n = events.length - 1; n >= 0; n -= 1) if (events[n].invoiceId === id) events.splice(n, 1);
+      for (const [k, t] of [...tokens]) if (t.invoiceId === id) tokens.delete(k);
+      for (const [k, s] of [...sessions]) if (s.invoiceId === id) sessions.delete(k);
+      for (const [k, d] of [...deliveries]) if (d.invoiceId === id) deliveries.delete(k);
+      return true;
+    },
     async takeInvoiceNumber(workspaceId, year) {
       if (!workspaces.has(workspaceId)) throw new StoreError("Workspace not found.");
       const n = seq.get(workspaceId) ?? 1;

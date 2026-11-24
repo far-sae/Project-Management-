@@ -22,6 +22,7 @@ vi.setConfig({ testTimeout: 20_000 });
 
 vi.mock('@/hooks/useSignroom', () => ({ useSignroom: () => sr.state }));
 vi.mock('sonner', () => ({ toast }));
+vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ isAdmin: true }) }));
 vi.mock('@/hooks/useCrmHub', () => ({ useCrmCompanies: () => crmList([]), useCrmDeals: () => crmList([]) }));
 vi.mock('@/context/CrmCurrencyContext', () => ({ useCrmCurrency: () => crmCurrency }));
 

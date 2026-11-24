@@ -157,6 +157,8 @@ export interface Store {
   /** Newest first. */
   listInvoices(workspaceId: string, filter?: ListFilter): Promise<Invoice[]>;
   getInvoice(workspaceId: string, id: string): Promise<Invoice | null>;
+  /** Removes an invoice for good. Its payments, history, private links and sending history go with it. False when it was not there. */
+  deleteInvoice(workspaceId: string, id: string): Promise<boolean>;
   takeInvoiceNumber(workspaceId: string, year: number): Promise<string>;
   insertInvoice(i: Omit<Invoice, "id" | "payments" | "events">, event: InvoiceEvent): Promise<Invoice>;
   /** null = the revision moved (or the invoice is no longer a draft). The deal link (dealId) is never changed. */
@@ -1595,6 +1597,13 @@ export function supabaseStore(sb: SupabaseClient): Store {
     async listRefusedCompletionMail(limit) {
       const r = await sb.rpc("sr_completion_mail_refused", { p_limit: limit });
       return ((must(r) as unknown as Row[] | null) ?? []).map(jobFrom);
+    },
+
+    async deleteInvoice(workspaceId, id) {
+      // The payments, events, links and sending history of the invoice go with it: the database removes them.
+      const r = await sb.from("sr_invoices").delete().eq("workspace_id", workspaceId).eq("id", id).select("id");
+      if (r.error) throw new StoreError(r.error.message);
+      return ((r.data as Row[] | null) ?? []).length > 0;
     },
 
     async deleteAgreement(workspaceId, id) {

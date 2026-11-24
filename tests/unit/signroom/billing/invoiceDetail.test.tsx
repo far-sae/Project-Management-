@@ -16,6 +16,7 @@ const crm = vi.hoisted(() => ({ deals: [] as unknown[], currency: 'GBP' }));
 
 vi.mock('@/hooks/useSignroom', () => ({ useSignroom: () => sr.state }));
 vi.mock('sonner', () => ({ toast }));
+vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ isAdmin: true }) }));
 vi.mock('@/hooks/useCrmHub', () => ({ useCrmCompanies: () => crmList([]), useCrmDeals: () => crmList(crm.deals) }));
 vi.mock('@/context/CrmCurrencyContext', () => ({ useCrmCurrency: () => ({ ...crmCurrency, code: crm.currency }) }));
 
@@ -568,5 +569,43 @@ describe('the receipt, said plainly', () => {
     press('Create a receipt');
     expect(within(screen.getByRole('dialog')).getByRole('heading', { name: 'Create a receipt' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Record payment and create receipt' })).toBeTruthy();
+  });
+});
+
+describe('Deleting an invoice from its page', () => {
+  const openWithList = async () => {
+    render(
+      <MemoryRouter initialEntries={['/crm/invoices/i1']}>
+        <Routes>
+          <Route path="/crm/invoices/:id" element={<InvoiceDetailPage />} />
+          <Route path="/crm/invoices" element={<p>The list of invoices</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('heading', { level: 1 });
+  };
+
+  it('deletes a draft and goes back to the list', async () => {
+    serve(invoice(), { delete: () => invoice() });
+    await openWithList();
+    press('Delete');
+    const ask = await screen.findByRole('alertdialog');
+    fireEvent.click(within(ask).getByRole('button', { name: /^Delete INV-/ }));
+    await waitFor(() => expect(sr.call).toHaveBeenCalledWith('billing/i1/delete', {}));
+    expect(await screen.findByText('The list of invoices')).toBeTruthy();
+    expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/was deleted\.$/));
+  });
+
+  it('asks for a tick before an issued invoice is deleted', async () => {
+    serve(issued(), { delete: () => issued() });
+    await openWithList();
+    press('Delete');
+    const ask = await screen.findByRole('alertdialog');
+    const confirm = within(ask).getByRole('button', { name: /^Delete INV-/ }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(sr.call).not.toHaveBeenCalledWith('billing/i1/delete', {});
+    fireEvent.click(within(ask).getByRole('checkbox'));
+    fireEvent.click(confirm);
+    expect(await screen.findByText('The list of invoices')).toBeTruthy();
   });
 });

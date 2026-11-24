@@ -168,6 +168,10 @@ describe('the database file', () => {
 
   it('never deletes agreements or invoices, and never leaves a recording behind', () => {
     expect(sql).toContain('legal records');
+    // It says how many of each are in the way, so the person knows what to delete first.
+    expect(sql).toMatch(/v_count::text/);
+    expect(sql).toContain("'invoice'");
+    expect(sql).toContain("'agreement'");
     expect(sql).toContain('recording_sid is not null');
     expect(sql).toContain("not like 'sr\\_%'");
   });
