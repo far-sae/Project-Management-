@@ -24,12 +24,12 @@ import { AiError } from "../../_automation/ai.js";
 import { monthStart } from "../../_automation/cost.js";
 import { isPlatform, startingOptions, type Platform, type PlatformOptions, type PostMedia } from "../shared/platforms.js";
 import {
-  CREDIT_CENTS, jobCredits, score,
+  CHANGE_MAX, CREDIT_CENTS, SPOKEN_MAX, jobCredits, median, score, siteOf, verdictOf,
   type AutopilotSettings, type MediaFormat, type NoteKind, type PostIdea,
 } from "../shared/autopilot.js";
 import { FeedError, readFeed, type FeedItem } from "./feed.js";
 import { MakerError, fetchMade, imageRequest, makerOn, startMaking, taskState, videoPrompt, videoRequest } from "./runway.js";
-import { STUDY_NEEDS, STUDY_READS, findingsOf, plan as askPlan, study as askStudy, takes, trends as askTrends, usable, type StudyPost } from "./brain.js";
+import { STUDY_NEEDS, STUDY_READS, findingsOf, howItDid, improve as askImprove, plan as askPlan, readSite, study as askStudy, takes, trends as askTrends, usable, type StudyPost } from "./brain.js";
 
 export const HOUR_MS = 3_600_000;
 export const DAY_MS = 24 * HOUR_MS;
@@ -40,6 +40,13 @@ export const READ_EVERY_MS = 6 * HOUR_MS;
 export const RETRY_MS = 6 * HOUR_MS;
 /** A study that found too few posts looks again after this long. */
 export const STUDY_AGAIN_MS = 2 * DAY_MS;
+/** The business's website is read again after this long: what it sells and offers changes. */
+export const SITE_EVERY_MS = 30 * DAY_MS;
+/** A post is looked at for a second try once it has been out this long, and not any more after this long. */
+export const SECOND_TRY_AFTER_MS = 2 * DAY_MS;
+export const SECOND_TRY_UNTIL_MS = 10 * DAY_MS;
+/** How many posts of the pages are looked through for a weak one. */
+export const REVIEW_READS = 200;
 /** How many pictures or videos one run starts, and how many it looks at. */
 export const START_PER_RUN = 3;
 export const WATCH_PER_RUN = 10;
@@ -60,6 +67,21 @@ export type PilotRow = {
   studiedAt: string | null;
   trendsAt: string | null;
   plannedAt: string | null;
+  reviewedAt: string | null;
+  /** What the business's website says, and when it was last read. */
+  siteNotes: string;
+  siteAt: string | null;
+};
+
+/** The posts of one idea (one for each account). */
+export type PilotGroup = {
+  groupId: string;
+  campaignId: string | null;
+  title: string;
+  body: string;
+  idea: PostIdea | null;
+  scheduledAt: string | null;
+  posts: Array<{ id: string; accountId: string | null; status: string }>;
 };
 
 export type PilotAccount = { id: string; provider: string; name: string; status: string; serviceId: string | null };
@@ -69,7 +91,7 @@ export type JobRow = { id: string; groupId: string; kind: MediaFormat; prompt: s
 export type NewPost = {
   accountId: string;
   groupId: string;
-  campaignId: string;
+  campaignId: string | null;
   title: string;
   body: string;
   options: unknown;
@@ -78,15 +100,26 @@ export type NewPost = {
 };
 
 export type NewNote = { kind: NoteKind; title: string; body: string; data?: Record<string, unknown>; costMicroUsd?: number };
-export type Stamp = "collected_at" | "studied_at" | "trends_at" | "planned_at";
+export type Stamp = "collected_at" | "studied_at" | "trends_at" | "planned_at" | "reviewed_at" | "site_at";
 
 export type PilotStore = {
+  /** One workspace's row, whatever its state. Null when the autopilot was never set up there. */
+  get(workspaceId: string): Promise<PilotRow | null>;
+  /** The autopilot's posts of one idea, found by the idea or by one of its posts. */
+  group(workspaceId: string, by: { groupId: string } | { contentId: string }): Promise<PilotGroup | null>;
+  /** Gives up the pictures or videos still waiting or being made for one idea. */
+  cancelJobs(groupId: string): Promise<void>;
+  /** Puts the posts of one idea that are not out yet back to "waiting for their file", with the changed idea. */
+  resetGroup(workspaceId: string, groupId: string, idea: PostIdea): Promise<void>;
+  /** Remembers on the posts of one idea that a second try was made. */
+  markRetried(workspaceId: string, groupId: string): Promise<void>;
   /** The workspaces whose autopilot is on (or just this one), the one that waited longest first, each now marked busy. */
   claim(limit: number, now: Date, workspaceId?: string): Promise<PilotRow[]>;
   /** Lets a workspace go. `workedAt` is null when the run did not get to it: it then keeps its place at the front. */
   release(workspaceId: string, workedAt: Date | null): Promise<void>;
   stamp(workspaceId: string, what: Stamp, at: Date): Promise<void>;
   savePlaybook(workspaceId: string, playbook: string): Promise<void>;
+  saveSiteNotes(workspaceId: string, notes: string): Promise<void>;
   accounts(workspaceId: string): Promise<PilotAccount[]>;
   /** Keeps the posts of one account and their numbers of today. */
   saveFeed(row: PilotRow, accountId: string, platform: string, items: FeedItem[], now: Date): Promise<void>;
@@ -156,6 +189,28 @@ export function localTime(now: number, days: number, hhmm: string, timeZone: str
   // Around a clock change the first guess can be an hour out: one more look settles it.
   utc = wall - offsetAt(utc);
   return new Date(utc);
+}
+
+/** The weekday (0 is Sunday) of the day `days` after today, in the given time zone. */
+export function weekdayIn(now: number, days: number, timeZone: string): number {
+  const p = partsIn(safeZone(timeZone), now);
+  return new Date(Date.UTC(p.y, p.m - 1, p.d + days)).getUTCDay();
+}
+
+const minutes = (hhmm: string): number => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+/**
+ * A planned day and time, moved to where the owner posts: the first allowed
+ * weekday on or after the planned day, and the allowed time nearest to the
+ * planned one. With nothing set by the owner it comes back as it was.
+ */
+export function fitSchedule(day: number, time: string, s: Pick<AutopilotSettings, "postDays" | "postTimes" | "timezone">, now: number): { day: number; time: string } {
+  let fitDay = day;
+  if (s.postDays.length > 0 && s.postDays.length < 7) {
+    for (let step = 0; step < 7 && !s.postDays.includes(weekdayIn(now, fitDay, s.timezone)); step++) fitDay += 1;
+  }
+  const fitTime = s.postTimes.length === 0 ? time : s.postTimes.reduce((best, t) => (Math.abs(minutes(t) - minutes(time)) < Math.abs(minutes(best) - minutes(time)) ? t : best));
+  return { day: fitDay, time: fitTime };
 }
 
 const todayWords = (now: number, timeZone: string): string =>
@@ -250,6 +305,95 @@ async function media(store: PilotStore, d: EngineDeps, row: PilotRow, spent: { c
   }
 }
 
+/** Looks at the pictures and videos of one workspace now (after one was asked for again). */
+export async function runMedia(store: PilotStore, d: EngineDeps, row: PilotRow): Promise<string[]> {
+  const did: string[] = [];
+  await media(store, d, row, { cents: await store.spentCents(row.workspaceId, monthStart(new Date(d.now()))) }, did);
+  return did;
+}
+
+const NOT_OUT_YET = ["draft", "in_review", "scheduled"];
+const cut = (value: string, max: number): string => (value.length > max ? value.slice(0, max) : value);
+
+/**
+ * Makes the picture or video of one idea again. `change` says what should be
+ * different; `spoken` (videos) replaces the voice's words, "" for no voice.
+ * The posts go back to waiting for their file, and come back to be approved
+ * (or scheduled) when it is there. "gone": nothing of the idea can still be changed.
+ */
+export async function remake(store: PilotStore, d: EngineDeps, row: PilotRow, groupId: string, input: { change: string; spoken?: string }): Promise<"ok" | "gone"> {
+  const group = await store.group(row.workspaceId, { groupId });
+  const idea = group?.idea;
+  if (!group || !idea?.format || !group.posts.some((p) => NOT_OUT_YET.includes(p.status))) return "gone";
+  const change = cut(input.change.trim(), CHANGE_MAX);
+  // Only the latest wish is kept: a row of wishes on top of each other confuses the maker.
+  const base = idea.visual.split(" Change: ")[0];
+  const visual = change ? `${cut(base, 1500 - change.length - 9)} Change: ${change}` : base;
+  const spoken = idea.format === "video" ? (input.spoken === undefined ? idea.spoken : cut(input.spoken.trim(), SPOKEN_MAX)) : "";
+  await store.cancelJobs(groupId);
+  await store.resetGroup(row.workspaceId, groupId, { ...idea, visual, spoken });
+  await store.createJob(row, { groupId, kind: idea.format, prompt: idea.format === "video" ? videoPrompt(visual, spoken) : visual, withVoice: idea.format === "video" && spoken !== "" });
+  return "ok";
+}
+
+/** The clock time of a moment in a time zone, as "HH:MM". */
+function clockIn(iso: string | null, timeZone: string): string {
+  if (!iso) return "18:00";
+  const p = partsIn(safeZone(timeZone), new Date(iso).getTime());
+  return `${String(p.h).padStart(2, "0")}:${String(p.min).padStart(2, "0")}`;
+}
+
+/**
+ * A second try: a better version of one of the autopilot's posts that is out,
+ * posted as a new post tomorrow at the same hour, to the same accounts. Once
+ * for each post. "gone": no such post, or no account left to post it to.
+ */
+export async function improvePost(store: PilotStore, d: EngineDeps, row: PilotRow, contentId: string): Promise<"ok" | "done before" | "gone"> {
+  const s = row.settings;
+  const group = await store.group(row.workspaceId, { contentId });
+  const idea = group?.idea;
+  if (!group || !idea?.format) return "gone";
+  if (idea.retried) return "done before";
+  const accounts = chosenAccounts(s, await store.accounts(row.workspaceId))
+    .filter((a) => group.posts.some((p) => p.accountId === a.id) && takes(a.provider, idea.format) && (a.provider !== "tiktok" || s.tiktokPrivacy !== ""));
+  if (accounts.length === 0) return "gone";
+
+  const feed = await store.feed(row.workspaceId, REVIEW_READS);
+  const record = feed.find((p) => p.contentId !== null && group.posts.some((g) => g.id === p.contentId)) ?? null;
+  const usual = record ? median(feed.filter((p) => p.accountId === record.accountId && p.id !== record.id).map(score)) : 0;
+  const meter = metered(d.claude);
+  const answer = await askImprove(meter.ai, { workspaceId: row.workspaceId, feature: "step" }, { settings: s, playbook: row.playbook, title: group.title, caption: group.body, idea, did: howItDid(record, usual) });
+  if (!answer.caption || !answer.visual) return "gone";
+
+  const groupId = d.uuid();
+  const slot = fitSchedule(1, clockIn(group.scheduledAt, s.timezone), s, d.now());
+  const when = localTime(d.now(), slot.day, slot.time, s.timezone).toISOString();
+  const shared = { title: answer.title, text: answer.caption, tags: answer.tags };
+  const next: PostIdea = { format: idea.format, hook: answer.hook, why: answer.why, experiment: `Second try: ${answer.change}`, tags: answer.tags, visual: answer.visual, spoken: answer.spoken, improves: group.title };
+  await store.createPosts(row, accounts.map((a) => ({
+    accountId: a.id, groupId, campaignId: group.campaignId, title: answer.title, body: answer.caption, options: optionsFor(a.provider, shared, s), scheduledAt: when, idea: next,
+  })));
+  await store.createJob(row, { groupId, kind: idea.format, prompt: idea.format === "video" ? videoPrompt(answer.visual, answer.spoken) : answer.visual, withVoice: idea.format === "video" && answer.spoken !== "" });
+  await store.markRetried(row.workspaceId, group.groupId);
+  await store.addNote(row, { kind: "plan", title: `A second try for “${group.title}”`.slice(0, 200), body: `${answer.why} This time: ${answer.change}.`, costMicroUsd: meter.cost(), data: { improves: contentId } });
+  return "ok";
+}
+
+/** Once a day: is one of the autopilot's posts doing clearly worse than the usual post of its page? Then it gets a second try. */
+async function reviewPosts(store: PilotStore, d: EngineDeps, row: PilotRow, did: string[]): Promise<void> {
+  // Written down first: whatever happens below, this is not done again at the next run.
+  await store.stamp(row.workspaceId, "reviewed_at", new Date(d.now()));
+  if (!row.settings.retryWeak) return;
+  const now = d.now();
+  const feed = await store.feed(row.workspaceId, REVIEW_READS);
+  const weak = feed.find((p) => {
+    if (!p.contentId || !p.idea || p.idea.retried || p.idea.improves || !p.postedAt) return false;
+    const age = now - new Date(p.postedAt).getTime();
+    return age >= SECOND_TRY_AFTER_MS && age <= SECOND_TRY_UNTIL_MS && verdictOf(p, feed.filter((o) => o.accountId === p.accountId), now) === "weaker";
+  });
+  if (weak?.contentId && (await improvePost(store, d, row, weak.contentId)) === "ok") did.push("made a better version of a weak post");
+}
+
 // ── Reading the pages ────────────────────────────────────────────────────
 
 async function read(store: PilotStore, d: EngineDeps, row: PilotRow, did: string[]): Promise<void> {
@@ -272,6 +416,24 @@ async function read(store: PilotStore, d: EngineDeps, row: PilotRow, did: string
 }
 
 // ── Thinking ─────────────────────────────────────────────────────────────
+
+/** Reads the business's own website and keeps what it says, for every plan after it. */
+async function learnSite(store: PilotStore, d: EngineDeps, row: PilotRow, did: string[]): Promise<void> {
+  // Written down first: a site that cannot be read is not tried again at every run.
+  await store.stamp(row.workspaceId, "site_at", new Date(d.now()));
+  const site = siteOf(row.settings.website);
+  if (!site) return;
+  const meter = metered(d.claude);
+  const notes = await readSite(meter.ai, { workspaceId: row.workspaceId, feature: "web" }, site);
+  if (!notes) {
+    await problem(store, row, "Your website could not be read", `The autopilot could not read ${site.domain}. Check the address in the autopilot's settings. Until then it works from what you wrote about your business.`, d.now());
+    return;
+  }
+  await store.saveSiteNotes(row.workspaceId, notes);
+  row.siteNotes = notes;
+  await store.addNote(row, { kind: "study", title: "Read your website", body: notes, costMicroUsd: meter.cost(), data: { website: site.domain } });
+  did.push("read your website");
+}
 
 async function lookUpTrends(store: PilotStore, d: EngineDeps, row: PilotRow, did: string[]): Promise<void> {
   const meter = metered(d.claude);
@@ -324,7 +486,7 @@ async function planWeek(store: PilotStore, d: EngineDeps, row: PilotRow, did: st
   const trendsNote = await store.latestNote(row.workspaceId, "trends");
   const recent = await store.recentTitles(row.workspaceId, new Date(d.now() - 30 * DAY_MS).toISOString());
   const answer = await askPlan(meter.ai, { workspaceId: row.workspaceId, feature: "step" }, {
-    settings: s, playbook: row.playbook, trends: trendsNote?.body ?? "", platforms, recent: recent.slice(0, 40), today: todayWords(d.now(), s.timezone),
+    settings: s, playbook: row.playbook, trends: trendsNote?.body ?? "", site: row.siteNotes, platforms, recent: recent.slice(0, 40), today: todayWords(d.now(), s.timezone),
   });
   const posts = answer.posts.map((p) => usable(p, s, platforms)).filter((p): p is NonNullable<typeof p> => p !== null).slice(0, s.postsPerWeek);
   if (posts.length === 0) {
@@ -336,7 +498,8 @@ async function planWeek(store: PilotStore, d: EngineDeps, row: PilotRow, did: st
   const campaignId = await store.createCampaign(row, answer.campaignName.trim().slice(0, 120) || `Week of ${todayWords(d.now(), s.timezone)}`, answer.campaignGoal.trim().slice(0, 500));
   for (const post of posts) {
     const groupId = d.uuid();
-    const when = localTime(d.now(), post.day, post.time, s.timezone).toISOString();
+    const slot = fitSchedule(post.day, post.time, s, d.now());
+    const when = localTime(d.now(), slot.day, slot.time, s.timezone).toISOString();
     const shared = { title: post.title, text: post.caption, tags: post.tags };
     const rows: NewPost[] = accounts.filter((a) => post.platforms.includes(a.provider)).map((a) => ({
       accountId: a.id, groupId, campaignId, title: post.title, body: post.caption, options: optionsFor(a.provider, shared, s), scheduledAt: when, idea: post.idea,
@@ -356,9 +519,12 @@ async function planWeek(store: PilotStore, d: EngineDeps, row: PilotRow, did: st
 
 /** Which piece of thinking is due, in the order a new workspace needs them. */
 export function nextThinking(row: PilotRow, now: number): Stamp | null {
+  // The website first: everything after it is written from what it says.
+  if (row.settings.website.trim() && due(row.siteAt, SITE_EVERY_MS, now)) return "site_at";
   if (due(row.trendsAt, WEEK_MS, now)) return "trends_at";
   if (due(row.studiedAt, WEEK_MS, now)) return "studied_at";
   if (due(row.plannedAt, WEEK_MS, now)) return "planned_at";
+  if (due(row.reviewedAt, DAY_MS, now)) return "reviewed_at";
   return null;
 }
 
@@ -367,6 +533,8 @@ export const STEP_WORDS: Record<Stamp, string> = {
   trends_at: "look up the latest trends",
   studied_at: "study your pages",
   planned_at: "plan the week",
+  reviewed_at: "look for a post that needs a second try",
+  site_at: "read your website",
 };
 
 /** One run for one workspace. Returns what it did, in words. */
@@ -385,13 +553,16 @@ export async function runWorkspace(store: PilotStore, d: EngineDeps, row: PilotR
     return did;
   }
   try {
-    if (step === "trends_at") await lookUpTrends(store, d, row, did);
+    if (step === "site_at") await learnSite(store, d, row, did);
+    else if (step === "trends_at") await lookUpTrends(store, d, row, did);
     else if (step === "studied_at") await studyPages(store, d, row, did);
-    else await planWeek(store, d, row, did);
+    else if (step === "planned_at") await planWeek(store, d, row, did);
+    else await reviewPosts(store, d, row, did);
   } catch (e) {
     if (!(e instanceof AiError)) throw e;
     // Not at the next run again: a call that fails every five minutes costs money and teaches nothing.
-    await store.stamp(row.workspaceId, step, dueAgainIn(RETRY_MS, now));
+    // (The daily look at the posts has written its time down already.)
+    if (step !== "reviewed_at" && step !== "site_at") await store.stamp(row.workspaceId, step, dueAgainIn(RETRY_MS, now));
     if (step === "planned_at") await problem(store, row, "The week could not be planned", "The autopilot could not make a plan this time. It tries again in a few hours.", now);
   }
   return did;

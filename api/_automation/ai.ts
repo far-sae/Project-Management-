@@ -22,6 +22,12 @@ import type { AutoStore, UsageFeature } from "./store.js";
 export const AI_MODEL = "claude-opus-5-5";
 export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 export const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 3 } as const;
+/**
+ * Reading pages whose address is in the question. Only pages of the named
+ * sites are fetched, and a long page is cut: one look-up reads a few pages,
+ * not a whole site.
+ */
+export const webFetchTool = (domains: string[]) => ({ type: "web_fetch_20260209", name: "web_fetch", max_uses: 6, allowed_domains: domains, max_content_tokens: 30_000 }) as const;
 /** How often a paused web look-up is sent back to be continued. */
 export const MAX_RESUMES = 3;
 
@@ -147,7 +153,11 @@ export async function askStructured<S extends z.ZodType>(deps: AiDeps, req: Stru
   return parsed.data as z.infer<S>;
 }
 
-export type LookUpRequest = { tag: AiTag; system: string; question: string; maxTokens: number; deadlineMs: number };
+export type LookUpRequest = {
+  tag: AiTag; system: string; question: string; maxTokens: number; deadlineMs: number;
+  /** Sites whose pages may also be read in full (their address must be in the question). */
+  readSites?: string[];
+};
 
 /**
  * A web look-up: Claude searches public pages and answers in plain text. A
@@ -173,7 +183,7 @@ export async function lookUpWeb(deps: AiDeps, req: LookUpRequest): Promise<strin
           betas: [FALLBACK_BETA],
           fallbacks: "default",
           system: req.system,
-          tools: [WEB_SEARCH_TOOL],
+          tools: req.readSites?.length ? [WEB_SEARCH_TOOL, webFetchTool(req.readSites)] : [WEB_SEARCH_TOOL],
           messages,
         },
         { signal },

@@ -34,14 +34,66 @@ export type AutopilotSettings = {
   /** The most it may spend in a calendar month, in US cents. */
   budgetCents: number;
   timezone: string;
+  /** When one of its posts does weakly, it posts a better version, once. */
+  retryWeak: boolean;
+  /** The business's own website: the autopilot reads it to learn the business. "" for none. */
+  website: string;
+  /** The weekdays it may post on (0 is Sunday). Empty: any day. */
+  postDays: number[];
+  /** The times it may post at, as "HH:MM". Empty: it chooses. */
+  postTimes: string[];
 };
 
 export const DEFAULT_SETTINGS: AutopilotSettings = {
   mode: "off", brief: "", audience: "", tone: "", language: "English", postsPerWeek: 4,
-  formats: ["image", "video"], voice: "mixed", accountIds: [], tiktokPrivacy: "", budgetCents: 3000, timezone: "Europe/London",
+  formats: ["image", "video"], voice: "mixed", accountIds: [], tiktokPrivacy: "", budgetCents: 3000, timezone: "Europe/London", retryWeak: true,
+  website: "", postDays: [], postTimes: [],
 };
 
-export const SETTING_LIMITS = { brief: 2000, audience: 600, tone: 300, language: 40, postsMin: 1, postsMax: 14, budgetMax: 100000 } as const;
+export const WEEKDAY_NAME = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+/** The order a week is shown in: Monday first. */
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
+export const POST_TIMES_MAX = 6;
+export const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** The weekdays as the app keeps them: whole numbers 0 to 6, each once, in order. */
+export const cleanDays = (days: unknown): number[] =>
+  Array.isArray(days) ? [...new Set(days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b) : [];
+
+/** "9:5" is not a time; "09:05" is. Each once, in order, six at most. */
+export const cleanTimes = (times: unknown): string[] =>
+  Array.isArray(times) ? [...new Set(times.filter((t): t is string => typeof t === "string" && TIME.test(t)))].sort().slice(0, POST_TIMES_MAX) : [];
+
+/** "18:00, 9.30 , 12:15" as the person typed it → ["09:30", "12:15", "18:00"]. Anything that is not a time is left out. */
+export function readTimes(raw: string): string[] {
+  const out: string[] = [];
+  for (const part of raw.split(/[,;\n]/)) {
+    const m = part.trim().match(/^(\d{1,2})[:.](\d{2})$/);
+    if (m) out.push(`${m[1].padStart(2, "0")}:${m[2]}`);
+  }
+  return cleanTimes(out);
+}
+
+export type Site = { url: string; domain: string };
+
+/**
+ * A public website address as the autopilot may read it, or null. "harbourdental.co.uk"
+ * becomes "https://harbourdental.co.uk/". An address of the inside of a network
+ * (localhost, 192.168..., a bare name) is not a public website.
+ */
+export function siteOf(raw: string): Site | null {
+  const typed = raw.trim();
+  if (!typed || typed.length > 300 || /\s/.test(typed)) return null;
+  let url: URL;
+  try { url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `https://${typed}`); } catch { return null; }
+  const host = url.hostname.toLowerCase();
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username || url.password || url.port) return null;
+  if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(host) || /\.(local|internal|lan|home|test|invalid|localhost)$/.test(host)) return null;
+  return { url: `https://${host}${url.pathname === "/" ? "/" : url.pathname}`, domain: host.replace(/^www\./, "") };
+}
+
+export const SETTING_LIMITS = { brief: 2000, audience: 600, tone: 300, language: 40, postsMin: 1, postsMax: 14, budgetMax: 100000, website: 300, siteNotes: 4000 } as const;
 
 /** The least the autopilot needs to know before it can be switched on. */
 export const BRIEF_MIN = 20;
@@ -52,6 +104,7 @@ export function settingProblems(s: AutopilotSettings): string[] {
   if (s.mode === "off") return problems;
   if (s.brief.trim().length < BRIEF_MIN) problems.push("Say in a sentence or two what your business does. The autopilot writes from it.");
   if (s.formats.length === 0) problems.push("Choose pictures, videos or both.");
+  if (s.website.trim() && !siteOf(s.website)) problems.push("The website address does not look right. It should look like yourbusiness.com.");
   return problems;
 }
 
@@ -77,7 +130,15 @@ export type PostIdea = {
   visual: string;
   /** The words spoken in a video. "" for none. */
   spoken: string;
+  /** A second try was made for this post already. */
+  retried?: boolean;
+  /** This post is the second try of the post with this title. */
+  improves?: string;
 };
+
+/** How long a text may be that says what should be different in a picture or video made again. */
+export const CHANGE_MAX = 600;
+export const SPOKEN_MAX = 220;
 
 export type JobStatus = "waiting" | "running" | "done" | "failed";
 
@@ -148,6 +209,9 @@ export const jobCredits = (kind: MediaFormat, withVoice: boolean): number =>
 
 /** What the screen is told about the set-up, without any setting's name or value. */
 export type AutopilotReady = { writing: boolean; media: boolean; posting: boolean };
+
+/** What the autopilot proposes after reading the business's website. */
+export type SiteReading = { brief: string; audience: string; tone: string; language: string; notes: string };
 
 /** What one run did, for the "Run now" button. */
 export type RunReport = { did: string[]; next: string };

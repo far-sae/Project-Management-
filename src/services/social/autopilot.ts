@@ -8,11 +8,13 @@
  */
 import { supabase } from '@/services/supabase/config';
 import {
-  CREDIT_CENTS, DEFAULT_SETTINGS, SETTING_LIMITS,
+  CREDIT_CENTS, DEFAULT_SETTINGS, SETTING_LIMITS, cleanDays, cleanTimes,
   type AutopilotMode, type AutopilotNote, type AutopilotReady, type AutopilotSettings, type FeedPost, type JobStatus,
-  type MediaFormat, type NoteKind, type RunReport, type VoiceChoice,
+  type MediaFormat, type NoteKind, type RunReport, type SiteReading, type VoiceChoice,
 } from '../../../api/_social/shared/autopilot';
-import type { TikTokPrivacy } from '../../../api/_social/shared/platforms';
+import { isPlatform, type PostMedia, type TikTokPrivacy } from '../../../api/_social/shared/platforms';
+import { retextOptions } from '@/lib/socialCompose';
+import type { SocialAccount, SocialContent } from '@/types/social';
 
 type Row = Record<string, unknown>;
 
@@ -39,6 +41,10 @@ export function settingsOfRow(r: Row | null): AutopilotSettings {
     tiktokPrivacy: PRIVACY.includes(r.tiktok_privacy as TikTokPrivacy) ? (r.tiktok_privacy as TikTokPrivacy) : '',
     budgetCents: Math.round(num(r.budget_cents)),
     timezone: text(r.timezone) || browserZone(),
+    retryWeak: r.retry_weak !== false,
+    website: text(r.website),
+    postDays: cleanDays(r.post_days),
+    postTimes: cleanTimes(r.post_times),
   };
 }
 
@@ -54,6 +60,8 @@ export type AutopilotData = {
   saved: boolean;
   settings: AutopilotSettings;
   playbook: string;
+  /** What the autopilot read on the business's website. */
+  siteNotes: string;
   notes: AutopilotNote[];
   feed: FeedPost[];
   jobs: AutopilotJobs;
@@ -84,7 +92,8 @@ export async function loadAutopilot(workspaceId: string, now: Date = new Date())
   for (const j of (jobs.data ?? []) as Row[]) {
     const status = text(j.status) as JobStatus;
     if (status in count) count[status] += 1;
-    if ((status === 'running' || status === 'done') && text(j.updated_at) >= since) credits += num(j.credits);
+    // Every job that has a cost: being made, made, or replaced while it was being made.
+    if (text(j.updated_at) >= since) credits += num(j.credits);
   }
   const micro = ((costs.data ?? []) as Row[]).reduce((sum, n) => sum + num(n.cost_micro_usd), 0);
   const row = (settings.data as Row | null) ?? null;
@@ -92,6 +101,7 @@ export async function loadAutopilot(workspaceId: string, now: Date = new Date())
     saved: row !== null,
     settings: settingsOfRow(row),
     playbook: text(row?.playbook),
+    siteNotes: text(row?.site_notes),
     notes: ((notes.data ?? []) as Row[]).map((n): AutopilotNote => ({
       id: text(n.id), kind: text(n.kind) as NoteKind, title: text(n.title), body: text(n.body),
       data: n.data && typeof n.data === 'object' && !Array.isArray(n.data) ? (n.data as Record<string, unknown>) : {}, createdAt: text(n.created_at),
@@ -107,8 +117,11 @@ export async function loadAutopilot(workspaceId: string, now: Date = new Date())
 }
 
 /** Saves the switch and the brief. Only the owner and admins are let through by the database. */
-export async function saveAutopilot(organizationId: string, workspaceId: string, s: AutopilotSettings, userId?: string): Promise<void> {
+export async function saveAutopilot(organizationId: string, workspaceId: string, s: AutopilotSettings, userId?: string, read?: { siteNotes: string }): Promise<void> {
   const { error } = await supabase.from('social_autopilot').upsert({
+    retry_weak: s.retryWeak, website: s.website.trim().slice(0, SETTING_LIMITS.website), post_days: cleanDays(s.postDays), post_times: cleanTimes(s.postTimes),
+    // The website was just read for the form: what it said is kept, so the autopilot does not read it a second time.
+    ...(read ? { site_notes: read.siteNotes.slice(0, SETTING_LIMITS.siteNotes), site_at: new Date().toISOString() } : {}),
     workspace_id: workspaceId, organization_id: organizationId, mode: s.mode,
     brief: s.brief.trim().slice(0, SETTING_LIMITS.brief), audience: s.audience.trim().slice(0, SETTING_LIMITS.audience),
     tone: s.tone.trim().slice(0, SETTING_LIMITS.tone), language: s.language.trim().slice(0, SETTING_LIMITS.language) || DEFAULT_SETTINGS.language,
@@ -123,7 +136,7 @@ export async function saveAutopilot(organizationId: string, workspaceId: string,
   }
 }
 
-async function call<T>(route: 'ready' | 'run', body?: unknown): Promise<T> {
+async function call<T>(route: 'ready' | 'run' | 'remake' | 'improve' | 'learn', body?: unknown): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error(SIGNED_OUT_MESSAGE);
@@ -154,5 +167,54 @@ export async function approveAutopilotPosts(posts: Array<{ id: string; scheduled
       .update({ status: 'scheduled', scheduled_at: when.toISOString(), approved_by: userId ?? null, approved_at: now.toISOString(), last_error: null })
       .eq('id', post.id).eq('status', 'in_review');
     if (error) throw new Error('The post could not be approved. Please try again.');
+  }
+}
+
+/** Reads the business's website and proposes what to fill in. It takes up to two minutes. */
+export const learnFromWebsite = (workspaceId: string, website: string): Promise<SiteReading> => call<SiteReading>('learn', { workspaceId, website });
+
+/** Has the picture or video of one idea made again. `spoken` (videos): the voice's words, "" for no voice. */
+export const remakeAutopilotMedia = async (workspaceId: string, groupId: string, change: string, spoken?: string): Promise<void> => {
+  await call<{ ok: boolean }>('remake', { workspaceId, groupId, change, ...(spoken === undefined ? {} : { spoken }) });
+};
+
+/** A second try for a post that is out: a better version, posted as a new post. */
+export const improveAutopilotPost = async (workspaceId: string, contentId: string): Promise<void> => {
+  await call<{ ok: boolean }>('improve', { workspaceId, contentId });
+};
+
+const STILL_OPEN = ['draft', 'in_review', 'scheduled'];
+
+export type PostEdit = { title: string; caption: string; tags: string[]; scheduledAt: Date | null };
+
+/**
+ * Changes the words and the time of the posts of one idea that are not out
+ * yet. Each account's own part (a YouTube title, a caption with hashtags) is
+ * written again from the new words.
+ */
+export async function saveAutopilotText(posts: SocialContent[], accounts: SocialAccount[], edit: PostEdit): Promise<void> {
+  const shared = { title: edit.title.trim(), text: edit.caption.trim(), tags: edit.tags };
+  for (const post of posts) {
+    const account = accounts.find((a) => a.id === post.accountId);
+    const options = account && isPlatform(account.provider) ? retextOptions(account.provider, post.options, shared) : post.options;
+    const { error } = await supabase.from('social_content').update({
+      title: shared.title.slice(0, 200) || post.title, body: shared.text, options,
+      ...(edit.scheduledAt ? { scheduled_at: edit.scheduledAt.toISOString() } : {}),
+      ...(post.idea ? { idea: { ...post.idea, tags: edit.tags } } : {}),
+    }).eq('id', post.id).in('status', STILL_OPEN);
+    if (error) throw new Error('The changes could not be saved. Please try again.');
+  }
+}
+
+/**
+ * Puts the person's own picture or video on the posts of one idea. A post
+ * that was still waiting for the autopilot's file now waits for a yes instead.
+ */
+export async function setAutopilotMedia(posts: SocialContent[], media: PostMedia): Promise<void> {
+  for (const post of posts) {
+    const { error } = await supabase.from('social_content').update({
+      media: [media], media_urls: [media.url], last_error: null, ...(post.status === 'draft' ? { status: 'in_review' } : {}),
+    }).eq('id', post.id).in('status', STILL_OPEN);
+    if (error) throw new Error('The file could not be put on the post. Please try again.');
   }
 }

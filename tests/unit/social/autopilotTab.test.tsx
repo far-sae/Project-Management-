@@ -10,6 +10,7 @@ import { setInternalsVisible } from '@/lib/publicError';
 
 const h = vi.hoisted(() => ({
   load: vi.fn(), save: vi.fn(), ready: vi.fn(), run: vi.fn(), approve: vi.fn(),
+  remake: vi.fn(), improve: vi.fn(), learn: vi.fn(), saveText: vi.fn(), setMedia: vi.fn(), upload: vi.fn(),
   internals: { visible: false },
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -19,9 +20,13 @@ vi.mock('@/hooks/useInternalsVisible', () => ({ useInternalsVisible: () => h.int
 vi.mock('@/services/social/autopilot', async (original) => ({
   ...(await original<typeof import('@/services/social/autopilot')>()),
   loadAutopilot: h.load, saveAutopilot: h.save, autopilotReady: h.ready, runAutopilot: h.run, approveAutopilotPosts: h.approve,
+  remakeAutopilotMedia: h.remake, improveAutopilotPost: h.improve, learnFromWebsite: h.learn, saveAutopilotText: h.saveText, setAutopilotMedia: h.setMedia,
 }));
+vi.mock('@/services/supabase/social', () => ({ uploadSocialMedia: h.upload }));
 
 import { Autopilot, monthlyMediaCeiling } from '@/components/social/Autopilot';
+import { ownFileProblem, toLocalInput } from '@/components/social/AutopilotEdit';
+import { retextOptions } from '@/lib/socialCompose';
 
 const WS = '11111111-1111-4111-8111-111111111111';
 const ORG = '22222222-2222-4222-8222-222222222222';
@@ -41,7 +46,7 @@ const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => (
 
 const settings = (over: Partial<AutopilotSettings> = {}): AutopilotSettings => ({ ...DEFAULT_SETTINGS, ...over });
 const data = (over: Partial<AutopilotData> = {}): AutopilotData => ({
-  saved: true, settings: settings({ mode: 'ask', brief: 'Harbour Dental is a family dentist in Leeds.' }), playbook: '', notes: [], feed: [],
+  saved: true, settings: settings({ mode: 'ask', brief: 'Harbour Dental is a family dentist in Leeds.' }), playbook: '', siteNotes: '', notes: [], feed: [],
   jobs: { waiting: 0, running: 0, done: 0, failed: 0 }, spentCents: 0, ...over,
 });
 
@@ -55,7 +60,8 @@ async function open(d: AutopilotData, props: { content?: SocialContent[]; canEdi
 }
 
 beforeEach(() => {
-  for (const f of [h.load, h.save, h.ready, h.run, h.approve, h.toast.success, h.toast.error, onChanged, onDelete]) f.mockReset();
+  for (const f of [h.load, h.save, h.ready, h.run, h.approve, h.remake, h.improve, h.learn, h.saveText, h.setMedia, h.upload, h.toast.success, h.toast.error, onChanged, onDelete]) f.mockReset();
+  for (const f of [h.remake, h.improve, h.saveText, h.setMedia]) f.mockResolvedValue(undefined);
   h.ready.mockResolvedValue({ writing: true, media: true, posting: true });
   h.save.mockResolvedValue(undefined);
   h.approve.mockResolvedValue(undefined);
@@ -192,6 +198,190 @@ describe('posts that wait for a yes', () => {
   it('does not list posts a person made', async () => {
     await open(data(), { content: [post('m1', { origin: 'person', idea: null, title: 'My own post' })] });
     expect(screen.queryByText('My own post')).toBeNull();
+  });
+});
+
+describe('changing a post before it goes out', () => {
+  const video = { ...(post('x').idea as NonNullable<SocialContent['idea']>), format: 'video' as const, spoken: 'Brush softly.' };
+  const waiting = [post('p1'), post('p2', { accountId: 'a2' })];
+  const openEdit = async (content: SocialContent[] = waiting) => {
+    await open(data(), { content });
+    fireEvent.click(screen.getByRole('button', { name: 'Change Three brushing mistakes' }));
+    return screen.findByRole('dialog');
+  };
+
+  it('opens with the words and the time of the post', async () => {
+    const dialog = await openEdit();
+    expect((within(dialog).getByLabelText('Title') as HTMLInputElement).value).toBe('Three brushing mistakes');
+    expect((within(dialog).getByLabelText('Text') as HTMLTextAreaElement).value).toBe('Most people brush too hard.');
+    expect((within(dialog).getByLabelText('Tags') as HTMLInputElement).value).toBe('dental');
+    expect((within(dialog).getByLabelText('Goes out at') as HTMLInputElement).value).toBe(toLocalInput(new Date('2026-11-25T18:00:00Z')));
+  });
+
+  it('saves changed words for every account the idea goes to', async () => {
+    const dialog = await openEdit();
+    fireEvent.change(within(dialog).getByLabelText('Text'), { target: { value: 'Are you brushing too hard?' } });
+    fireEvent.change(within(dialog).getByLabelText('Tags'), { target: { value: '#dental, gentle care' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(h.saveText).toHaveBeenCalledTimes(1));
+    expect(h.saveText.mock.calls[0][0].map((p: SocialContent) => p.id)).toEqual(['p1', 'p2']);
+    expect(h.saveText.mock.calls[0][2]).toMatchObject({ title: 'Three brushing mistakes', caption: 'Are you brushing too hard?', tags: ['dental', 'gentle care'] });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('has the picture made again with what should be different', async () => {
+    const dialog = await openEdit();
+    expect(within(dialog).queryByLabelText('Words the voice says')).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText('What should be different?'), { target: { value: 'Show the whole team' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make it again' }));
+    await waitFor(() => expect(h.remake).toHaveBeenCalledWith(WS, 'g1', 'Show the whole team', undefined));
+    expect(h.toast.success).toHaveBeenCalledWith('The picture is being made again. The post comes back when it is ready.');
+  });
+
+  it('lets the voice of a video be changed or taken away', async () => {
+    const dialog = await openEdit([post('p1', { idea: video })]);
+    const voice = within(dialog).getByLabelText('Words the voice says') as HTMLInputElement;
+    expect(voice.value).toBe('Brush softly.');
+    fireEvent.change(voice, { target: { value: '' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make it again' }));
+    await waitFor(() => expect(h.remake).toHaveBeenCalledWith(WS, 'g1', '', ''));
+  });
+
+  it('takes the person’s own file instead', async () => {
+    h.upload.mockResolvedValue({ url: 'https://files.example/own.jpg', kind: 'image', mime: 'image/jpeg', bytes: 9, name: 'own.jpg' });
+    const dialog = await openEdit([post('p1')]);
+    const file = new File(['x'], 'own.jpg', { type: 'image/jpeg' });
+    fireEvent.change(within(dialog).getByLabelText('Choose your own picture or video'), { target: { files: [file] } });
+    await waitFor(() => expect(h.setMedia).toHaveBeenCalledTimes(1));
+    expect(h.upload).toHaveBeenCalledWith(WS, file);
+    expect(h.setMedia.mock.calls[0][1]).toMatchObject({ url: 'https://files.example/own.jpg' });
+    expect(h.toast.success).toHaveBeenCalledWith('Your file is on the post.');
+  });
+
+  it('refuses a picture where a platform needs a video, before anything is uploaded', async () => {
+    const dialog = await openEdit();
+    fireEvent.change(within(dialog).getByLabelText('Choose your own picture or video'), { target: { files: [new File(['x'], 'own.jpg', { type: 'image/jpeg' })] } });
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('TikTok needs a video. Choose a video, or make the picture again.'));
+    expect(h.upload).not.toHaveBeenCalled();
+  });
+
+  it('knows which files fit', () => {
+    const jpg = { type: 'image/jpeg', size: 10 };
+    expect(ownFileProblem(jpg, [post('p1')], ACCOUNTS)).toBeNull();
+    expect(ownFileProblem({ type: 'image/png', size: 10 }, [post('p1')], ACCOUNTS)).toBe('Instagram takes JPEG pictures only. Save the picture as a JPEG and choose it again.');
+    expect(ownFileProblem({ type: 'video/mp4', size: 10 }, waiting, ACCOUNTS)).toBeNull();
+    expect(ownFileProblem({ type: 'application/pdf', size: 10 }, waiting, ACCOUNTS)).toBe('Choose a picture or a video.');
+  });
+
+  it('offers only the own file when pictures and videos cannot be made here', async () => {
+    h.ready.mockResolvedValue({ writing: true, media: false, posting: true });
+    const dialog = await openEdit([post('p1')]);
+    expect(within(dialog).queryByRole('button', { name: 'Make it again' })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Use my own file' })).toBeTruthy();
+  });
+
+  it('is not offered to somebody who cannot change the autopilot', async () => {
+    await open(data(), { content: waiting, canEdit: false });
+    expect(screen.queryByRole('button', { name: 'Change Three brushing mistakes' })).toBeNull();
+  });
+
+  it('keeps who can see a video and YouTube’s answers when the words change', () => {
+    const shared = { title: 'New title', text: 'New words', tags: ['a'] };
+    expect(retextOptions('tiktok', { caption: 'Old', privacy: 'SELF_ONLY', brandOrganic: true, allowComment: false }, shared))
+      .toMatchObject({ caption: 'New title\n\nNew words\n\n#a', privacy: 'SELF_ONLY', brandOrganic: true, allowComment: false });
+    expect(retextOptions('youtube', { title: 'Old', madeForKids: false, privacy: 'unlisted', categoryId: '27' }, shared))
+      .toMatchObject({ title: 'New title', description: 'New words', tags: ['a'], madeForKids: false, privacy: 'unlisted', categoryId: '27' });
+    expect(retextOptions('x', { text: 'Old' }, shared)).toEqual({ text: 'New title\n\n#a' });
+  });
+});
+
+describe('the website, the days and the times', () => {
+  it('fills the form from the website, and saves what the website said with it', async () => {
+    h.learn.mockResolvedValue({ brief: 'Harbour Dental is a family dentist in Leeds. It offers check-ups and whitening.', audience: 'Families in Leeds', tone: 'Friendly', language: 'English', notes: 'Check-ups from £45.' });
+    await open(data({ saved: false, settings: settings() }));
+    const button = screen.getByRole('button', { name: 'Fill in from my website' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Your website'), { target: { value: 'harbourdental.co.uk' } });
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Filled in from your website. Check it, then press Save.'));
+    expect(h.learn).toHaveBeenCalledWith(WS, 'harbourdental.co.uk');
+    expect((screen.getByLabelText('Your business') as HTMLTextAreaElement).value).toContain('family dentist in Leeds');
+    expect((screen.getByLabelText('Who you want to reach') as HTMLInputElement).value).toBe('Families in Leeds');
+    // Nothing is saved until the owner has looked at it.
+    expect(h.save).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('radio', { name: 'Ask me first' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect(h.save.mock.calls[0][2]).toMatchObject({ website: 'harbourdental.co.uk', mode: 'ask' });
+    expect(h.save.mock.calls[0][4]).toEqual({ siteNotes: 'Check-ups from £45.' });
+  });
+
+  it('says so in plain words when the website cannot be read, and keeps what was typed', async () => {
+    h.learn.mockRejectedValue(new Error('That website could not be read. Check the address, or write about your business yourself.'));
+    await open(data());
+    fireEvent.change(screen.getByLabelText('Your website'), { target: { value: 'harbourdental.co.uk' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Fill in from my website' }));
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('That website could not be read. Check the address, or write about your business yourself.'));
+    expect((screen.getByLabelText('Your business') as HTMLTextAreaElement).value).toBe('Harbour Dental is a family dentist in Leeds.');
+  });
+
+  it('will not save an address that is not a website', async () => {
+    await open(data());
+    fireEvent.change(screen.getByLabelText('Your website'), { target: { value: 'my shop' } });
+    expect(screen.getByRole('alert').textContent).toContain('The website address does not look right');
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('saves the days and times the owner posts on', async () => {
+    await open(data());
+    fireEvent.click(screen.getByLabelText('Saturday'));
+    fireEvent.click(screen.getByLabelText('Sunday'));
+    fireEvent.change(screen.getByLabelText('Times it may post at'), { target: { value: '18:30, 9.00, later' } });
+    expect(screen.getByText('It posts only at: 09:00, 18:30.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.save.mock.calls[0]?.[2]).toMatchObject({ postDays: [1, 2, 3, 4, 5], postTimes: ['09:00', '18:30'] }));
+  });
+
+  it('can switch the second try off', async () => {
+    await open(data());
+    fireEvent.click(screen.getByLabelText(/When one of its posts does weakly/));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.save.mock.calls[0]?.[2]).toMatchObject({ retryWeak: false }));
+  });
+
+  it('shows what it read on the website', async () => {
+    await open(data({ siteNotes: 'Check-ups from £45. Open Monday to Saturday.' }));
+    expect(within(screen.getByRole('region', { name: 'What it has learned' })).getByText('Check-ups from £45. Open Monday to Saturday.')).toBeTruthy();
+  });
+});
+
+describe('a second try for a post that is out', () => {
+  const feed = (id: string, views: number, contentId: string | null = null): FeedPost => ({
+    id, accountId: 'a1', platform: 'instagram', url: '', caption: '', kind: 'image', postedAt: '2026-11-10T18:00:00Z', contentId, views, likes: 1, comments: 0, shares: 0, saves: 0, reach: 0,
+  });
+  const out = (over: Partial<SocialContent> = {}) => post('pub1', { status: 'published', title: 'A tip video', ...over });
+
+  it('is made when the owner asks', async () => {
+    await open(data({ feed: [feed('f1', 20, 'pub1'), feed('f2', 100), feed('f3', 120), feed('f4', 80)] }), { content: [out()] });
+    fireEvent.click(screen.getByRole('button', { name: 'Second try for A tip video' }));
+    await waitFor(() => expect(h.improve).toHaveBeenCalledWith(WS, 'pub1'));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('A better version is being made. It appears above when it is ready.'));
+  });
+
+  it('is offered once: not for a post that had one, and not for a second try itself', async () => {
+    const idea = post('x').idea as NonNullable<SocialContent['idea']>;
+    await open(data({ feed: [feed('f1', 20, 'pub1'), feed('f2', 100, 'pub2')] }), { content: [out({ idea: { ...idea, retried: true } }), post('pub2', { status: 'published', title: 'The better one', postGroupId: 'g8', idea: { ...idea, improves: 'A tip video' } })] });
+    expect(screen.getByText('Second try made')).toBeTruthy();
+    expect(screen.getByText('This is a second try')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Second try for/ })).toBeNull();
+  });
+
+  it('says on a waiting post that it is the better version of a weak one', async () => {
+    const idea = post('x').idea as NonNullable<SocialContent['idea']>;
+    await open(data(), { content: [post('p9', { idea: { ...idea, improves: 'A tip video' } })] });
+    expect(screen.getByText('A better version of “A tip video”, which did weakly.')).toBeTruthy();
   });
 });
 

@@ -35,6 +35,21 @@ export function optionsFor<P extends Platform>(platform: P, shared: SharedText, 
   return { ...startingOptions(platform, shared), ...(changed ?? {}) } as PlatformOptions[P];
 }
 
+/** The answers a platform asked for that are not text: they stay when the text of a post is changed. */
+const KEPT: Record<Platform, string[]> = {
+  youtube: ['categoryId', 'privacy', 'madeForKids', 'notifySubscribers'],
+  tiktok: ['privacy', 'allowComment', 'allowDuet', 'allowStitch', 'brandOrganic', 'brandContent'],
+  instagram: ['shareToFeed'],
+  facebook: [], x: [], linkedin: [],
+};
+
+/** One account's part of a post, written again from changed text. Who can see it, the category and the like stay as they were. */
+export function retextOptions(platform: Platform, old: Record<string, unknown>, shared: SharedText): Record<string, unknown> {
+  const fresh = { ...startingOptions(platform, shared) } as Record<string, unknown>;
+  for (const key of KEPT[platform]) if (key in old) fresh[key] = old[key];
+  return fresh;
+}
+
 /** What is still missing for one account, as sentences. */
 export const accountProblems = (account: PostableAccount, shared: SharedText, changed: Record<string, unknown> | undefined, media: PostMedia | null): string[] => {
   if (account.status !== 'connected') return [`${PLATFORM_NAME[account.provider]} is not connected yet. Connect it on the Accounts tab.`];

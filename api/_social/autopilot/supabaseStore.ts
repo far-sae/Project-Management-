@@ -5,10 +5,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { centsOf } from "../../_automation/cost.js";
-import { CREDIT_CENTS, DEFAULT_SETTINGS, type AutopilotMode, type AutopilotSettings, type MediaFormat, type PostIdea, type VoiceChoice } from "../shared/autopilot.js";
+import { CREDIT_CENTS, DEFAULT_SETTINGS, SETTING_LIMITS, cleanDays, cleanTimes, type AutopilotMode, type AutopilotSettings, type MediaFormat, type PostIdea, type VoiceChoice } from "../shared/autopilot.js";
 import { serviceIdOf } from "../service.js";
 import type { StudyPost } from "./brain.js";
-import { BUSY_FOR_MS, type JobRow, type PilotRow, type PilotStore } from "./engine.js";
+import { BUSY_FOR_MS, type JobRow, type PilotGroup, type PilotRow, type PilotStore } from "./engine.js";
 
 type Row = Record<string, unknown>;
 
@@ -33,6 +33,11 @@ export function settingsOf(r: Row): AutopilotSettings {
     tiktokPrivacy: (["PUBLIC_TO_EVERYONE", "MUTUAL_FOLLOW_FRIENDS", "FOLLOWER_OF_CREATOR", "SELF_ONLY"].includes(text(r.tiktok_privacy)) ? text(r.tiktok_privacy) : "") as AutopilotSettings["tiktokPrivacy"],
     budgetCents: Math.max(0, Math.round(num(r.budget_cents))),
     timezone: text(r.timezone) || DEFAULT_SETTINGS.timezone,
+    // On unless the owner switched it off (also before the column was added).
+    retryWeak: r.retry_weak !== false,
+    website: text(r.website),
+    postDays: cleanDays(r.post_days),
+    postTimes: cleanTimes(r.post_times),
   };
 }
 
@@ -45,6 +50,9 @@ const rowOf = (r: Row): PilotRow => ({
   studiedAt: timeOrNull(r.studied_at),
   trendsAt: timeOrNull(r.trends_at),
   plannedAt: timeOrNull(r.planned_at),
+  reviewedAt: timeOrNull(r.reviewed_at),
+  siteNotes: text(r.site_notes),
+  siteAt: timeOrNull(r.site_at),
 });
 
 const jobOf = (r: Row): JobRow => ({
@@ -69,6 +77,49 @@ const fail = (what: string, error: { code?: string } | null): void => {
 export function supabasePilotStore(db: SupabaseClient): PilotStore {
   const free = (now: Date): string => `busy_since.is.null,busy_since.lt."${new Date(now.getTime() - BUSY_FOR_MS).toISOString()}"`;
   return {
+    async get(workspaceId) {
+      const { data, error } = await db.from("social_autopilot").select("*").eq("workspace_id", workspaceId).maybeSingle();
+      fail("row", error);
+      return data ? rowOf(data as Row) : null;
+    },
+    async group(workspaceId, by) {
+      let groupId = "groupId" in by ? by.groupId : "";
+      if ("contentId" in by) {
+        const { data } = await db.from("social_content").select("post_group_id").eq("workspace_id", workspaceId).eq("id", by.contentId).eq("origin", "autopilot").maybeSingle();
+        groupId = text(data?.post_group_id);
+      }
+      if (!groupId) return null;
+      const { data, error } = await db.from("social_content").select("id, account_id, status, title, body, idea, campaign_id, scheduled_at")
+        .eq("workspace_id", workspaceId).eq("post_group_id", groupId).eq("origin", "autopilot").order("created_at", { ascending: true });
+      fail("group", error);
+      const rows = (data ?? []) as Row[];
+      if (rows.length === 0) return null;
+      const first = rows[0];
+      const idea = first.idea && typeof first.idea === "object" && !Array.isArray(first.idea) ? (first.idea as PostIdea) : null;
+      const group: PilotGroup = {
+        groupId, campaignId: timeOrNull(first.campaign_id), title: text(first.title), body: text(first.body), idea, scheduledAt: timeOrNull(first.scheduled_at),
+        posts: rows.map((r) => ({ id: text(r.id), accountId: timeOrNull(r.account_id), status: text(r.status) })),
+      };
+      return group;
+    },
+    async cancelJobs(groupId) {
+      // What a job already cost stays on record: it was spent.
+      const { error } = await db.from("social_media_jobs").update({ status: "failed", error: "replaced", updated_at: new Date().toISOString() }).eq("post_group_id", groupId).in("status", ["waiting", "running"]);
+      fail("cancel", error);
+    },
+    async resetGroup(workspaceId, groupId, idea) {
+      const { error } = await db.from("social_content").update({ status: "draft", media: [], media_urls: [], idea, last_error: null })
+        .eq("workspace_id", workspaceId).eq("post_group_id", groupId).eq("origin", "autopilot").in("status", ["draft", "in_review", "scheduled"]);
+      fail("reset", error);
+    },
+    async markRetried(workspaceId, groupId) {
+      const { data } = await db.from("social_content").select("id, idea").eq("workspace_id", workspaceId).eq("post_group_id", groupId).eq("origin", "autopilot");
+      for (const r of (data ?? []) as Row[]) {
+        const idea = r.idea && typeof r.idea === "object" && !Array.isArray(r.idea) ? (r.idea as Record<string, unknown>) : {};
+        const { error } = await db.from("social_content").update({ idea: { ...idea, retried: true } }).eq("id", r.id);
+        fail("retried", error);
+      }
+    },
     async claim(limit, now, workspaceId) {
       let query = db.from("social_autopilot").select("*").neq("mode", "off").or(free(now)).order("worked_at", { ascending: true, nullsFirst: true }).limit(limit);
       if (workspaceId) query = query.eq("workspace_id", workspaceId);
@@ -92,6 +143,10 @@ export function supabasePilotStore(db: SupabaseClient): PilotStore {
     async savePlaybook(workspaceId, playbook) {
       const { error } = await db.from("social_autopilot").update({ playbook }).eq("workspace_id", workspaceId);
       fail("playbook", error);
+    },
+    async saveSiteNotes(workspaceId, notes) {
+      const { error } = await db.from("social_autopilot").update({ site_notes: notes.slice(0, SETTING_LIMITS.siteNotes) }).eq("workspace_id", workspaceId);
+      fail("site notes", error);
     },
     async accounts(workspaceId) {
       const { data, error } = await db.from("social_accounts").select("id, provider, display_name, status, credential_ref, external_account_id").eq("workspace_id", workspaceId);
@@ -171,7 +226,8 @@ export function supabasePilotStore(db: SupabaseClient): PilotStore {
     },
     async spentCents(workspaceId, since) {
       const [jobs, notes] = await Promise.all([
-        db.from("social_media_jobs").select("credits").eq("workspace_id", workspaceId).gte("updated_at", since).in("status", ["running", "done"]),
+        // Every job that has a cost: one being made, one made, and one that was replaced while it was being made.
+        db.from("social_media_jobs").select("credits").eq("workspace_id", workspaceId).gte("updated_at", since).gt("credits", 0),
         db.from("social_autopilot_notes").select("cost_micro_usd").eq("workspace_id", workspaceId).gte("created_at", since),
       ]);
       fail("spend", jobs.error ?? notes.error);
