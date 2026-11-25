@@ -5,7 +5,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { centsOf } from "../../_automation/cost.js";
-import { CREDIT_CENTS, DEFAULT_SETTINGS, SETTING_LIMITS, cleanDays, cleanTimes, type AutopilotMode, type AutopilotSettings, type MediaFormat, type PostIdea, type VoiceChoice } from "../shared/autopilot.js";
+import { CREDIT_CENTS, DEFAULT_SETTINGS, SETTING_LIMITS, cleanCustom, cleanDays, cleanTimes, type AutopilotMode, type AutopilotSettings, type MediaFormat, type PostIdea, type VoiceChoice } from "../shared/autopilot.js";
 import { serviceIdOf } from "../service.js";
 import type { StudyPost } from "./brain.js";
 import { BUSY_FOR_MS, type JobRow, type PilotGroup, type PilotRow, type PilotStore } from "./engine.js";
@@ -38,6 +38,8 @@ export function settingsOf(r: Row): AutopilotSettings {
     website: text(r.website),
     postDays: cleanDays(r.post_days),
     postTimes: cleanTimes(r.post_times),
+    // All "the autopilot chooses" before the column was added.
+    custom: cleanCustom(r.custom),
   };
 }
 

@@ -21,7 +21,10 @@ import type { AutoStore, UsageFeature } from "./store.js";
 /** The model asked for. The API may answer with another one when this one declines; usage records the one that answered. */
 export const AI_MODEL = "claude-opus-5-5";
 export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
-export const WEB_SEARCH_TOOL = { type: "web_search_20260209", name: "web_search", max_uses: 3 } as const;
+/** How many searches a look-up makes unless it asks for more. */
+export const WEB_SEARCHES = 3;
+export const webSearchTool = (maxUses: number = WEB_SEARCHES) => ({ type: "web_search_20260209", name: "web_search", max_uses: maxUses }) as const;
+export const WEB_SEARCH_TOOL = webSearchTool();
 /**
  * Reading pages whose address is in the question. Only pages of the named
  * sites are fetched, and a long page is cut: one look-up reads a few pages,
@@ -157,6 +160,8 @@ export type LookUpRequest = {
   tag: AiTag; system: string; question: string; maxTokens: number; deadlineMs: number;
   /** Sites whose pages may also be read in full (their address must be in the question). */
   readSites?: string[];
+  /** The most searches this look-up may make. A wide question needs more than a look at one company. */
+  searches?: number;
 };
 
 /**
@@ -183,7 +188,7 @@ export async function lookUpWeb(deps: AiDeps, req: LookUpRequest): Promise<strin
           betas: [FALLBACK_BETA],
           fallbacks: "default",
           system: req.system,
-          tools: req.readSites?.length ? [WEB_SEARCH_TOOL, webFetchTool(req.readSites)] : [WEB_SEARCH_TOOL],
+          tools: req.readSites?.length ? [webSearchTool(req.searches), webFetchTool(req.readSites)] : [webSearchTool(req.searches)],
           messages,
         },
         { signal },

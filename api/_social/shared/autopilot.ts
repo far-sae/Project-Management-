@@ -18,6 +18,103 @@ export type MediaFormat = "image" | "video";
 export type VoiceChoice = "with" | "without" | "mixed";
 export const VOICE_NAME: Record<VoiceChoice, string> = { with: "Always with a voice", without: "Never a voice", mixed: "Let it choose for each video" };
 
+/** What the posts are for. auto: the autopilot chooses from the numbers. */
+export type PostGoal = "auto" | "awareness" | "followers" | "leads" | "sales";
+export const GOAL_NAME: Record<PostGoal, string> = {
+  auto: "Let it choose", awareness: "More people know us", followers: "More followers", leads: "More enquiries and leads", sales: "More sales",
+};
+export type CaptionLength = "auto" | "short" | "medium" | "long";
+export const CAPTION_NAME: Record<CaptionLength, string> = { auto: "Let it choose", short: "Short (one or two sentences)", medium: "Medium (a short paragraph)", long: "Long (a small story or a list)" };
+export type EmojiUse = "auto" | "none" | "few" | "many";
+export const EMOJI_NAME: Record<EmojiUse, string> = { auto: "Let it choose", none: "No emoji", few: "A few", many: "Many" };
+/** How pictures and videos are shared out, when both are allowed. */
+export type MediaMix = "auto" | "pictures" | "even" | "videos";
+export const MIX_NAME: Record<MediaMix, string> = { auto: "Let it choose", pictures: "Mostly pictures", even: "Half and half", videos: "Mostly videos" };
+export const TRENDS_EVERY = [7, 3, 1] as const;
+export type TrendsEvery = (typeof TRENDS_EVERY)[number];
+export const TRENDS_EVERY_NAME: Record<TrendsEvery, string> = { 7: "Once a week", 3: "Twice a week", 1: "Every day" };
+
+/** The owner's own wishes for the posts. Everything is optional: left alone, the autopilot chooses. */
+export type AutopilotCustom = {
+  goal: PostGoal;
+  /** What to post about, in the owner's words. */
+  topics: string;
+  /** What never to post about or say. */
+  avoid: string;
+  /** What people should do after a post, for example "Book a free call". */
+  callToAction: string;
+  /** A link for the posts. "" for none. */
+  link: string;
+  captionLength: CaptionLength;
+  emoji: EmojiUse;
+  /** Tags that go on every post, without the # sign. */
+  fixedTags: string[];
+  /** How the pictures and videos should look: colours, style, what never to show. */
+  look: string;
+  mix: MediaMix;
+  /** How often the latest trends are looked up, in days. */
+  trendsEveryDays: TrendsEvery;
+  /** The owner's own rules, followed in every post. */
+  rules: string;
+};
+
+export const DEFAULT_CUSTOM: AutopilotCustom = {
+  goal: "auto", topics: "", avoid: "", callToAction: "", link: "", captionLength: "auto", emoji: "auto", fixedTags: [], look: "", mix: "auto", trendsEveryDays: 7, rules: "",
+};
+
+export const CUSTOM_LIMITS = { topics: 600, avoid: 600, callToAction: 120, link: 300, look: 400, rules: 800, fixedTags: 5, tag: 40 } as const;
+
+const oneOf = <T extends string | number>(value: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(value as T) ? (value as T) : fallback);
+const words = (value: unknown, max: number): string => (typeof value === "string" ? value.trim().slice(0, max) : "");
+
+/** Tags as they are kept: no # sign, no spaces, each once, five at most. */
+export const cleanTags = (tags: unknown): string[] =>
+  Array.isArray(tags)
+    ? [...new Set(tags.filter((t): t is string => typeof t === "string").map((t) => t.trim().replace(/^#+/, "").replace(/\s+/g, "").slice(0, CUSTOM_LIMITS.tag)).filter(Boolean))].slice(0, CUSTOM_LIMITS.fixedTags)
+    : [];
+
+/** "#dentist, leeds  #smile" as the person typed it → ["dentist", "leeds", "smile"]. */
+export const readTags = (raw: string): string[] => cleanTags(raw.split(/[\s,;]+/));
+
+/** A link for the posts as it is kept: an https address of a public site, or "". */
+export function linkOf(raw: string): string {
+  const typed = raw.trim();
+  if (!typed || typed.length > CUSTOM_LIMITS.link || /\s/.test(typed)) return "";
+  let url: URL;
+  try { url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `https://${typed}`); } catch { return ""; }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+  if (url.username || url.password || !/^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(url.hostname)) return "";
+  url.protocol = "https:";
+  return url.toString();
+}
+
+/** The owner's wishes as the app keeps them. Anything odd or missing falls back to "the autopilot chooses". */
+export function cleanCustom(raw: unknown): AutopilotCustom {
+  const r = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  return {
+    goal: oneOf<PostGoal>(r.goal, ["auto", "awareness", "followers", "leads", "sales"], "auto"),
+    topics: words(r.topics, CUSTOM_LIMITS.topics),
+    avoid: words(r.avoid, CUSTOM_LIMITS.avoid),
+    callToAction: words(r.callToAction, CUSTOM_LIMITS.callToAction),
+    link: words(r.link, CUSTOM_LIMITS.link),
+    captionLength: oneOf<CaptionLength>(r.captionLength, ["auto", "short", "medium", "long"], "auto"),
+    emoji: oneOf<EmojiUse>(r.emoji, ["auto", "none", "few", "many"], "auto"),
+    fixedTags: cleanTags(r.fixedTags),
+    look: words(r.look, CUSTOM_LIMITS.look),
+    mix: oneOf<MediaMix>(r.mix, ["auto", "pictures", "even", "videos"], "auto"),
+    trendsEveryDays: oneOf<TrendsEvery>(Number(r.trendsEveryDays), TRENDS_EVERY, 7),
+    rules: words(r.rules, CUSTOM_LIMITS.rules),
+  };
+}
+
+/**
+ * A look-up of the trends that found nothing reads like an apology, not like
+ * trends. Such a text is never shown as trends and never handed to a plan.
+ */
+export const noTrendsIn = (text: string): boolean =>
+  text.trim().length < 80 || /^\W*NOTHING\W*$/i.test(text.trim())
+  || /(could ?n[o']t|was not able to|unable to) (find|search|look up|get)[^.]{0,60}(current|recent|any|information|results)|usage limit|search (tool )?(is|was) (not available|unavailable)|no (search )?results (were|came)/i.test(text.slice(0, 600));
+
 export type AutopilotSettings = {
   mode: AutopilotMode;
   /** What the business is and sells. */
@@ -42,12 +139,14 @@ export type AutopilotSettings = {
   postDays: number[];
   /** The times it may post at, as "HH:MM". Empty: it chooses. */
   postTimes: string[];
+  /** The owner's own wishes for the posts. */
+  custom: AutopilotCustom;
 };
 
 export const DEFAULT_SETTINGS: AutopilotSettings = {
   mode: "off", brief: "", audience: "", tone: "", language: "English", postsPerWeek: 4,
   formats: ["image", "video"], voice: "mixed", accountIds: [], tiktokPrivacy: "", budgetCents: 3000, timezone: "Europe/London", retryWeak: true,
-  website: "", postDays: [], postTimes: [],
+  website: "", postDays: [], postTimes: [], custom: DEFAULT_CUSTOM,
 };
 
 export const WEEKDAY_NAME = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
@@ -105,6 +204,7 @@ export function settingProblems(s: AutopilotSettings): string[] {
   if (s.brief.trim().length < BRIEF_MIN) problems.push("Say in a sentence or two what your business does. The autopilot writes from it.");
   if (s.formats.length === 0) problems.push("Choose pictures, videos or both.");
   if (s.website.trim() && !siteOf(s.website)) problems.push("The website address does not look right. It should look like yourbusiness.com.");
+  if (s.custom.link.trim() && !linkOf(s.custom.link)) problems.push("The link for the posts does not look right. It should look like yourbusiness.com/book.");
   return problems;
 }
 

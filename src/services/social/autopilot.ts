@@ -8,7 +8,7 @@
  */
 import { supabase } from '@/services/supabase/config';
 import {
-  CREDIT_CENTS, DEFAULT_SETTINGS, SETTING_LIMITS, cleanDays, cleanTimes,
+  CREDIT_CENTS, DEFAULT_SETTINGS, SETTING_LIMITS, cleanCustom, cleanDays, cleanTimes, linkOf,
   type AutopilotMode, type AutopilotNote, type AutopilotReady, type AutopilotSettings, type FeedPost, type JobStatus,
   type MediaFormat, type NoteKind, type RunReport, type SiteReading, type VoiceChoice,
 } from '../../../api/_social/shared/autopilot';
@@ -45,6 +45,7 @@ export function settingsOfRow(r: Row | null): AutopilotSettings {
     website: text(r.website),
     postDays: cleanDays(r.post_days),
     postTimes: cleanTimes(r.post_times),
+    custom: cleanCustom(r.custom),
   };
 }
 
@@ -67,6 +68,8 @@ export type AutopilotData = {
   jobs: AutopilotJobs;
   /** Spent this calendar month on writing, pictures and videos, in US cents. */
   spentCents: number;
+  /** False when the saved row shows that the database cannot keep the newer options yet. */
+  customReady: boolean;
 };
 
 /** The table is not there: the SQL has not been run yet. */
@@ -113,12 +116,23 @@ export async function loadAutopilot(workspaceId: string, now: Date = new Date())
     })),
     jobs: count,
     spentCents: credits * CREDIT_CENTS + Math.round(micro / 10_000),
+    // A row read with every column shows whether the newer column is there. Nothing saved yet: nothing to tell from.
+    customReady: row === null || 'custom' in row,
   };
 }
 
-/** Saves the switch and the brief. Only the owner and admins are let through by the database. */
-export async function saveAutopilot(organizationId: string, workspaceId: string, s: AutopilotSettings, userId?: string, read?: { siteNotes: string }): Promise<void> {
-  const { error } = await supabase.from('social_autopilot').upsert({
+/** The database has no place for the newer options yet: the latest SQL has not been run. */
+const noCustomColumn = (error: { code?: string; message?: string } | null): boolean =>
+  Boolean(error && /\bcustom\b/i.test(error.message ?? '') && (error.code === 'PGRST204' || error.code === '42703' || /schema cache|does not exist/i.test(error.message ?? '')));
+
+/**
+ * Saves the switch, the brief and the owner's wishes. Only the owner and
+ * admins are let through by the database. `customKept` is false when the
+ * database could not keep the newer options yet: everything else was saved.
+ */
+export async function saveAutopilot(organizationId: string, workspaceId: string, s: AutopilotSettings, userId?: string, read?: { siteNotes: string }): Promise<{ customKept: boolean }> {
+  const custom = cleanCustom(s.custom);
+  const values = {
     retry_weak: s.retryWeak, website: s.website.trim().slice(0, SETTING_LIMITS.website), post_days: cleanDays(s.postDays), post_times: cleanTimes(s.postTimes),
     // The website was just read for the form: what it said is kept, so the autopilot does not read it a second time.
     ...(read ? { site_notes: read.siteNotes.slice(0, SETTING_LIMITS.siteNotes), site_at: new Date().toISOString() } : {}),
@@ -129,14 +143,24 @@ export async function saveAutopilot(organizationId: string, workspaceId: string,
     formats: s.formats, voice: s.voice, account_ids: s.accountIds, tiktok_privacy: s.tiktokPrivacy,
     budget_cents: Math.min(SETTING_LIMITS.budgetMax, Math.max(0, Math.round(s.budgetCents))), timezone: s.timezone || browserZone(),
     updated_by: userId ?? null, updated_at: new Date().toISOString(),
-  }, { onConflict: 'workspace_id' });
+  };
+  // A link is kept the way it will be written into a post.
+  const withCustom = { ...values, custom: { ...custom, link: linkOf(custom.link) || custom.link } };
+  let customKept = true;
+  let { error } = await supabase.from('social_autopilot').upsert(withCustom, { onConflict: 'workspace_id' });
+  if (noCustomColumn(error)) {
+    // Everything the database knows is still saved; the screen says what is missing.
+    customKept = false;
+    ({ error } = await supabase.from('social_autopilot').upsert(values, { onConflict: 'workspace_id' }));
+  }
   if (error) {
     if (missing(error)) throw new Error(AUTOPILOT_NOT_SET_UP_MESSAGE);
     throw new Error(error.code === '42501' ? 'Only the owner or an admin can change the autopilot.' : 'The settings could not be saved. Please try again.');
   }
+  return { customKept };
 }
 
-async function call<T>(route: 'ready' | 'run' | 'remake' | 'improve' | 'learn', body?: unknown): Promise<T> {
+async function call<T>(route: 'ready' | 'run' | 'remake' | 'improve' | 'learn' | 'trends', body?: unknown): Promise<T> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error(SIGNED_OUT_MESSAGE);
@@ -169,6 +193,11 @@ export async function approveAutopilotPosts(posts: Array<{ id: string; scheduled
     if (error) throw new Error('The post could not be approved. Please try again.');
   }
 }
+
+/** Looks the latest trends up now, whatever their turn is. It takes a minute or two. */
+export const refreshAutopilotTrends = async (workspaceId: string): Promise<void> => {
+  await call<{ ok: boolean }>('trends', { workspaceId });
+};
 
 /** Reads the business's website and proposes what to fill in. It takes up to two minutes. */
 export const learnFromWebsite = (workspaceId: string, website: string): Promise<SiteReading> => call<SiteReading>('learn', { workspaceId, website });

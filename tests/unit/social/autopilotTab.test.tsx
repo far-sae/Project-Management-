@@ -5,14 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { AutopilotData } from '@/services/social/autopilot';
 import type { SocialAccount, SocialContent } from '@/types/social';
-import { DEFAULT_SETTINGS, type AutopilotSettings, type FeedPost } from '../../../api/_social/shared/autopilot';
+import { DEFAULT_CUSTOM, DEFAULT_SETTINGS, type AutopilotSettings, type FeedPost } from '../../../api/_social/shared/autopilot';
+import { blocksOf } from '@/components/social/RichNote';
 import { setInternalsVisible } from '@/lib/publicError';
 
 const h = vi.hoisted(() => ({
   load: vi.fn(), save: vi.fn(), ready: vi.fn(), run: vi.fn(), approve: vi.fn(),
-  remake: vi.fn(), improve: vi.fn(), learn: vi.fn(), saveText: vi.fn(), setMedia: vi.fn(), upload: vi.fn(),
+  remake: vi.fn(), improve: vi.fn(), learn: vi.fn(), saveText: vi.fn(), setMedia: vi.fn(), upload: vi.fn(), trends: vi.fn(),
   internals: { visible: false },
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 vi.mock('sonner', () => ({ toast: h.toast }));
@@ -20,7 +21,7 @@ vi.mock('@/hooks/useInternalsVisible', () => ({ useInternalsVisible: () => h.int
 vi.mock('@/services/social/autopilot', async (original) => ({
   ...(await original<typeof import('@/services/social/autopilot')>()),
   loadAutopilot: h.load, saveAutopilot: h.save, autopilotReady: h.ready, runAutopilot: h.run, approveAutopilotPosts: h.approve,
-  remakeAutopilotMedia: h.remake, improveAutopilotPost: h.improve, learnFromWebsite: h.learn, saveAutopilotText: h.saveText, setAutopilotMedia: h.setMedia,
+  remakeAutopilotMedia: h.remake, improveAutopilotPost: h.improve, learnFromWebsite: h.learn, saveAutopilotText: h.saveText, setAutopilotMedia: h.setMedia, refreshAutopilotTrends: h.trends,
 }));
 vi.mock('@/services/supabase/social', () => ({ uploadSocialMedia: h.upload }));
 
@@ -47,7 +48,7 @@ const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => (
 const settings = (over: Partial<AutopilotSettings> = {}): AutopilotSettings => ({ ...DEFAULT_SETTINGS, ...over });
 const data = (over: Partial<AutopilotData> = {}): AutopilotData => ({
   saved: true, settings: settings({ mode: 'ask', brief: 'Harbour Dental is a family dentist in Leeds.' }), playbook: '', siteNotes: '', notes: [], feed: [],
-  jobs: { waiting: 0, running: 0, done: 0, failed: 0 }, spentCents: 0, ...over,
+  jobs: { waiting: 0, running: 0, done: 0, failed: 0 }, spentCents: 0, customReady: true, ...over,
 });
 
 const onChanged = vi.fn();
@@ -60,10 +61,11 @@ async function open(d: AutopilotData, props: { content?: SocialContent[]; canEdi
 }
 
 beforeEach(() => {
-  for (const f of [h.load, h.save, h.ready, h.run, h.approve, h.remake, h.improve, h.learn, h.saveText, h.setMedia, h.upload, h.toast.success, h.toast.error, onChanged, onDelete]) f.mockReset();
+  for (const f of [h.load, h.save, h.ready, h.run, h.approve, h.remake, h.improve, h.learn, h.saveText, h.setMedia, h.upload, h.trends, h.toast.success, h.toast.error, h.toast.warning, onChanged, onDelete]) f.mockReset();
   for (const f of [h.remake, h.improve, h.saveText, h.setMedia]) f.mockResolvedValue(undefined);
   h.ready.mockResolvedValue({ writing: true, media: true, posting: true });
-  h.save.mockResolvedValue(undefined);
+  h.save.mockResolvedValue({ customKept: true });
+  h.trends.mockResolvedValue(undefined);
   h.approve.mockResolvedValue(undefined);
   h.internals.visible = false;
 });
@@ -191,7 +193,9 @@ describe('posts that wait for a yes', () => {
     expect(within(planned).getByText('Video being made')).toBeTruthy();
     expect(within(planned).getByText(/could not be made/)).toBeTruthy();
     expect(within(planned).getByText(/^Goes out/)).toBeTruthy();
-    expect(screen.getByText(/2 pictures and videos are being made/)).toBeTruthy();
+    // The figure at the top counts what the maker is working on and what waits for its turn.
+    const beingMade = [...document.querySelectorAll('dl > div')].find((cell) => cell.querySelector('dt')?.textContent === 'Being made');
+    expect([...(beingMade?.querySelectorAll('dd') ?? [])].map((dd) => dd.textContent)).toEqual(['2', 'pictures and videos']);
     expect(screen.getByText('Nothing yet. The posts below are getting their picture or video first.')).toBeTruthy();
   });
 
@@ -353,7 +357,9 @@ describe('the website, the days and the times', () => {
 
   it('shows what it read on the website', async () => {
     await open(data({ siteNotes: 'Check-ups from £45. Open Monday to Saturday.' }));
-    expect(within(screen.getByRole('region', { name: 'What it has learned' })).getByText('Check-ups from £45. Open Monday to Saturday.')).toBeTruthy();
+    const learned = screen.getByRole('region', { name: 'What it has learned' });
+    fireEvent.click(within(learned).getByRole('tab', { name: 'Your website' }));
+    expect(within(learned).getByText('Check-ups from £45. Open Monday to Saturday.')).toBeTruthy();
   });
 });
 
@@ -385,23 +391,197 @@ describe('a second try for a post that is out', () => {
   });
 });
 
-describe('what it has learned and how its posts did', () => {
-  const note = (kind: 'study' | 'trends' | 'plan' | 'problem', title: string, body: string, d: Record<string, unknown> = {}) => ({ id: `${kind}-${title}`, kind, title, body, data: d, createdAt: '2026-11-24T10:00:00Z' });
+const TREND_WORDS = 'Short tip reels are doing well, so open your next reel with one tip from your own work.';
+
+const note = (kind: 'study' | 'trends' | 'plan' | 'problem', title: string, body: string, d: Record<string, unknown> = {}) => ({ id: `${kind}-${title}`, kind, title, body, data: d, createdAt: '2026-11-24T10:00:00Z' });
+
+describe('what it has learned', () => {
 
   it('shows the study, the trends and its rules', async () => {
     await open(data({
       playbook: 'Open with a question.',
       notes: [
         note('study', 'Study of your pages', 'Videos with a tip do best.', { working: ['Tip videos'], notWorking: ['Long captions'], changes: ['Shorter captions'], bestTimes: ['Instagram: Tuesday 18:00'] }),
-        note('trends', 'What is working right now', 'Short tip reels are doing well.'),
+        note('trends', 'What is working right now', TREND_WORDS),
       ],
     }));
     const learned = screen.getByRole('region', { name: 'What it has learned' });
-    for (const words of ['Videos with a tip do best.', 'Tip videos', 'Long captions', 'Shorter captions', 'Instagram: Tuesday 18:00', 'Short tip reels are doing well.', 'Open with a question.']) {
+    // One thing at a time, each with the whole width: the study first.
+    expect(within(learned).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Your pages', 'Latest trends', 'Its rules']);
+    expect(within(learned).getByRole('tab', { name: 'Your pages' }).getAttribute('aria-selected')).toBe('true');
+    for (const words of ['Videos with a tip do best.', 'Tip videos', 'Long captions', 'Shorter captions', 'Instagram: Tuesday 18:00']) {
       expect(within(learned).getByText(words)).toBeTruthy();
     }
+    for (const title of ['Working', 'Not working', 'What it changes', 'Best times']) expect(within(learned).getByRole('heading', { name: title })).toBeTruthy();
+    fireEvent.click(within(learned).getByRole('tab', { name: 'Latest trends' }));
+    expect(within(learned).getByText(TREND_WORDS)).toBeTruthy();
+    expect(within(learned).queryByText('Videos with a tip do best.')).toBeNull();
+    fireEvent.click(within(learned).getByRole('tab', { name: 'Its rules' }));
+    expect(within(learned).getByText('Open with a question.')).toBeTruthy();
   });
 
+  it('shows what was written as headings and points, never with the writing signs', async () => {
+    await open(data({
+      siteNotes: '**What it is and where**\nHarbour Dental is a family dentist in Leeds.\n\n**What it sells**\n- Check-ups from £45\n- **Whitening** for adults',
+      notes: [note('trends', 'What is working right now', `YouTube\n- ${TREND_WORDS}\n- Titles with a number are opened more often.\n\nInstagram\n- Reels under 20 seconds are watched to the end.`)],
+    }));
+    const learned = screen.getByRole('region', { name: 'What it has learned' });
+    expect(within(learned).getByRole('heading', { name: 'YouTube' })).toBeTruthy();
+    expect(within(learned).getByRole('heading', { name: 'Instagram' })).toBeTruthy();
+    expect(within(learned).getAllByRole('listitem').map((li) => li.textContent)).toEqual([TREND_WORDS, 'Titles with a number are opened more often.', 'Reels under 20 seconds are watched to the end.']);
+    fireEvent.click(within(learned).getByRole('tab', { name: 'Your website' }));
+    expect(within(learned).getByRole('heading', { name: 'What it sells' })).toBeTruthy();
+    expect(within(learned).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Check-ups from £45', 'Whitening for adults']);
+    expect(learned.textContent).not.toContain('**');
+  });
+
+  it('reads the signs of a written note as what they mean', () => {
+    expect(blocksOf('**What you can do now:**\n- Ask again later\n- Or check these places yourself:\n\nA last line.\nIt goes on here.')).toEqual([
+      { kind: 'heading', text: 'What you can do now' },
+      { kind: 'list', items: ['Ask again later', 'Or check these places yourself:'] },
+      { kind: 'text', text: 'A last line. It goes on here.' },
+    ]);
+    expect(blocksOf('## Rules\n1. First\n2) Second')).toEqual([{ kind: 'heading', text: 'Rules' }, { kind: 'list', items: ['First', 'Second'] }]);
+    // A playbook is short lines: each is a point of its own, also without a dash.
+    expect(blocksOf('Open with a question.\nKeep captions short.\n- No feature demos.', 'rules')).toEqual([{ kind: 'list', items: ['Open with a question.', 'Keep captions short.', 'No feature demos.'] }]);
+    // A sentence is not taken for a heading because it is short.
+    expect(blocksOf('It works.\nAll of it.')).toEqual([{ kind: 'text', text: 'It works. All of it.' }]);
+  });
+
+  it('folds a long note away until it is asked for', async () => {
+    await open(data({ siteNotes: `What it is and where\n- ${'A long line about the business. '.repeat(40)}` }));
+    const learned = screen.getByRole('region', { name: 'What it has learned' });
+    fireEvent.click(within(learned).getByRole('tab', { name: 'Your website' }));
+    const more = within(learned).getByRole('button', { name: 'Show all' });
+    expect(more.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(more);
+    expect(within(learned).getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded')).toBe('true');
+  });
+});
+
+describe('the latest trends', () => {
+  const APOLOGY = "I couldn't find any current information for you this time. The web search tool hit its usage limit before it returned any results.\n\n**What you can do now:**\n- Ask me again later.";
+  const openTrends = async (d: AutopilotData, props: Parameters<typeof open>[1] = {}) => {
+    await open(d, props);
+    const learned = screen.getByRole('region', { name: 'What it has learned' });
+    const tab = within(learned).queryByRole('tab', { name: 'Latest trends' });
+    if (tab) fireEvent.click(tab);
+    return learned;
+  };
+
+  it('never shows a search that found nothing as if it were trends', async () => {
+    const learned = await openTrends(data({ notes: [note('trends', 'What is working right now', APOLOGY)] }));
+    expect(learned.textContent).not.toContain('usage limit');
+    expect(learned.textContent).not.toContain('What you can do now');
+    expect(within(learned).getByText(/The last search on the web found nothing/)).toBeTruthy();
+    expect(within(learned).getByRole('button', { name: 'Look up now' })).toBeTruthy();
+  });
+
+  it('looks them up when the owner asks, and shows them', async () => {
+    const learned = await openTrends(data({ notes: [note('trends', 'What is working right now', APOLOGY)] }));
+    h.load.mockResolvedValue(data({ notes: [note('trends', 'What is working right now', `YouTube\n- ${TREND_WORDS}`)] }));
+    fireEvent.click(within(learned).getByRole('button', { name: 'Look up now' }));
+    await waitFor(() => expect(h.trends).toHaveBeenCalledWith(WS));
+    expect(await within(learned).findByText(TREND_WORDS)).toBeTruthy();
+    expect(h.toast.success).toHaveBeenCalledWith('The latest trends are in.');
+    expect(within(learned).getByRole('button', { name: 'Look up again' })).toBeTruthy();
+  });
+
+  it('says so in plain words when the search gives nothing again', async () => {
+    const learned = await openTrends(data({ notes: [note('study', 'Study of your pages', 'Videos with a tip do best.')] }));
+    expect(within(learned).getByText('No trends have been looked up yet.')).toBeTruthy();
+    h.trends.mockRejectedValue(new Error('The search gave nothing this time. Please try again in a little while.'));
+    fireEvent.click(within(learned).getByRole('button', { name: 'Look up now' }));
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('The search gave nothing this time. Please try again in a little while.'));
+  });
+
+  it('offers no look-up to somebody who cannot change the autopilot, or while it is off', async () => {
+    const learned = await openTrends(data({ notes: [note('trends', 'What is working right now', `YouTube\n- ${TREND_WORDS}`)] }), { canEdit: false });
+    expect(within(learned).queryByRole('button', { name: /Look up/ })).toBeNull();
+    cleanup();
+    const off = await openTrends(data({ settings: settings({ mode: 'off' }), notes: [note('trends', 'What is working right now', `YouTube\n- ${TREND_WORDS}`)] }));
+    expect(within(off).queryByRole('button', { name: /Look up/ })).toBeNull();
+    expect(within(off).getByText(TREND_WORDS)).toBeTruthy();
+  });
+});
+
+describe('the owner’s own wishes', () => {
+  it('start as "let it choose", and are saved with everything else', async () => {
+    await open(data());
+    expect((screen.getByLabelText('What the posts are for') as HTMLSelectElement).value).toBe('auto');
+    fireEvent.change(screen.getByLabelText('What the posts are for'), { target: { value: 'leads' } });
+    fireEvent.change(screen.getByLabelText('What people should do after a post'), { target: { value: 'Book a free check-up' } });
+    fireEvent.change(screen.getByLabelText('Topics to post about'), { target: { value: 'Whitening, braces' } });
+    fireEvent.change(screen.getByLabelText('Never post about, never say'), { target: { value: 'Other dentists' } });
+    fireEvent.change(screen.getByLabelText('Link for the posts'), { target: { value: 'harbourdental.co.uk/book' } });
+    fireEvent.change(screen.getByLabelText('Your own rules'), { target: { value: 'Always name Leeds.' } });
+    fireEvent.change(screen.getByLabelText('Length of the text'), { target: { value: 'short' } });
+    fireEvent.change(screen.getByLabelText('Emoji'), { target: { value: 'none' } });
+    fireEvent.change(screen.getByLabelText('Tags on every post'), { target: { value: '#HarbourDental, leeds' } });
+    expect(screen.getByText('On every post: #HarbourDental #leeds. It adds its own tags after these.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Pictures or videos more often'), { target: { value: 'videos' } });
+    fireEvent.change(screen.getByLabelText('How pictures and videos should look'), { target: { value: 'Bright and clean' } });
+    fireEvent.change(screen.getByLabelText('Look up the latest trends'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(1));
+    expect(h.save.mock.calls[0][2].custom).toEqual({
+      goal: 'leads', callToAction: 'Book a free check-up', topics: 'Whitening, braces', avoid: 'Other dentists', link: 'harbourdental.co.uk/book', rules: 'Always name Leeds.',
+      captionLength: 'short', emoji: 'none', fixedTags: ['HarbourDental', 'leeds'], mix: 'videos', look: 'Bright and clean', trendsEveryDays: 1,
+    });
+  });
+
+  it('shows what was saved before', async () => {
+    await open(data({ settings: settings({ mode: 'ask', brief: 'Harbour Dental is a family dentist in Leeds.', custom: { ...DEFAULT_CUSTOM, goal: 'sales', fixedTags: ['HarbourDental'], trendsEveryDays: 3 } }) }));
+    expect((screen.getByLabelText('What the posts are for') as HTMLSelectElement).value).toBe('sales');
+    expect((screen.getByLabelText('Tags on every post') as HTMLInputElement).value).toBe('#HarbourDental');
+    expect((screen.getByLabelText('Look up the latest trends') as HTMLSelectElement).value).toBe('3');
+    expect(screen.getByText('Saved.')).toBeTruthy();
+  });
+
+  it('will not save a link that is not one', async () => {
+    await open(data());
+    fireEvent.change(screen.getByLabelText('Link for the posts'), { target: { value: 'book now' } });
+    expect(screen.getByRole('alert').textContent).toContain('The link for the posts does not look right.');
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('cannot choose pictures or videos more often when only one kind is made', async () => {
+    await open(data({ settings: settings({ mode: 'ask', brief: 'Harbour Dental is a family dentist in Leeds.', formats: ['image'] }) }));
+    expect((screen.getByLabelText('Pictures or videos more often') as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Voice in videos') as HTMLSelectElement).disabled).toBe(true);
+  });
+
+  it('says so when the database cannot keep them yet: one neutral sentence, or the step for the people who run the site', async () => {
+    h.save.mockResolvedValue({ customKept: false });
+    await open(data());
+    expect(screen.queryByText(/cannot be kept yet/)).toBeNull();
+    fireEvent.change(screen.getByLabelText('Emoji'), { target: { value: 'none' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.toast.warning).toHaveBeenCalledWith('Saved, but the newer options could not be kept yet. See the note in the settings.'));
+    const hint = await screen.findByText(/cannot be kept yet/);
+    expect(hint.textContent).toContain('Please ask the person who set up the site to finish the latest update.');
+    expect(hint.textContent).not.toContain('supabase');
+    cleanup();
+    h.internals.visible = true;
+    await open(data({ customReady: false }));
+    expect(screen.getByText(/cannot be kept yet/).textContent).toContain('Run supabase/crm_setup.sql in the Supabase SQL editor, then reload.');
+  });
+});
+
+describe('the figures at the top', () => {
+  it('counts what waits, what is planned and what is being made, and what was spent', async () => {
+    await open(data({ spentCents: 450, jobs: { waiting: 0, running: 1, done: 3, failed: 0 } }), { content: [post('w1', { postGroupId: 'g1' }), post('s1', { postGroupId: 'g2', status: 'scheduled' })] });
+    const figures = Object.fromEntries([...document.querySelectorAll('dl > div')].map((cell) => [cell.querySelector('dt')?.textContent, cell.querySelector('dd')?.textContent]));
+    expect(figures).toEqual({ 'Waiting for your yes': '1', 'Planned to go out': '1', 'Being made': '1', 'Spent this month': '$4.50' });
+  });
+
+  it('are left out while the autopilot is off', async () => {
+    await open(data({ settings: settings({ mode: 'off' }) }));
+    expect(document.querySelector('dl')).toBeNull();
+  });
+});
+
+describe('how its posts did', () => {
   it('puts what needs the owner at the top', async () => {
     await open(data({ notes: [note('problem', 'Connect Harbour Dental again', 'Open the Accounts tab and connect it again.')] }));
     const top = screen.getByRole('region', { name: 'Needs your attention' });

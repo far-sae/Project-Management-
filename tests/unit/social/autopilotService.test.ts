@@ -7,6 +7,8 @@ import type { SocialAccount, SocialContent } from '@/types/social';
 const h = vi.hoisted(() => ({
   calls: [] as Array<{ table: string; op: string; values: Record<string, unknown>; filters: Array<[string, string, unknown]>; options?: unknown }>,
   error: null as null | { code?: string; message?: string },
+  /** The answers of the next calls, in order; after them every call gets `error`. */
+  errors: [] as Array<null | { code?: string; message?: string }>,
 }));
 
 vi.mock('@/services/supabase/config', () => ({
@@ -18,7 +20,7 @@ vi.mock('@/services/supabase/config', () => ({
         const link = {
           eq: (c: string, v: unknown) => { call.filters.push(['eq', c, v]); return link; },
           in: (c: string, v: unknown) => { call.filters.push(['in', c, v]); return link; },
-          then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: null, error: h.error }).then(ok),
+          then: (ok: (v: unknown) => unknown) => Promise.resolve({ data: null, error: h.errors.length ? (h.errors.shift() ?? null) : h.error }).then(ok),
         };
         return link;
       };
@@ -28,7 +30,7 @@ vi.mock('@/services/supabase/config', () => ({
 }));
 
 import { approveAutopilotPosts, saveAutopilot, saveAutopilotText, setAutopilotMedia, settingsOfRow } from '@/services/social/autopilot';
-import { DEFAULT_SETTINGS } from '../../../api/_social/shared/autopilot';
+import { DEFAULT_CUSTOM, DEFAULT_SETTINGS } from '../../../api/_social/shared/autopilot';
 
 const WS = '11111111-1111-4111-8111-111111111111';
 const ORG = '22222222-2222-4222-8222-222222222222';
@@ -41,7 +43,7 @@ const post = (id: string, accountId: string, over: Partial<SocialContent> = {}):
   idea: { format: 'video', hook: '', why: '', experiment: 'A question', tags: ['old'], visual: '', spoken: '' }, ...over,
 });
 
-beforeEach(() => { h.calls.length = 0; h.error = null; });
+beforeEach(() => { h.calls.length = 0; h.error = null; h.errors.length = 0; });
 
 describe('changing the words of a post it made', () => {
   it('writes each account’s own part again, and keeps the answers that are not text', async () => {
@@ -119,6 +121,31 @@ describe('saving the settings', () => {
   });
 
   it('reads a row made before the newer settings existed', () => {
-    expect(settingsOfRow({ mode: 'ask', brief: 'x' })).toMatchObject({ retryWeak: true, website: '', postDays: [], postTimes: [] });
+    expect(settingsOfRow({ mode: 'ask', brief: 'x' })).toMatchObject({ retryWeak: true, website: '', postDays: [], postTimes: [], custom: DEFAULT_CUSTOM });
+  });
+
+  it('saves the owner’s own wishes as one value, cleaned, with the link as it will be written', async () => {
+    const wishes = { ...DEFAULT_CUSTOM, goal: 'leads' as const, link: 'harbourdental.co.uk/book', fixedTags: ['#Leeds', 'Leeds', 'smile'], rules: `  ${'x'.repeat(900)}` };
+    expect(await saveAutopilot(ORG, WS, { ...s, custom: wishes }, 'u1')).toEqual({ customKept: true });
+    expect(h.calls).toHaveLength(1);
+    const kept = h.calls[0].values.custom as typeof DEFAULT_CUSTOM;
+    expect(kept).toMatchObject({ goal: 'leads', link: 'https://harbourdental.co.uk/book', fixedTags: ['Leeds', 'smile'], emoji: 'auto', trendsEveryDays: 7 });
+    expect(kept.rules).toHaveLength(800);
+    expect(settingsOfRow({ custom: kept }).custom).toEqual(kept);
+  });
+
+  it('still saves everything else when the database cannot keep the wishes yet, and says so', async () => {
+    h.errors.push({ code: 'PGRST204', message: "Could not find the 'custom' column of 'social_autopilot' in the schema cache" }, null);
+    expect(await saveAutopilot(ORG, WS, { ...s, custom: { ...DEFAULT_CUSTOM, goal: 'sales' } }, 'u1')).toEqual({ customKept: false });
+    expect(h.calls).toHaveLength(2);
+    expect('custom' in h.calls[0].values).toBe(true);
+    expect('custom' in h.calls[1].values).toBe(false);
+    expect(h.calls[1].values).toMatchObject({ mode: 'ask', brief: 'Harbour Dental is a family dentist in Leeds.', updated_by: 'u1' });
+  });
+
+  it('does not try a second time for any other failure', async () => {
+    h.error = { code: '42501', message: 'new row violates row-level security policy for table "social_autopilot"' };
+    await expect(saveAutopilot(ORG, WS, { ...s, custom: { ...DEFAULT_CUSTOM, goal: 'sales' } })).rejects.toThrow('Only the owner or an admin can change the autopilot.');
+    expect(h.calls).toHaveLength(1);
   });
 });

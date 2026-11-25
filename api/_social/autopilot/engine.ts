@@ -155,7 +155,14 @@ export type EngineDeps = {
 
 const due = (last: string | null, every: number, now: number): boolean => !last || now - new Date(last).getTime() >= every;
 /** The time to write down so that the step is due again `after` from now, for a step that is due every week. */
-const dueAgainIn = (after: number, now: number): Date => new Date(now - WEEK_MS + after);
+/** The time to write down so that something done every `every` is due again `after` from now. */
+const dueAgainIn = (after: number, now: number, every: number = WEEK_MS): Date => new Date(now - every + Math.min(after, every));
+
+/** How often the latest trends are looked up: the owner's choice, a week unless said. */
+export const trendsEvery = (row: PilotRow): number => row.settings.custom.trendsEveryDays * DAY_MS;
+
+export const NO_TRENDS_TITLE = "The latest trends could not be looked up";
+export const NO_TRENDS_BODY = "The search on the web gave nothing this time. The autopilot tries again in a few hours. Until then it plans from your own numbers.";
 
 // ── Dates in the workspace's own time ────────────────────────────────────
 
@@ -435,17 +442,34 @@ async function learnSite(store: PilotStore, d: EngineDeps, row: PilotRow, did: s
   did.push("read your website");
 }
 
-async function lookUpTrends(store: PilotStore, d: EngineDeps, row: PilotRow, did: string[]): Promise<void> {
+/** Looks the trends up and keeps them. False when the search gave nothing: then nothing is kept as trends. */
+async function lookUpTrends(store: PilotStore, d: EngineDeps, row: PilotRow, did: string[]): Promise<boolean> {
   const meter = metered(d.claude);
   const platforms = [...new Set(chosenAccounts(row.settings, await store.accounts(row.workspaceId)).map((a) => a.provider))];
   const text = await askTrends(meter.ai, { workspaceId: row.workspaceId, feature: "web" }, { settings: row.settings, platforms, today: todayWords(d.now(), row.settings.timezone) });
   if (!text) {
-    await store.stamp(row.workspaceId, "trends_at", dueAgainIn(RETRY_MS, d.now()));
-    return;
+    await store.stamp(row.workspaceId, "trends_at", dueAgainIn(RETRY_MS, d.now(), trendsEvery(row)));
+    // The look-up was still paid for: its cost is written down with the notice.
+    const last = await store.latestNote(row.workspaceId, "problem");
+    if (!last || last.title !== NO_TRENDS_TITLE || d.now() - new Date(last.createdAt).getTime() >= DAY_MS) {
+      await store.addNote(row, { kind: "problem", title: NO_TRENDS_TITLE, body: NO_TRENDS_BODY, costMicroUsd: meter.cost() });
+    }
+    return false;
   }
   await store.addNote(row, { kind: "trends", title: "What is working right now", body: text, costMicroUsd: meter.cost() });
   await store.stamp(row.workspaceId, "trends_at", new Date(d.now()));
   did.push("looked up the latest trends");
+  return true;
+}
+
+/**
+ * The owner asks for the trends now, whatever their turn is. "found" or
+ * "nothing"; "budget" when the month's money is used up. Throws AiError when
+ * the call itself failed.
+ */
+export async function refreshTrends(store: PilotStore, d: EngineDeps, row: PilotRow): Promise<"found" | "nothing" | "budget"> {
+  if ((await store.spentCents(row.workspaceId, monthStart(new Date(d.now())))) >= row.settings.budgetCents) return "budget";
+  return (await lookUpTrends(store, d, row, [])) ? "found" : "nothing";
 }
 
 async function studyPages(store: PilotStore, d: EngineDeps, row: PilotRow, did: string[]): Promise<void> {
@@ -521,7 +545,7 @@ async function planWeek(store: PilotStore, d: EngineDeps, row: PilotRow, did: st
 export function nextThinking(row: PilotRow, now: number): Stamp | null {
   // The website first: everything after it is written from what it says.
   if (row.settings.website.trim() && due(row.siteAt, SITE_EVERY_MS, now)) return "site_at";
-  if (due(row.trendsAt, WEEK_MS, now)) return "trends_at";
+  if (due(row.trendsAt, trendsEvery(row), now)) return "trends_at";
   if (due(row.studiedAt, WEEK_MS, now)) return "studied_at";
   if (due(row.plannedAt, WEEK_MS, now)) return "planned_at";
   if (due(row.reviewedAt, DAY_MS, now)) return "reviewed_at";
@@ -562,7 +586,7 @@ export async function runWorkspace(store: PilotStore, d: EngineDeps, row: PilotR
     if (!(e instanceof AiError)) throw e;
     // Not at the next run again: a call that fails every five minutes costs money and teaches nothing.
     // (The daily look at the posts has written its time down already.)
-    if (step !== "reviewed_at" && step !== "site_at") await store.stamp(row.workspaceId, step, dueAgainIn(RETRY_MS, now));
+    if (step !== "reviewed_at" && step !== "site_at") await store.stamp(row.workspaceId, step, dueAgainIn(RETRY_MS, now, step === "trends_at" ? trendsEvery(row) : WEEK_MS));
     if (step === "planned_at") await problem(store, row, "The week could not be planned", "The autopilot could not make a plan this time. It tries again in a few hours.", now);
   }
   return did;
