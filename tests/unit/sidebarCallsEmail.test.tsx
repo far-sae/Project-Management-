@@ -14,7 +14,7 @@ const state = vi.hoisted(() => {
   return {
     auth, chrome, projects, pinned,
     features: new Set<string>(['crm', 'email_campaigns', 'team_collaboration']),
-    organization: { isAdmin: true, isViewer: false, isOwner: true },
+    organization: { isAdmin: true, isViewer: false, isOwner: true, areaLevel: (() => 'manage') as (area: string) => string },
     scope: { selectedId: 'ws-1', isAll: false, isUnassigned: false, menuPages: null as string[] | null },
   };
 });
@@ -42,9 +42,13 @@ const labels = () => {
 };
 const hrefOf = (name: string) => labels().find((l) => l.text === name)?.href ?? null;
 
+const OWNER = { isAdmin: true, isViewer: false, isOwner: true, areaLevel: () => 'manage' };
+/** A plain member, with what an owner or admin gave them for Social media (nothing unless said). */
+const member = (social: 'none' | 'use' | 'manage' = 'none') => ({ isAdmin: false, isViewer: false, isOwner: false, areaLevel: () => social });
+
 beforeEach(() => {
   state.features = new Set(['crm', 'email_campaigns', 'team_collaboration']);
-  state.organization = { isAdmin: true, isViewer: false, isOwner: true };
+  state.organization = OWNER;
   state.scope = { selectedId: 'ws-1', isAll: false, isUnassigned: false, menuPages: null };
 });
 afterEach(cleanup);
@@ -60,7 +64,7 @@ describe('sidebar: Calls and Email', () => {
   });
 
   it('keeps both away from a member', () => {
-    state.organization = { isAdmin: false, isViewer: false, isOwner: false };
+    state.organization = member();
     const names = labels().map((l) => l.text);
     expect(names).toContain('My Tasks');
     expect(names).not.toContain('Calls');
@@ -93,14 +97,31 @@ describe('sidebar: Calls and Email', () => {
   });
 
   it('keeps Social away from a member, and out of a workspace menu without the CRM', () => {
-    state.organization = { isAdmin: false, isViewer: false, isOwner: false };
+    state.organization = member();
     expect(hrefOf('Social')).toBeNull();
     cleanup();
-    state.organization = { isAdmin: true, isViewer: false, isOwner: true };
+    state.organization = OWNER;
     state.scope = { ...state.scope, menuPages: ['my_tasks', 'crm'] };
     expect(hrefOf('Social')).toBe('/social');
     cleanup();
     state.scope = { ...state.scope, menuPages: ['my_tasks', 'calendar'] };
+    expect(hrefOf('Social')).toBeNull();
+  });
+
+  it('shows Social to a member who was given it, at either level, and nothing else of the admins', () => {
+    for (const level of ['use', 'manage'] as const) {
+      state.organization = member(level);
+      const all = labels();
+      const names = all.map((l) => l.text);
+      expect(all.find((l) => l.text === 'Social')?.href).toBe('/social');
+      expect(names).toContain('My Tasks');
+      for (const hidden of ['CRM', 'Calls', 'Email', 'Team', 'HR', 'Reports', 'Inbox']) expect(names).not.toContain(hidden);
+      cleanup();
+    }
+  });
+
+  it('never shows Social to a viewer, whatever was given', () => {
+    state.organization = { isAdmin: false, isViewer: true, isOwner: false, areaLevel: () => 'none' };
     expect(hrefOf('Social')).toBeNull();
   });
 

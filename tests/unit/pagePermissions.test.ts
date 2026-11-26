@@ -52,6 +52,25 @@ describe('resolvePagePermissions', () => {
     expect(p.my_tasks).toBe('edit');
   });
 
+  it('a member reaches Social media only when it was given to them', () => {
+    expect(resolvePagePermissions({ isOwner: false, builtinRole: 'member', customRole: null }).social).toBe('none');
+    expect(resolvePagePermissions({ isOwner: false, builtinRole: 'member', customRole: null, access: {} }).social).toBe('none');
+    for (const level of ['use', 'manage'] as const) {
+      const p = resolvePagePermissions({ isOwner: false, builtinRole: 'member', customRole: null, access: { social: level } });
+      expect(p.social).toBe('edit');
+      // Nothing else opens with it.
+      expect(p.team).toBe('none');
+      expect(p.dashboard).toBe('none');
+      expect(p.reports).toBe('none');
+    }
+  });
+
+  it('what was given changes nothing for a viewer, an admin or the owner', () => {
+    expect(resolvePagePermissions({ isOwner: false, builtinRole: 'viewer', customRole: null, access: { social: 'manage' } }).social).toBe('none');
+    expect(resolvePagePermissions({ isOwner: false, builtinRole: 'admin', customRole: null }).social).toBe('edit');
+    expect(resolvePagePermissions({ isOwner: true, builtinRole: null, customRole: null }).social).toBe('edit');
+  });
+
   it('built-in admin fallback gets edit everywhere; viewer is read-only on its surface', () => {
     const admin = resolvePagePermissions({ isOwner: false, builtinRole: 'admin', customRole: null });
     expect(ALL_PAGE_KEYS.every((k) => admin[k] === 'edit')).toBe(true);

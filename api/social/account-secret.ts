@@ -3,19 +3,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes } from 'node:crypto';
 import { env, serviceClient } from '../_lib/context';
 import { encryptSecret } from '../_lib/crypto';
+import { mayManageSocial } from '../_social/access';
 import { connectHandler, type ConnectStore } from '../_social/connect';
 import { SERVICE_REF } from '../_social/service';
 import { writeSecret } from '../_social/tokens';
 
-/** True when the person is the owner or an admin of the organisation. */
-async function isOrgAdmin(db: SupabaseClient, organizationId: string, userId: string): Promise<boolean> {
-  const { data: org } = await db.from('organizations').select('owner_id, members').eq('organization_id', organizationId).maybeSingle();
-  if (!org) return false;
-  const members = Array.isArray(org.members) ? org.members as Array<Record<string, unknown>> : [];
-  return org.owner_id === userId || members.some((member) =>
-    String(member.userId ?? member.user_id ?? '') === userId && ['owner', 'admin'].includes(String(member.role)),
-  );
-}
+/** True for the owner, an admin, and a member who was given social media to manage. */
+const isOrgAdmin = (db: SupabaseClient, organizationId: string, userId: string): Promise<boolean> => mayManageSocial(db, organizationId, userId);
 
 /** Where "Connect" keeps what it found: the same two tables a key pasted by hand goes to. */
 export function connectStore(db: SupabaseClient, key: () => string): ConnectStore {

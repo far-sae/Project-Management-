@@ -98,8 +98,10 @@ export const Sidebar: React.FC = () => {
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
   const {
-    isAdmin: isOrgAdminOrOwner, isViewer, isOwner: isOrgOwner,
+    isAdmin: isOrgAdminOrOwner, isViewer, isOwner: isOrgOwner, areaLevel,
   } = useOrganization();
+  // A member who was given Social media on the Team page gets its link.
+  const memberSeesSocial = !isOrgAdminOrOwner && !isViewer && areaLevel('social') !== 'none';
   // HR is owner-only for now.
   const canSeeHr = isOrgOwner || isAppOwner(user?.userId);
   const navigate = useNavigate();
@@ -146,6 +148,8 @@ export const Sidebar: React.FC = () => {
   // items. Under "All workspaces" menuPages is null and the role list shows whole.
   const quickItems = useMemo(() => {
     const teamItem = QUICK_ITEMS_FULL.find((i) => i.href === '/team');
+    const socialItem = QUICK_ITEMS_FULL.find((i) => i.href === '/social');
+    const memberItems = memberSeesSocial && socialItem ? [...QUICK_ITEMS_MEMBER, socialItem] : QUICK_ITEMS_MEMBER;
     const roleItems = canSeePeopleOps
       ? QUICK_ITEMS_FULL.filter(
           (i) =>
@@ -159,8 +163,8 @@ export const Sidebar: React.FC = () => {
         ? QUICK_ITEMS_VIEWER
         : managesProjects && teamItem && hasFeature('team_collaboration')
           // Project owners / project admins manage their projects' people.
-          ? [...QUICK_ITEMS_MEMBER, teamItem]
-          : QUICK_ITEMS_MEMBER;
+          ? [...memberItems, teamItem]
+          : memberItems;
     // The CRM comes before projects (a won deal becomes one), so it does not
     // wait for the workspace to have a project.
     const workspaceReady = isAll ? projects.length > 0 : !isUnassigned && visibleProjects.length > 0;
@@ -168,7 +172,7 @@ export const Sidebar: React.FC = () => {
       ? roleItems
       : roleItems.filter((item) => !['email', 'social'].includes(item.page));
     return resolveWorkspaceMenu(flowItems, menuPages);
-  }, [canSeePeopleOps, canSeeHr, isViewer, managesProjects, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
+  }, [canSeePeopleOps, canSeeHr, isViewer, managesProjects, memberSeesSocial, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
 
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);

@@ -7,6 +7,8 @@ import { getOrganization } from '@/services/supabase/organizations';
 import { supabase } from '@/services/supabase/config';
 import { resolvePagePermissions, type BuiltinRole } from "@/lib/pagePermissions";
 import { type PageKey, type PageAccessLevel } from "@/lib/pageCatalog";
+import type { AccessArea, AreaAccess, MemberAccess } from '@/lib/memberAccess';
+import { loadMyAccess } from '@/services/supabase/memberAccess';
 
 interface OrganizationContextType {
   organization: Organization | null;
@@ -31,6 +33,9 @@ interface OrganizationContextType {
   /** True until org + custom roles have loaded — guards should wait on this
    *  before deciding page access (avoids a wrong-access flash). */
   permissionsLoading: boolean;
+  /** What this person has in an area (Team page, for example "Social media").
+   *  The owner and admins have 'manage' everywhere; a viewer has 'none'. */
+  areaLevel: (area: AccessArea) => AreaAccess;
 }
 
 const OrganizationContext = createContext<OrganizationContextType | undefined>(undefined);
@@ -229,6 +234,31 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
   const canManageBilling = isOwner;
   const canManageSettings = isAdmin;
 
+  // What an owner or admin gave this person on top of their role (Team page). Only a
+  // plain member can be given something: admins have everything, a viewer only reads.
+  const [access, setAccess] = useState<MemberAccess>({});
+  const [accessFor, setAccessFor] = useState<string | null>(null);
+  const organizationId = organization?.organizationId ?? null;
+  const memberId = role === 'member' ? (user?.userId ?? null) : null;
+  const accessKey = organizationId && memberId ? `${organizationId}:${memberId}` : null;
+  useEffect(() => {
+    if (!organizationId || !memberId) { setAccess({}); setAccessFor(null); return; }
+    let alive = true;
+    const read = () => {
+      void loadMyAccess(organizationId, memberId).then((mine) => {
+        if (!alive) return;
+        setAccess(mine);
+        setAccessFor(`${organizationId}:${memberId}`);
+      });
+    };
+    read();
+    // Given or taken away while the person was elsewhere: read again when they come back to the tab.
+    const onVisible = () => { if (document.visibilityState === 'visible') read(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { alive = false; document.removeEventListener('visibilitychange', onVisible); };
+  }, [organizationId, memberId]);
+  const accessLoading = accessKey !== null && accessFor !== accessKey;
+
   // Set-up details (which database file to run, which server setting is missing) are for the
   // people who run the site. Everybody else reads "not switched on yet". See lib/platform.ts.
   const viewerId = user?.userId ?? null;
@@ -310,6 +340,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       isOwner,
       builtinRole: (role as BuiltinRole | null),
       customRole: null,
+      access,
     });
     const pageLevel = (page: PageKey): PageAccessLevel => pagePerms[page] ?? 'none';
 
@@ -327,9 +358,10 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       pageLevel,
       canAccessPage: (page: PageKey) => pageLevel(page) !== 'none',
       canEditPage: (page: PageKey) => pageLevel(page) === 'edit',
-      permissionsLoading: loading,
+      permissionsLoading: loading || accessLoading,
+      areaLevel: (area: AccessArea): AreaAccess => (isAdmin ? 'manage' : role === 'member' ? (access[area] ?? 'none') : 'none'),
     };
-  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, role, user?.userId]);
+  }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, role, user?.userId, access, accessLoading]);
 
   return (
     <OrganizationContext.Provider value={value}>

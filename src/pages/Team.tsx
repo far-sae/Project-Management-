@@ -3,6 +3,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
+import { SetupHint } from '@/components/common/SetupHint';
+import { MemberSocialAccessSelect } from '@/components/team/MemberAccessSelect';
+import { loadOrgAccess, type OrgAccess } from '@/services/supabase/memberAccess';
 import { removeOrganizationMember, updateOrganization } from '@/services/supabase/organizations';
 import { upsertProjectMember, type ProjectRole } from '@/services/supabase/projectMembers';
 import type { Organization, OrganizationMember } from '@/types/organization';
@@ -138,6 +141,15 @@ export const Team: React.FC = () => {
   const { user } = useAuth();
   const { organization, refreshOrganization, isAdmin } = useOrganization();
   const { projects, refreshProjects } = useProjects();
+  // What each person was given on top of their role (so far: Social media). Owner and admins only.
+  const [orgAccess, setOrgAccess] = useState<OrgAccess | null>(null);
+  const orgIdForAccess = isAdmin ? organization?.organizationId ?? null : null;
+  useEffect(() => {
+    if (!orgIdForAccess) { setOrgAccess(null); return; }
+    let alive = true;
+    loadOrgAccess(orgIdForAccess).then((found) => { if (alive) setOrgAccess(found); }).catch(() => { if (alive) setOrgAccess(null); });
+    return () => { alive = false; };
+  }, [orgIdForAccess]);
   const { hasFeature, currentTier, pricing } = useSubscription();
   const navigate = useNavigate();
 
@@ -841,6 +853,12 @@ export const Team: React.FC = () => {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
+                  {isAdmin && orgAccess && !orgAccess.ready && (
+                    <p role="status" className="border-b border-border bg-warning-soft px-4 py-2 text-sm text-warning-soft-foreground">
+                      Giving one person Social media, without making them an admin, is not switched on yet.{' '}
+                      <SetupHint other="">Run supabase/crm_setup.sql in the Supabase SQL editor, then reload.</SetupHint>
+                    </p>
+                  )}
                   <table className="w-full min-w-[760px] text-left text-sm" aria-label="Team members">
                     <thead>
                       <tr className="h-10 border-b border-border bg-surface-2 text-xs text-muted-foreground">
@@ -896,6 +914,25 @@ export const Team: React.FC = () => {
                                 ) : (
                                   // The owner is already tagged next to their name.
                                   !isOwnerRow && getRoleBadge(member.role)
+                                )}
+
+                                {/* Social media for this one person, without making them an admin. */}
+                                {canSetOrgRole && organization && orgAccess?.ready
+                                  && (organization.members ?? []).find((m) => m.userId === member.userId)?.role === 'member' && (
+                                  <MemberSocialAccessSelect
+                                    organizationId={organization.organizationId}
+                                    userId={member.userId}
+                                    name={member.displayName || member.email || 'This person'}
+                                    value={orgAccess.byUser[member.userId]?.social ?? 'none'}
+                                    grantedBy={user?.userId}
+                                    className={ROW_SELECT}
+                                    onChanged={(next) => setOrgAccess((old) => {
+                                      if (!old) return old;
+                                      const mine = { ...old.byUser[member.userId] };
+                                      if (next === 'none') delete mine.social; else mine.social = next;
+                                      return { ...old, byUser: { ...old.byUser, [member.userId]: mine } };
+                                    })}
+                                  />
                                 )}
 
                                 {/* Per-project role (separate from the org-wide role). */}

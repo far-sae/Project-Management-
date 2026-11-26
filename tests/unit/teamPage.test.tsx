@@ -1,25 +1,36 @@
 // Team page: the member list keeps its management actions and adds per-person
 // chat / call buttons on every row except your own.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { setInternalsVisible } from '@/lib/publicError';
 import { MemoryRouter } from 'react-router-dom';
 
 const h = vi.hoisted(() => ({
   openChat: vi.fn(),
   startCall: vi.fn(),
   invitations: [] as Array<Record<string, unknown>>,
+  loadOrgAccess: vi.fn(),
+  setMemberAccess: vi.fn(),
+  internals: { visible: true },
+  toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }));
 
 const orgMembers = [
   { userId: 'me', displayName: 'Mia Owner', email: 'mia@x.io', role: 'owner', status: 'active' },
   { userId: 'alice', displayName: 'Alice', email: 'alice@x.io', role: 'member', status: 'active' },
+  { userId: 'tom', displayName: 'Tom', email: 'tom@x.io', role: 'admin', status: 'active' },
+  { userId: 'dana', displayName: 'Dana', email: 'dana@x.io', role: 'viewer', status: 'active' },
 ];
 const project = {
   projectId: 'p1',
   name: 'Website',
   ownerId: 'me',
   organizationId: 'org1',
-  members: [{ userId: 'alice', email: 'alice@x.io', displayName: 'Alice', role: 'member' }],
+  members: [
+    { userId: 'alice', email: 'alice@x.io', displayName: 'Alice', role: 'member' },
+    { userId: 'tom', email: 'tom@x.io', displayName: 'Tom', role: 'member' },
+    { userId: 'dana', email: 'dana@x.io', displayName: 'Dana', role: 'viewer' },
+  ],
 };
 
 vi.mock('@/hooks/useSelectedWorkspace', () => {
@@ -30,7 +41,9 @@ vi.mock('@/hooks/useSelectedWorkspace', () => {
   };
   return { useSelectedWorkspace: () => scope };
 });
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() } }));
+vi.mock('sonner', () => ({ toast: h.toast }));
+vi.mock('@/hooks/useInternalsVisible', () => ({ useInternalsVisible: () => h.internals.visible }));
+vi.mock('@/services/supabase/memberAccess', () => ({ loadOrgAccess: h.loadOrgAccess, setMemberAccess: h.setMemberAccess }));
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({
     user: { userId: 'me', displayName: 'Mia Owner', email: 'mia@x.io', organizationId: 'org1' },
@@ -121,15 +134,82 @@ beforeEach(() => {
   h.openChat.mockReset();
   h.startCall.mockReset();
   h.invitations = [];
+  h.loadOrgAccess.mockReset().mockResolvedValue({ ready: true, byUser: {} });
+  h.setMemberAccess.mockReset().mockResolvedValue(undefined);
+  h.toast.success.mockReset();
+  h.toast.error.mockReset();
+  h.internals.visible = true;
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); setInternalsVisible(true); });
+
+describe('Social media for one person, without making them an admin', () => {
+  const socialOf = (name: string) => within(rowOf(name)).queryByLabelText(`Social media access of ${name}`) as HTMLSelectElement | null;
+
+  it('is a choice on the row of a plain member: no access, posts only, or everything', async () => {
+    renderTeam();
+    await screen.findByText('Alice');
+    await waitFor(() => expect(socialOf('Alice')).toBeTruthy());
+    expect(h.loadOrgAccess).toHaveBeenCalledWith('org1');
+    const choice = socialOf('Alice') as HTMLSelectElement;
+    expect(choice.value).toBe('none');
+    expect([...choice.options].map((o) => o.textContent)).toEqual(['Social: no access', 'Social: posts only', 'Social: everything']);
+  });
+
+  it('is not offered for the owner, an admin or a viewer', async () => {
+    renderTeam();
+    await screen.findByText('Alice');
+    await waitFor(() => expect(socialOf('Alice')).toBeTruthy());
+    expect(socialOf('Mia Owner')).toBeNull();
+    expect(socialOf('Tom')).toBeNull();
+    expect(socialOf('Dana')).toBeNull();
+  });
+
+  it('shows what the person has, gives more, and takes it away', async () => {
+    h.loadOrgAccess.mockResolvedValue({ ready: true, byUser: { alice: { social: 'use' } } });
+    renderTeam();
+    await screen.findByText('Alice');
+    await waitFor(() => expect(socialOf('Alice')?.value).toBe('use'));
+    fireEvent.change(socialOf('Alice') as HTMLSelectElement, { target: { value: 'manage' } });
+    await waitFor(() => expect(h.setMemberAccess).toHaveBeenCalledWith('org1', 'alice', 'social', 'manage', 'me'));
+    await waitFor(() => expect(socialOf('Alice')?.value).toBe('manage'));
+    expect(h.toast.success).toHaveBeenCalledWith('Alice now has Social media: everything.');
+    fireEvent.change(socialOf('Alice') as HTMLSelectElement, { target: { value: 'none' } });
+    await waitFor(() => expect(h.setMemberAccess).toHaveBeenLastCalledWith('org1', 'alice', 'social', null, 'me'));
+    await waitFor(() => expect(socialOf('Alice')?.value).toBe('none'));
+    expect(h.toast.success).toHaveBeenLastCalledWith('Alice no longer sees Social media.');
+  });
+
+  it('keeps what was there and says so in plain words when it cannot be changed', async () => {
+    h.setMemberAccess.mockRejectedValue(new Error('The access could not be changed. Please try again.'));
+    renderTeam();
+    await screen.findByText('Alice');
+    await waitFor(() => expect(socialOf('Alice')).toBeTruthy());
+    fireEvent.change(socialOf('Alice') as HTMLSelectElement, { target: { value: 'use' } });
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('The access could not be changed. Please try again.'));
+    expect(socialOf('Alice')?.value).toBe('none');
+  });
+
+  it('offers no choice while the database cannot keep it, and tells the people who run the site which step is missing', async () => {
+    h.loadOrgAccess.mockResolvedValue({ ready: false, byUser: {} });
+    renderTeam();
+    await screen.findByText('Alice');
+    const note = await screen.findByText(/is not switched on yet/);
+    expect(note.textContent).toContain('Run supabase/crm_setup.sql in the Supabase SQL editor, then reload.');
+    expect(socialOf('Alice')).toBeNull();
+    cleanup();
+    h.internals.visible = false;
+    renderTeam();
+    const plain = await screen.findByText(/is not switched on yet/);
+    expect(plain.textContent).not.toContain('supabase');
+  });
+});
 
 describe('Team page', () => {
   it('lists the project’s people with the headline figures', async () => {
     renderTeam();
     expect(screen.getByRole('heading', { level: 1, name: 'Team' })).toBeTruthy();
     await screen.findByText('Alice');
-    expect(screen.getByText('Total Members').nextElementSibling?.textContent).toBe('2');
+    expect(screen.getByText('Total Members').nextElementSibling?.textContent).toBe('4');
     expect(screen.getByText('Admins').nextElementSibling?.textContent).toBe('1');
     expect(screen.getByText('Pending Invites').nextElementSibling?.textContent).toBe('0');
     const owner = rowOf('Mia Owner');

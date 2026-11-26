@@ -31,7 +31,8 @@ vi.mock('@/services/social/connect', () => ({
   CONNECT_FAILED_MESSAGE: 'The account could not be connected. Please try again.',
 }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1' } }) }));
-vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: { organizationId: 'org-1' }, isAdmin: true }) }));
+const who = vi.hoisted(() => ({ social: 'manage' as 'none' | 'use' | 'manage' }));
+vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: { organizationId: 'org-1' }, isAdmin: who.social === 'manage', areaLevel: () => who.social }) }));
 vi.mock('@/hooks/useSelectedWorkspace', () => ({
   useSelectedWorkspace: () => ({ selected: { workspaceId: 'ws-1', name: 'Northwind Studio' }, isAll: false, isUnassigned: false, select: vi.fn(), workspaces: [{ workspaceId: 'ws-1' }], loading: false }),
 }));
@@ -82,7 +83,32 @@ beforeEach(() => {
     ],
   };
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); who.social = 'manage'; });
+
+describe('a person who was given Social media on the Team page', () => {
+  const openAccounts = async () => {
+    await show();
+    const tab = screen.getByRole('tab', { name: /Accounts/ });
+    fireEvent.mouseDown(tab);
+    fireEvent.click(tab);
+    return screen.findByRole('list', { name: 'Connected accounts' });
+  };
+
+  it('with "posts only" makes posts, but cannot connect or disconnect an account', async () => {
+    who.social = 'use';
+    const list = await openAccounts();
+    expect(screen.getByRole('button', { name: /New post/ })).toBeTruthy();
+    expect(screen.getByText('Only an owner or admin can connect accounts.')).toBeTruthy();
+    expect(within(list).queryByRole('button', { name: /^Disconnect / })).toBeNull();
+  });
+
+  it('with "everything" connects and disconnects accounts like an admin', async () => {
+    who.social = 'manage';
+    const list = await openAccounts();
+    expect(screen.queryByText('Only an owner or admin can connect accounts.')).toBeNull();
+    expect(within(list).getAllByRole('button', { name: /^Disconnect / }).length).toBeGreaterThan(0);
+  });
+});
 
 describe('the posts of one press', () => {
   // The cards are the second way to see the posts; the table is the first.

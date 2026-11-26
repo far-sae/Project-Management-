@@ -42,7 +42,9 @@ const PROVIDERS: SocialProvider[] = ['linkedin', 'facebook', 'instagram', 'x', '
 
 export const SocialMedia: React.FC = () => {
   const { user } = useAuth();
-  const { organization, isAdmin } = useOrganization();
+  const { organization, areaLevel } = useOrganization();
+  // Connecting accounts and the autopilot: the owner, the admins, and a person who was given all of Social media.
+  const canManage = areaLevel('social') === 'manage';
   const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading, preferredWorkspaceId } = useSelectedWorkspace();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [campaigns, setCampaigns] = useState<SocialCampaign[]>([]);
@@ -234,16 +236,16 @@ export const SocialMedia: React.FC = () => {
         />
       </TabsContent>
       <TabsContent value="accounts" className="space-y-3">
-        <ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={Boolean(isAdmin)} onChanged={() => void load(true)} onFound={offerFound} />
+        <ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={canManage} onChanged={() => void load(true)} onFound={offerFound} />
         <SectionHeader title="Connected accounts" action="Add with a key" onClick={() => setCreateKind('account')} />
-        <ConnectedAccounts organizationId={orgId} workspaceId={workspaceId} accounts={accounts} canManage={Boolean(isAdmin)} onChanged={() => void load(true)} />
+        <ConnectedAccounts organizationId={orgId} workspaceId={workspaceId} accounts={accounts} canManage={canManage} onChanged={() => void load(true)} />
       </TabsContent>
       <TabsContent value="analytics">
         <SocialAnalytics content={content} accounts={accounts} campaigns={campaigns} metrics={metrics} />
       </TabsContent>
       <TabsContent value="autopilot">
         <Autopilot
-          organizationId={orgId} workspaceId={workspaceId} accounts={accounts} content={content} canEdit={Boolean(isAdmin)} userId={user?.userId}
+          organizationId={orgId} workspaceId={workspaceId} accounts={accounts} content={content} canEdit={canManage} userId={user?.userId}
           onChanged={() => void load(true)} onDelete={removePosts}
         />
       </TabsContent>

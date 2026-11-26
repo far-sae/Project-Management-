@@ -6,6 +6,7 @@ import type { SocialAccountRow } from '../_social/publishers';
 import { runWorker, type ContentRow, type RunResult, type WorkerDeps, type WorkerStore } from '../_social/worker';
 import { randomUUID } from 'node:crypto';
 import { claudeClient } from '../_automation/ai';
+import { mayManageSocial } from '../_social/access';
 import { pilotHandler } from '../_social/autopilot/router';
 import { supabasePilotStore } from '../_social/autopilot/supabaseStore';
 
@@ -137,13 +138,8 @@ const autopilot = (req: VercelRequest, res: VercelResponse, route: string) => {
       const { data } = await db.from('workspaces').select('organization_id').eq('workspace_id', workspaceId).maybeSingle();
       return data?.organization_id ? String(data.organization_id) : null;
     },
-    isAdmin: async (organizationId, userId) => {
-      const { data: org } = await db.from('organizations').select('owner_id, members').eq('organization_id', organizationId).maybeSingle();
-      if (!org) return false;
-      const members = Array.isArray(org.members) ? org.members as Array<Record<string, unknown>> : [];
-      return org.owner_id === userId || members.some((member) =>
-        String(member.userId ?? member.user_id ?? '') === userId && ['owner', 'admin'].includes(String(member.role)));
-    },
+    // The owner, the admins, and a member who was given social media to manage.
+    isAdmin: (organizationId, userId) => mayManageSocial(db, organizationId, userId),
   })(req, res, route);
 };
 
