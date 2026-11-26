@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { SetupHint } from '@/components/common/SetupHint';
-import { MemberSocialAccessSelect } from '@/components/team/MemberAccessSelect';
+import { MemberPagesDialog } from '@/components/team/MemberPagesDialog';
+import { hasOwnPages, pagesFor, pagesOn } from '@/lib/memberAccess';
 import { loadOrgAccess, type OrgAccess } from '@/services/supabase/memberAccess';
 import { removeOrganizationMember, updateOrganization } from '@/services/supabase/organizations';
 import { upsertProjectMember, type ProjectRole } from '@/services/supabase/projectMembers';
@@ -25,7 +26,7 @@ import {
 } from '@/components/ui/select';
 import {
   Users, UserPlus, Crown, Shield, User, Loader2,
-  Clock, XCircle, Check, Copy, Lock, ArrowRightLeft, Trash2, X,
+  Clock, XCircle, Check, Copy, Lock, ArrowRightLeft, Trash2, X, LayoutGrid,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -141,8 +142,10 @@ export const Team: React.FC = () => {
   const { user } = useAuth();
   const { organization, refreshOrganization, isAdmin } = useOrganization();
   const { projects, refreshProjects } = useProjects();
-  // What each person was given on top of their role (so far: Social media). Owner and admins only.
+  // The pages chosen for each person (the "Pages" button on a member's row). Owner and admins only.
   const [orgAccess, setOrgAccess] = useState<OrgAccess | null>(null);
+  /** The person whose pages are being chosen. */
+  const [pagesOf, setPagesOf] = useState<{ userId: string; name: string } | null>(null);
   const orgIdForAccess = isAdmin ? organization?.organizationId ?? null : null;
   useEffect(() => {
     if (!orgIdForAccess) { setOrgAccess(null); return; }
@@ -855,7 +858,7 @@ export const Team: React.FC = () => {
                 <div className="overflow-x-auto">
                   {isAdmin && orgAccess && !orgAccess.ready && (
                     <p role="status" className="border-b border-border bg-warning-soft px-4 py-2 text-sm text-warning-soft-foreground">
-                      Giving one person Social media, without making them an admin, is not switched on yet.{' '}
+                      Choosing which pages one person sees is not switched on yet.{' '}
                       <SetupHint other="">Run supabase/crm_setup.sql in the Supabase SQL editor, then reload.</SetupHint>
                     </p>
                   )}
@@ -916,23 +919,18 @@ export const Team: React.FC = () => {
                                   !isOwnerRow && getRoleBadge(member.role)
                                 )}
 
-                                {/* Social media for this one person, without making them an admin. */}
+                                {/* Which pages this one person sees, without making them an admin. */}
                                 {canSetOrgRole && organization && orgAccess?.ready
                                   && (organization.members ?? []).find((m) => m.userId === member.userId)?.role === 'member' && (
-                                  <MemberSocialAccessSelect
-                                    organizationId={organization.organizationId}
-                                    userId={member.userId}
-                                    name={member.displayName || member.email || 'This person'}
-                                    value={orgAccess.byUser[member.userId]?.social ?? 'none'}
-                                    grantedBy={user?.userId}
-                                    className={ROW_SELECT}
-                                    onChanged={(next) => setOrgAccess((old) => {
-                                      if (!old) return old;
-                                      const mine = { ...old.byUser[member.userId] };
-                                      if (next === 'none') delete mine.social; else mine.social = next;
-                                      return { ...old, byUser: { ...old.byUser, [member.userId]: mine } };
-                                    })}
-                                  />
+                                  <Button
+                                    type="button" variant="outline" size="sm" className={ROW_SELECT}
+                                    aria-label={`Pages of ${member.displayName || member.email || 'this person'}`}
+                                    title="Choose which pages this person sees and can use"
+                                    onClick={() => setPagesOf({ userId: member.userId, name: member.displayName || member.email || 'This person' })}
+                                  >
+                                    <LayoutGrid aria-hidden />
+                                    {hasOwnPages(orgAccess.byUser[member.userId]) ? `Pages: ${pagesOn(pagesFor(orgAccess.byUser[member.userId]))} on` : 'Pages: standard'}
+                                  </Button>
                                 )}
 
                                 {/* Per-project role (separate from the org-wide role). */}
@@ -1173,6 +1171,24 @@ export const Team: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {organization && (
+        <MemberPagesDialog
+          member={pagesOf} organizationId={organization.organizationId} access={pagesOf ? orgAccess?.byUser[pagesOf.userId] : undefined}
+          grantedBy={user?.userId} hasFeature={hasFeature}
+          onOpenChange={(open) => { if (!open) setPagesOf(null); }}
+          onSaved={(next) => {
+            const id = pagesOf?.userId;
+            if (!id) return;
+            setOrgAccess((old) => {
+              if (!old) return old;
+              const byUser = { ...old.byUser };
+              if (next) byUser[id] = next; else delete byUser[id];
+              return { ...old, byUser };
+            });
+          }}
+        />
+      )}
 
       <AlertDialog
         open={infoDialog.open}

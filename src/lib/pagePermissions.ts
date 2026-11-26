@@ -7,7 +7,7 @@
 // is only about role-driven access.
 
 import { ALL_PAGE_KEYS, PAGE_CATALOG, type PageKey, type PageAccessLevel } from './pageCatalog';
-import type { AccessArea, MemberAccess } from './memberAccess';
+import { ACCESS_AREAS, pageOfArea, type MemberAccess } from './memberAccess';
 
 export type BuiltinRole = 'owner' | 'admin' | 'member' | 'viewer';
 
@@ -24,11 +24,8 @@ const ALWAYS_AVAILABLE: PageKey[] = PAGE_CATALOG.filter((p) => p.alwaysAvailable
 const MEMBER_BLOCKED_PAGES: PageKey[] = [
   'dashboard', 'inbox', 'team', 'comments', 'contracts', 'hr', 'reports',
 ];
-// Pages a member reaches only when an owner or admin gave them that area
-// (Team page, "Social media"). Without it the page is closed, like the pages
-// above. With it the page is open at either level: what a person may do
-// inside it is decided on the page.
-const AREA_PAGES: Record<AccessArea, PageKey> = { social: 'social' };
+// Social media is closed for a member until the owner opens it for them.
+const MEMBER_CLOSED_UNTIL_GIVEN: PageKey[] = ['social'];
 
 // Pages a built-in 'viewer' may view — mirrors today's viewer sidebar surface.
 const VIEWER_VIEW_PAGES: PageKey[] = ['calendar', 'timeline', 'project_management'];
@@ -48,7 +45,8 @@ export const resolvePagePermissions = (input: {
   isOwner: boolean;
   builtinRole: BuiltinRole | null;
   customRole: { permissions: RolePermissionMap } | null;
-  /** The areas this person was given by an owner or admin. */
+  /** The pages the owner chose for this person (Team page). On: open. Off: closed.
+   *  A page without a choice keeps what a member has by standard. */
   access?: MemberAccess;
 }): Record<PageKey, PageAccessLevel> => {
   if (input.isOwner || input.builtinRole === 'owner') return fill('edit');
@@ -67,7 +65,11 @@ export const resolvePagePermissions = (input: {
   } else {
     // member (default)
     for (const k of ALL_PAGE_KEYS) out[k] = MEMBER_BLOCKED_PAGES.includes(k) ? 'none' : 'edit';
-    for (const area of Object.keys(AREA_PAGES) as AccessArea[]) out[AREA_PAGES[area]] = input.access?.[area] ? 'edit' : 'none';
+    for (const k of MEMBER_CLOSED_UNTIL_GIVEN) out[k] = 'none';
+    for (const area of ACCESS_AREAS) {
+      const level = input.access?.[area];
+      if (level) out[pageOfArea(area)] = level === 'off' ? 'none' : 'edit';
+    }
   }
 
   // alwaysAvailable floor — never below 'view'.

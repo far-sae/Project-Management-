@@ -65,10 +65,41 @@ describe('resolvePagePermissions', () => {
     }
   });
 
+  it('the owner\'s choice for one person opens a page a member does not have, and closes one a member has', () => {
+    const p = resolvePagePermissions({ isOwner: false, builtinRole: 'member', customRole: null, access: { reports: 'use', dashboard: 'use', crm: 'off', email: 'off', workload: 'off', calls: 'use' } });
+    expect(p.reports).toBe('edit');
+    // The Team page is not one the owner switches on: it stays with people who run a project.
+    expect(p.team).toBe('none');
+    expect(p.dashboard).toBe('edit');
+    expect(p.calls).toBe('edit');
+    expect(p.crm).toBe('none');
+    expect(p.email).toBe('none');
+    expect(p.workload).toBe('none');
+    // A page nobody chose keeps what a member has.
+    expect(p.inbox).toBe('none');
+    expect(p.projects_analytics).toBe('edit');
+    expect(p.project_management).toBe('edit');
+  });
+
+  it('nobody is locked out of their own tasks, calendar and settings', () => {
+    const p = resolvePagePermissions({ isOwner: false, builtinRole: 'member', customRole: null, access: { dashboard: 'off', workload: 'off', crm: 'off' } });
+    expect(p.my_tasks).toBe('edit');
+    expect(p.calendar).toBe('edit');
+    expect(p.settings).toBe('edit');
+    expect(p.hr).toBe('none');
+  });
+
+  it('Calls is a page of its own, and a member has it as before until the owner says otherwise', () => {
+    expect(pageKeyForPath('/calls')).toBe('calls');
+    expect(resolvePagePermissions({ isOwner: false, builtinRole: 'member', customRole: null }).calls).toBe('edit');
+    expect(resolvePagePermissions({ isOwner: false, builtinRole: 'member', customRole: null, access: { calls: 'off' } }).calls).toBe('none');
+  });
+
   it('what was given changes nothing for a viewer, an admin or the owner', () => {
     expect(resolvePagePermissions({ isOwner: false, builtinRole: 'viewer', customRole: null, access: { social: 'manage' } }).social).toBe('none');
+    expect(resolvePagePermissions({ isOwner: false, builtinRole: 'admin', customRole: null, access: { crm: 'off' } }).crm).toBe('edit');
     expect(resolvePagePermissions({ isOwner: false, builtinRole: 'admin', customRole: null }).social).toBe('edit');
-    expect(resolvePagePermissions({ isOwner: true, builtinRole: null, customRole: null }).social).toBe('edit');
+    expect(resolvePagePermissions({ isOwner: true, builtinRole: null, customRole: null, access: { crm: 'off' } }).crm).toBe('edit');
   });
 
   it('built-in admin fallback gets edit everywhere; viewer is read-only on its surface', () => {

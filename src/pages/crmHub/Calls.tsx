@@ -92,6 +92,8 @@ export const CrmCallsPage: React.FC = () => {
   const [callBacksOpen, setCallBacksOpen] = useState(false);
   const workspaceId = useWorkspaceForCreate();
   const calling = useCalling();
+  // The owner, admins, and a person who was given Calls on the Team page.
+  const mayCall = calling.mayCall;
   const { items: leads } = useCrmContacts();
 
   const [calls, setCalls] = useState<CallListItem[]>([]);
@@ -114,7 +116,7 @@ export const CrmCallsPage: React.FC = () => {
   const [manyDone, setManyDone] = useState<number | null>(null);
 
   const load = useCallback(async (quiet = false) => {
-    if (!isAdmin || !workspaceId) return;
+    if (!mayCall || !workspaceId) return;
     // After a delete the list is read again for its totals: what is on screen stays until the answer is there.
     if (!quiet) setLoading(true);
     setProblem(null);
@@ -128,7 +130,7 @@ export const CrmCallsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, workspaceId]);
+  }, [mayCall, workspaceId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -222,13 +224,13 @@ export const CrmCallsPage: React.FC = () => {
     return hits.slice(0, 8);
   }, [callable, pickQuery]);
 
-  if (!isAdmin) {
+  if (!mayCall) {
     return (
       <main className="min-w-0 flex-1 overflow-y-auto bg-background">
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
           <PageHeader title="Calls" />
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Only the owner and admins can see calls and their recordings.
+            Only the owner, admins and people who were given calling can see calls and their recordings.
           </div>
         </div>
       </main>
@@ -261,7 +263,9 @@ export const CrmCallsPage: React.FC = () => {
       <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
         <PageHeader
           title="Calls"
-          description="Every call placed from the CRM in this workspace, with the caller's note and the recording."
+          description={calling.seesAll
+            ? "Every call placed from the CRM in this workspace, with the caller's note and the recording."
+            : 'Your own calls in this workspace, with your notes and the recordings.'}
           actions={
             <>
               <div className="relative">
@@ -284,7 +288,7 @@ export const CrmCallsPage: React.FC = () => {
                   <SelectItem value="recorded">With a recording</SelectItem>
                 </SelectContent>
               </Select>
-              {canCall && workspaceId && (
+              {canCall && isAdmin && workspaceId && (
                 <Button variant="outline" onClick={() => setCallBacksOpen(true)}>
                   <PhoneIncoming aria-hidden />Call-backs
                 </Button>

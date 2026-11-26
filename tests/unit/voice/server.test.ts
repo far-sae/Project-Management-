@@ -6,6 +6,7 @@ import { getExpectedTwilioSignature } from "twilio/lib/webhooks/webhooks";
 import { readConfig, type VoiceConfig } from "../../../api/_voice/config";
 import {
   CALLS_OWNER_ONLY_MESSAGE,
+  callReach,
   LEAD_NOT_FOUND_MESSAGE,
   ORG_NOT_ALLOWED_MESSAGE,
   CALLS_PER_MINUTE,
@@ -67,7 +68,9 @@ type Activity = { id: string; description: string; metadata: Record<string, unkn
 function fakeStore() {
   const calls = new Map<string, Call>();
   const activities = new Map<string, Activity>();
-  const roles: Record<string, "owner" | "admin" | "member"> = { [OWNER]: "owner", [ADMIN]: "admin", [MEMBER]: "member" };
+  const roles: Record<string, "owner" | "admin" | "member" | "viewer"> = { [OWNER]: "owner", [ADMIN]: "admin", [MEMBER]: "member" };
+  /** What the owner gave a person for calling on the Team page. */
+  const given: Record<string, "use" | "manage"> = {};
   const targets: Record<string, Target> = {
     [LEAD]: { kind: "contact", id: LEAD, organizationId: ORG, workspaceId: WS },
     [LEAD_NO_WS]: { kind: "contact", id: LEAD_NO_WS, organizationId: ORG, workspaceId: null },
@@ -84,17 +87,18 @@ function fakeStore() {
     workspaceOrg: async (id) => (id === WS || id === WS2 ? ORG : null),
     listCalls: async (workspaceId, opts) =>
       [...calls.values()]
-        .filter((c) => c.workspaceId === workspaceId && c.status !== "starting" && (!opts.before || c.createdAt < opts.before))
+        .filter((c) => c.workspaceId === workspaceId && c.status !== "starting" && (!opts.before || c.createdAt < opts.before) && (!opts.userId || c.userId === opts.userId))
         .sort(newestFirst)
         .slice(0, opts.limit),
-    callResults: async (workspaceId, since) =>
-      [...calls.values()].filter((c) => c.workspaceId === workspaceId && c.status !== "starting" && c.createdAt >= since).map((c) => ({ status: c.status, seconds: c.seconds })),
+    callResults: async (workspaceId, since, userId) =>
+      [...calls.values()].filter((c) => c.workspaceId === workspaceId && c.status !== "starting" && c.createdAt >= since && (!userId || c.userId === userId)).map((c) => ({ status: c.status, seconds: c.seconds })),
     names: async (ids) => ({
       contacts: Object.fromEntries(ids.contacts.filter((id) => id === LEAD).map((id) => [id, "Elena Rossi"])),
       companies: Object.fromEntries(ids.companies.filter((id) => id === COMPANY).map((id) => [id, "Harbour Dental"])),
       users: Object.fromEntries(ids.users.filter((id) => id === OWNER).map((id) => [id, "Sam"])),
     }),
     orgRole: async (org, user) => (org === ORG ? roles[user] ?? null : null),
+    callsGiven: async (org, user) => (org === ORG ? given[user] ?? null : null),
     contact: async (id) => (targets[id]?.kind === "contact" ? targets[id] : null),
     company: async (id) => (targets[id]?.kind === "company" ? targets[id] : null),
     callsSince: async (user, since) => [...calls.values()].filter((c) => c.userId === user && c.createdAt >= since).length,
@@ -123,7 +127,7 @@ function fakeStore() {
       activities.set(call.id, { id: call.id, description, metadata, contactId: call.contactId, companyId: call.companyId, workspaceId: call.workspaceId });
     },
   };
-  return { store, calls, activities, roles, state, phones };
+  return { store, calls, activities, roles, given, state, phones };
 }
 
 function world() {
@@ -391,6 +395,116 @@ describe("calling: after the call", () => {
     expect(describeCall({ ...base, status: "canceled" })).toBe("Called +1 (415) 555-0132. Hung up before it was answered.");
     expect(describeCall({ ...base, status: "failed" })).toBe("Called +1 (415) 555-0132. The call did not connect.");
     expect(describeCall({ ...base, status: "no_answer", outcome: "wrong_number" })).toBe("Called +1 (415) 555-0132. Wrong number.");
+  });
+});
+
+describe("calling for a person who is not an admin, given by the owner on the Team page", () => {
+  const SALES = MEMBER;
+
+  it("knows how far a person's calling goes", async () => {
+    const w = world();
+    expect(await callReach(w.store, ORG, OWNER)).toBe("all");
+    expect(await callReach(w.store, ORG, ADMIN)).toBe("all");
+    expect(await callReach(w.store, ORG, SALES)).toBeNull();
+    w.given[SALES] = "use";
+    expect(await callReach(w.store, ORG, SALES)).toBe("own");
+    w.given[SALES] = "manage";
+    expect(await callReach(w.store, ORG, SALES)).toBe("all");
+    // A viewer never calls, and what was given in one organisation says nothing about another.
+    w.roles[SALES] = "viewer";
+    expect(await callReach(w.store, ORG, SALES)).toBeNull();
+    expect(await callReach(w.store, "99999999-9999-4999-8999-999999999999", OWNER)).toBeNull();
+  });
+
+  it("lets them place a call, and the line opens for them", async () => {
+    const w = world();
+    w.given[SALES] = "use";
+    const out = await w.as(SALES).post("calls", { contactId: LEAD, to: "+44 7700 900123" });
+    expect(out.status).toBe(200);
+    const id = (out.json as { id: string }).id;
+    const twiml = await w.hook("twiml", { callId: id, From: `client:${identityOf(SALES)}`, CallSid: CALL_SID });
+    expect(twiml).toContain("<Dial");
+    expect(twiml).toContain("+447700900123");
+  });
+
+  it("hangs up when calling was taken away between pressing Call and the line opening", async () => {
+    const w = world();
+    w.given[SALES] = "use";
+    const id = await w.startCall(SALES);
+    delete w.given[SALES];
+    const twiml = await w.hook("twiml", { callId: id, From: `client:${identityOf(SALES)}`, CallSid: CALL_SID });
+    expect(twiml).not.toContain("<Dial");
+    expect(twiml).toContain("<Hangup/>");
+  });
+
+  it("shows a person with their own calls only those, and sums up only those", async () => {
+    const w = world();
+    w.given[SALES] = "use";
+    const mine = await w.startCall(SALES);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "60" }, { call: mine });
+    w.state.now = new Date(w.state.now.getTime() + 60_000);
+    const theirs = await w.startCall(OWNER);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "300" }, { call: theirs });
+
+    const own = (await w.as(SALES).get("calls", { workspaceId: WS })).json as CallList;
+    expect(own.calls.map((c) => c.id)).toEqual([mine]);
+    expect(own.summary).toMatchObject({ total: 1, answered: 1, seconds: 60 });
+    const all = (await w.as(OWNER).get("calls", { workspaceId: WS })).json as CallList;
+    expect(all.calls.map((c) => c.id)).toEqual([theirs, mine]);
+    expect(all.summary).toMatchObject({ total: 2, seconds: 360 });
+  });
+
+  it("shows a person who was given all calls every call", async () => {
+    const w = world();
+    w.given[SALES] = "manage";
+    const theirs = await w.startCall(OWNER);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "300" }, { call: theirs });
+    const all = (await w.as(SALES).get("calls", { workspaceId: WS })).json as CallList;
+    expect(all.calls.map((c) => c.id)).toEqual([theirs]);
+  });
+
+  it("never plays somebody else's recording to a person with their own calls only, and says no more than 'not found'", async () => {
+    const w = world();
+    w.given[SALES] = "use";
+    const theirs = await w.startCall(OWNER);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "300" }, { call: theirs });
+    await w.hook("recording", { RecordingStatus: "completed", RecordingSid: REC_SID, RecordingDuration: "300" }, { call: theirs });
+    const refused = await w.as(SALES).get(`calls/${theirs}/recording`);
+    expect(refused).toEqual({ status: 404, json: { error: CALL_NOT_FOUND_MESSAGE } });
+    expect(w.fetchMock).not.toHaveBeenCalled();
+    expect((await w.as(SALES).get(`calls/${theirs}/result`)).status).toBe(404);
+    expect((await w.as(SALES).post(`calls/${theirs}/end`, { outcome: "connected" })).status).toBe(404);
+
+    const mine = await w.startCall(SALES);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "60" }, { call: mine });
+    await w.hook("recording", { RecordingStatus: "completed", RecordingSid: REC_SID, RecordingDuration: "60" }, { call: mine });
+    expect((await w.as(SALES).get(`calls/${mine}/recording`)).status).toBe(200);
+    expect((await w.as(SALES).post(`calls/${mine}/end`, { outcome: "connected", note: "Wants a quote" })).status).toBe(200);
+  });
+
+  it("plays any recording to a person who was given all calls", async () => {
+    const w = world();
+    w.given[SALES] = "manage";
+    const theirs = await w.startCall(OWNER);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "300" }, { call: theirs });
+    await w.hook("recording", { RecordingStatus: "completed", RecordingSid: REC_SID, RecordingDuration: "300" }, { call: theirs });
+    expect((await w.as(SALES).get(`calls/${theirs}/recording`)).status).toBe(200);
+  });
+
+  it("still keeps deleting a call for the owner, and who takes call-backs for the owner and admins", async () => {
+    const w = world();
+    w.given[SALES] = "manage";
+    const mine = await w.startCall(SALES);
+    await w.hook("done", { DialCallStatus: "completed", DialCallDuration: "60" }, { call: mine });
+    expect(await w.as(SALES).del(`calls/${mine}`)).toEqual({ status: 403, json: { error: DELETE_OWNER_ONLY_MESSAGE } });
+    expect((await w.as(SALES).get("callbacks", { workspaceId: WS })).status).toBe(403);
+    expect((await w.as(SALES).get(`contacts/${LEAD}/calls`)).status).toBe(403);
+  });
+
+  it("gives nothing to a member the owner gave nothing", async () => {
+    const w = world();
+    expect(await w.as(SALES).post("calls", { contactId: LEAD, to: "+44 7700 900123" })).toEqual({ status: 403, json: { error: OWNER_ONLY_MESSAGE } });
+    expect(await w.as(SALES).get("calls", { workspaceId: WS })).toEqual({ status: 403, json: { error: CALLS_OWNER_ONLY_MESSAGE } });
   });
 });
 

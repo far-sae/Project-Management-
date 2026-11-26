@@ -14,7 +14,7 @@ const state = vi.hoisted(() => {
   return {
     auth, chrome, projects, pinned,
     features: new Set<string>(['crm', 'email_campaigns', 'team_collaboration']),
-    organization: { isAdmin: true, isViewer: false, isOwner: true, areaLevel: (() => 'manage') as (area: string) => string },
+    organization: { isAdmin: true, isViewer: false, isOwner: true, areaLevel: (() => 'manage') as (area: string) => string, canAccessPage: (() => true) as (page: string) => boolean },
     scope: { selectedId: 'ws-1', isAll: false, isUnassigned: false, menuPages: null as string[] | null },
   };
 });
@@ -41,10 +41,17 @@ const labels = () => {
   return screen.getAllByRole('link').map((a) => ({ text: a.textContent?.trim() ?? '', href: a.getAttribute('href') }));
 };
 const hrefOf = (name: string) => labels().find((l) => l.text === name)?.href ?? null;
+/** The pages of the quick menu, in the order they are shown (the logo and the footer links are left out). */
+const MENU = ['Project Management', 'Projects analytics', 'My Tasks', 'Inbox', 'CRM', 'Calls', 'Email', 'Social', 'Calendar', 'Workload', 'Reports', 'Team', 'HR'];
+const menu = () => labels().map((l) => l.text).filter((text) => MENU.includes(text));
 
-const OWNER = { isAdmin: true, isViewer: false, isOwner: true, areaLevel: () => 'manage' };
-/** A plain member, with what an owner or admin gave them for Social media (nothing unless said). */
-const member = (social: 'none' | 'use' | 'manage' = 'none') => ({ isAdmin: false, isViewer: false, isOwner: false, areaLevel: () => social });
+const OWNER = { isAdmin: true, isViewer: false, isOwner: true, areaLevel: () => 'manage', canAccessPage: () => true };
+/** A plain member, with the pages the owner chose for them on the Team page (nothing unless said). */
+const member = (pages: Record<string, 'off' | 'use' | 'manage'> = {}) => ({
+  isAdmin: false, isViewer: false, isOwner: false,
+  areaLevel: (area: string) => (pages[area] === 'use' || pages[area] === 'manage' ? pages[area] : 'none'),
+  canAccessPage: (page: string) => pages[page] !== 'off',
+});
 
 beforeEach(() => {
   state.features = new Set(['crm', 'email_campaigns', 'team_collaboration']);
@@ -110,7 +117,7 @@ describe('sidebar: Calls and Email', () => {
 
   it('shows Social to a member who was given it, at either level, and nothing else of the admins', () => {
     for (const level of ['use', 'manage'] as const) {
-      state.organization = member(level);
+      state.organization = member({ social: level });
       const all = labels();
       const names = all.map((l) => l.text);
       expect(all.find((l) => l.text === 'Social')?.href).toBe('/social');
@@ -121,8 +128,29 @@ describe('sidebar: Calls and Email', () => {
   });
 
   it('never shows Social to a viewer, whatever was given', () => {
-    state.organization = { isAdmin: false, isViewer: true, isOwner: false, areaLevel: () => 'none' };
+    state.organization = { isAdmin: false, isViewer: true, isOwner: false, areaLevel: () => 'none', canAccessPage: () => true };
     expect(hrefOf('Social')).toBeNull();
+  });
+
+  it('gives a member every page the owner switched on, in the order of the full menu, and never HR', () => {
+    state.organization = member({ dashboard: 'use', projects_analytics: 'use', inbox: 'use', crm: 'use', calls: 'use', email: 'use', social: 'manage', reports: 'use' });
+    expect(menu()).toEqual(['Project Management', 'Projects analytics', 'My Tasks', 'Inbox', 'CRM', 'Calls', 'Email', 'Social', 'Calendar', 'Workload', 'Reports']);
+  });
+
+  it('leaves a page out that the owner switched off, also a standard one, and keeps My Tasks and Calendar', () => {
+    state.organization = member({ workload: 'off', crm: 'off', email: 'use' });
+    expect(menu()).toEqual(['My Tasks', 'Email', 'Calendar']);
+  });
+
+  it('gives a member nothing new while the owner chose nothing', () => {
+    state.organization = member();
+    expect(menu()).toEqual(['My Tasks', 'Calendar', 'Workload']);
+  });
+
+  it('follows the plan for a member too: a page that was switched on needs its feature', () => {
+    state.features = new Set(['team_collaboration']);
+    state.organization = member({ crm: 'use', calls: 'use', email: 'use', social: 'use' });
+    expect(menu()).toEqual(['My Tasks', 'Social', 'Calendar', 'Workload']);
   });
 
   it('goes with the CRM in a workspace that chose its own menu', () => {

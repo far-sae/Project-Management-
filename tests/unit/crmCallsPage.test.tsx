@@ -6,8 +6,9 @@ import { MemoryRouter } from 'react-router-dom';
 import type { CallList, CallListItem } from '../../api/_voice/shared/types';
 
 const state = vi.hoisted(() => {
-  const off = { setup: { configured: false, ready: false, problem: null as string | null, numbers: { US: false, GB: false } }, inApp: false, mayListen: false };
-  const on = { setup: { configured: true, ready: true, problem: null as string | null, numbers: { US: true, GB: true } }, inApp: true, mayListen: true };
+  // off: calling is not set up yet (the person may still see the list). on: set up, and every call is theirs to see.
+  const off = { setup: { configured: false, ready: false, problem: null as string | null, numbers: { US: false, GB: false } }, inApp: false, mayListen: false, mayCall: true, seesAll: true };
+  const on = { setup: { configured: true, ready: true, problem: null as string | null, numbers: { US: true, GB: true } }, inApp: true, mayListen: true, mayCall: true, seesAll: true };
   const owner = { isAdmin: true, isOwner: true };
   const admin = { isAdmin: true, isOwner: false };
   const member = { isAdmin: false, isOwner: false };
@@ -276,11 +277,26 @@ describe('CRM calls page', () => {
     expect(state.listCalls).not.toHaveBeenCalled();
   });
 
-  it('is closed to anyone who is not an owner or admin', async () => {
+  it('is closed to anyone who was not given calling', async () => {
     state.organization = state.member;
+    state.calling = { ...state.off, mayCall: false, seesAll: false };
     await renderPage();
-    expect(screen.getByText('Only the owner and admins can see calls and their recordings.')).toBeTruthy();
+    expect(screen.getByText('Only the owner, admins and people who were given calling can see calls and their recordings.')).toBeTruthy();
     expect(state.listCalls).not.toHaveBeenCalled();
+  });
+
+  it('gives a person who was given their own calls the list and the call buttons, and says the calls are theirs', async () => {
+    state.organization = state.member;
+    state.calling = { ...state.on, seesAll: false };
+    await renderPage();
+    await screen.findByText('Send the quote on Friday');
+    expect(state.listCalls).toHaveBeenCalledWith('ws-1');
+    expect(screen.getByText('Your own calls in this workspace, with your notes and the recordings.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dialer' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Call a lead' })).toBeTruthy();
+    // Who takes call-backs is for the owner and admins; deleting a call is for the owner.
+    expect(screen.queryByRole('button', { name: 'Call-backs' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull();
   });
 });
 

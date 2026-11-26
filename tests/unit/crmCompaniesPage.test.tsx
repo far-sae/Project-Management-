@@ -91,7 +91,7 @@ vi.mock('@/hooks/useCrmHub', () => ({
   useWorkspaceForCreate: () => 'w',
 }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1', displayName: 'Sam' } }) }));
-vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: data.organization }) }));
+vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: data.organization, areaLevel: () => 'none' }) }));
 vi.mock('@/context/CrmCurrencyContext', () => ({
   useCrmCurrency: () => ({
     code: 'GBP', def: { code: 'GBP', symbol: '£', label: 'British Pound' }, loading: false,

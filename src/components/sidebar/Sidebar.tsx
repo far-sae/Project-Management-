@@ -31,6 +31,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
 import { useOrganization } from '@/context/OrganizationContext';
+import { ACCESS_AREAS, type AccessArea } from '@/lib/memberAccess';
 import { useSubscription } from '@/context/SubscriptionContext';
 import type { PageKey } from '@/lib/pageCatalog';
 import { useProjectChrome } from '@/context/ProjectChromeContext';
@@ -78,6 +79,12 @@ const QUICK_ITEMS_FULL = [
   { icon: UserCheck, label: 'HR', href: '/hr', page: 'hr' as PageKey },
 ];
 
+// Which of the owner's per-person choices (Team page, "Pages") opens which menu item.
+const AREA_OF_HREF: Record<string, AccessArea> = {
+  '/dashboard': 'dashboard', '/dashboard/projects': 'projects_analytics', '/inbox': 'inbox', '/crm': 'crm', '/calls': 'calls',
+  '/email': 'email', '/social': 'social', '/workload': 'workload', '/reports': 'reports',
+};
+
 // Members get a deliberately small surface: just the personal-productivity
 // pages. No Dashboard / Inbox / Reports — those are admin/owner views.
 const QUICK_ITEMS_MEMBER = [
@@ -98,10 +105,13 @@ export const Sidebar: React.FC = () => {
   const { user, signOut } = useAuth();
   const { trialInfo, hasFeature } = useSubscription();
   const {
-    isAdmin: isOrgAdminOrOwner, isViewer, isOwner: isOrgOwner, areaLevel,
+    isAdmin: isOrgAdminOrOwner, isViewer, isOwner: isOrgOwner, areaLevel, canAccessPage,
   } = useOrganization();
-  // A member who was given Social media on the Team page gets its link.
-  const memberSeesSocial = !isOrgAdminOrOwner && !isViewer && areaLevel('social') !== 'none';
+  // The pages the owner switched on for this member (Team page, "Pages"), as one word
+  // that changes when the choice does.
+  const givenPages = isOrgAdminOrOwner || isViewer ? '' : ACCESS_AREAS.filter((a) => areaLevel(a) !== 'none').join(',');
+  // A standard page of a member that the owner closed for this person.
+  const closedPages = isOrgAdminOrOwner || isViewer ? '' : QUICK_ITEMS_MEMBER.filter((i) => !canAccessPage(i.page)).map((i) => i.href).join(',');
   // HR is owner-only for now.
   const canSeeHr = isOrgOwner || isAppOwner(user?.userId);
   const navigate = useNavigate();
@@ -148,8 +158,14 @@ export const Sidebar: React.FC = () => {
   // items. Under "All workspaces" menuPages is null and the role list shows whole.
   const quickItems = useMemo(() => {
     const teamItem = QUICK_ITEMS_FULL.find((i) => i.href === '/team');
-    const socialItem = QUICK_ITEMS_FULL.find((i) => i.href === '/social');
-    const memberItems = memberSeesSocial && socialItem ? [...QUICK_ITEMS_MEMBER, socialItem] : QUICK_ITEMS_MEMBER;
+    // A member: the standard pages (unless the owner closed one), and every page the owner
+    // switched on, in the order of the full menu.
+    const given = new Set(givenPages ? givenPages.split(',') : []);
+    const closed = new Set(closedPages ? closedPages.split(',') : []);
+    const standard = new Set(QUICK_ITEMS_MEMBER.map((i) => i.href));
+    const memberItems = QUICK_ITEMS_FULL.filter((i) =>
+      (standard.has(i.href) && !closed.has(i.href))
+      || (given.has(AREA_OF_HREF[i.href] ?? '') && (!('feature' in i) || !i.feature || hasFeature(i.feature))));
     const roleItems = canSeePeopleOps
       ? QUICK_ITEMS_FULL.filter(
           (i) =>
@@ -163,7 +179,7 @@ export const Sidebar: React.FC = () => {
         ? QUICK_ITEMS_VIEWER
         : managesProjects && teamItem && hasFeature('team_collaboration')
           // Project owners / project admins manage their projects' people.
-          ? [...memberItems, teamItem]
+          ? (memberItems.includes(teamItem) ? memberItems : [...memberItems, teamItem])
           : memberItems;
     // The CRM comes before projects (a won deal becomes one), so it does not
     // wait for the workspace to have a project.
@@ -172,7 +188,7 @@ export const Sidebar: React.FC = () => {
       ? roleItems
       : roleItems.filter((item) => !['email', 'social'].includes(item.page));
     return resolveWorkspaceMenu(flowItems, menuPages);
-  }, [canSeePeopleOps, canSeeHr, isViewer, managesProjects, memberSeesSocial, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
+  }, [canSeePeopleOps, canSeeHr, isViewer, managesProjects, givenPages, closedPages, hasFeature, isAll, isUnassigned, menuPages, projects.length, visibleProjects.length]);
 
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [projectsSectionOpen, setProjectsSectionOpen] = useState(true);

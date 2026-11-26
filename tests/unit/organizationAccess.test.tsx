@@ -30,9 +30,9 @@ const members = [
 
 const Probe: React.FC = () => {
   const { areaLevel, canAccessPage, permissionsLoading, isAdmin } = useOrganization();
-  return <p data-testid="probe">{JSON.stringify({ wait: permissionsLoading, social: areaLevel('social'), page: canAccessPage('social'), team: canAccessPage('team'), admin: isAdmin })}</p>;
+  return <p data-testid="probe">{JSON.stringify({ wait: permissionsLoading, social: areaLevel('social'), page: canAccessPage('social'), team: canAccessPage('team'), reports: canAccessPage('reports'), admin: isAdmin })}</p>;
 };
-const read = () => JSON.parse(screen.getByTestId('probe').textContent ?? '{}') as { wait: boolean; social: string; page: boolean; team: boolean; admin: boolean };
+const read = () => JSON.parse(screen.getByTestId('probe').textContent ?? '{}') as { wait: boolean; social: string; page: boolean; team: boolean; reports: boolean; admin: boolean };
 const show = () => render(<OrganizationProvider><Probe /></OrganizationProvider>);
 const settled = async () => { await waitFor(() => expect(read().wait).toBe(false)); return read(); };
 
@@ -46,20 +46,20 @@ afterEach(cleanup);
 describe('a member', () => {
   it('has no Social media until it was given', async () => {
     show();
-    expect(await settled()).toEqual({ wait: false, social: 'none', page: false, team: false, admin: false });
+    expect(await settled()).toEqual({ wait: false, social: 'none', page: false, team: false, reports: false, admin: false });
     expect(h.loadMyAccess).toHaveBeenCalledWith('org-1', 'u-junaid');
   });
 
   it('with "posts only" reaches the page but is not let do the admin things', async () => {
     h.loadMyAccess.mockResolvedValue({ social: 'use' });
     show();
-    expect(await settled()).toEqual({ wait: false, social: 'use', page: true, team: false, admin: false });
+    expect(await settled()).toEqual({ wait: false, social: 'use', page: true, team: false, reports: false, admin: false });
   });
 
   it('with "everything" manages Social media, and still nothing else of the admins', async () => {
     h.loadMyAccess.mockResolvedValue({ social: 'manage' });
     show();
-    expect(await settled()).toEqual({ wait: false, social: 'manage', page: true, team: false, admin: false });
+    expect(await settled()).toEqual({ wait: false, social: 'manage', page: true, team: false, reports: false, admin: false });
   });
 
   it('is asked to wait until what was given has been read, so no page opens or closes by mistake', async () => {
@@ -70,6 +70,14 @@ describe('a member', () => {
     expect(read().wait).toBe(true);
     answer({ social: 'use' });
     expect((await settled()).page).toBe(true);
+  });
+});
+
+describe('a member whose pages the owner chose', () => {
+  it('has a page that was switched on, and loses one that was switched off', async () => {
+    h.loadMyAccess.mockResolvedValue({ reports: 'use', social: 'off' });
+    show();
+    expect(await settled()).toEqual({ wait: false, social: 'none', page: false, team: false, reports: true, admin: false });
   });
 });
 

@@ -60,12 +60,19 @@ export interface VoiceStore extends InboundStore {
   /** The organisation a workspace belongs to, or null when there is no such workspace. */
   workspaceOrg(workspaceId: string): Promise<string | null>;
   /** The calls of a workspace that reached the provider, newest first, older than `before` when given. */
-  listCalls(workspaceId: string, opts: { before?: string; limit: number }): Promise<Call[]>;
+  /** `userId`: only the calls of that person (their own, and call-backs filed under them). */
+  listCalls(workspaceId: string, opts: { before?: string; limit: number; userId?: string }): Promise<Call[]>;
   /** How the calls of a workspace since `since` went: status and length of each. */
-  callResults(workspaceId: string, since: string): Promise<Array<Pick<Call, "status" | "seconds">>>;
+  callResults(workspaceId: string, since: string, userId?: string): Promise<Array<Pick<Call, "status" | "seconds">>>;
   names(ids: { contacts: string[]; companies: string[]; users: string[] }): Promise<Names>;
   /** The person's role in an organisation, or null when they are not an active member. */
   orgRole(organizationId: string, userId: string): Promise<OrgRole | null>;
+  /**
+   * What the owner gave this person for calling on the Team page: "use" (their
+   * own calls) or "manage" (all calls), or null for nothing. Null as well
+   * before that table exists.
+   */
+  callsGiven(organizationId: string, userId: string): Promise<"use" | "manage" | null>;
   contact(id: string): Promise<Target | null>;
   company(id: string): Promise<Target | null>;
   /** How many calls this person has started since `since`. */
@@ -153,13 +160,14 @@ export function supabaseStore(sb: SupabaseClient): VoiceStore {
       // A call still "starting" never reached the provider (the line failed first): it is not a call anyone made.
       let q = sb.from("crm_calls").select("*").eq("workspace_id", workspaceId).neq("status", "starting").order("created_at", { ascending: false }).limit(opts.limit);
       if (opts.before) q = q.lt("created_at", opts.before);
+      if (opts.userId) q = q.eq("user_id", opts.userId);
       return ((must(await q) as Row[] | null) ?? []).map(callFrom);
     },
 
-    async callResults(workspaceId, since) {
-      const data = must(
-        await sb.from("crm_calls").select("status, duration_seconds").eq("workspace_id", workspaceId).neq("status", "starting").gte("created_at", since).limit(5000),
-      ) as Row[] | null;
+    async callResults(workspaceId, since, userId) {
+      let q = sb.from("crm_calls").select("status, duration_seconds").eq("workspace_id", workspaceId).neq("status", "starting").gte("created_at", since).limit(5000);
+      if (userId) q = q.eq("user_id", userId);
+      const data = must(await q) as Row[] | null;
       return (data ?? []).map((r) => ({ status: r.status, seconds: Number(r.duration_seconds) || 0 }));
     },
 
@@ -184,6 +192,13 @@ export function supabaseStore(sb: SupabaseClient): VoiceStore {
     async orgRole(organizationId, userId) {
       const o = must(await sb.from("organizations").select("owner_id, members").eq("organization_id", organizationId).maybeSingle()) as Row | null;
       return o ? orgRoleOf(o, userId) : null;
+    },
+
+    async callsGiven(organizationId, userId) {
+      const got = await sb.from("org_member_access").select("level").eq("organization_id", organizationId).eq("user_id", userId).eq("area", "calls").maybeSingle();
+      // No table yet, or any failure: nothing was given.
+      const level = got.error || !got.data ? null : (got.data as Row).level;
+      return level === "use" || level === "manage" ? level : null;
     },
 
     contact: (id) => target("crm_contacts", "contact", id),

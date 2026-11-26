@@ -12,7 +12,7 @@ export type PageKey =
   | 'project_management' | 'my_tasks' | 'calendar' | 'workload' | 'inbox'
   | 'team' | 'files' | 'comments' | 'contracts'
   | 'timeline' | 'reports'
-  | 'crm'
+  | 'crm' | 'calls'
   | 'email' | 'social'
   | 'hr' | 'settings';
 
@@ -46,6 +46,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { key: 'timeline',           label: 'Timeline',           group: 'Work',           routes: ['/timeline'], feature: 'timeline_overview' },
   { key: 'reports',            label: 'Reports',            group: 'Work',           routes: ['/reports'] },
   { key: 'crm',                label: 'CRM',                group: 'CRM',            routes: ['/crm'], feature: 'crm' },
+  { key: 'calls',              label: 'Calls',              group: 'CRM',            routes: ['/calls'], feature: 'crm' },
   { key: 'email',              label: 'Email',              group: 'CRM',            routes: ['/email'], feature: 'email_campaigns' },
   { key: 'social',             label: 'Social media',       group: 'Marketing',      routes: ['/social'] },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },

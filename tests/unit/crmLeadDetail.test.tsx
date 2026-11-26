@@ -33,6 +33,8 @@ vi.mock('@/context/OrganizationContext', () => ({
       organizationId: 'org-1',
       members: [{ userId: 'u1', displayName: 'Sam Carter', email: 'sam@example.com', status: 'active' }],
     },
+    // A plain member nothing was given to: the Call button hands the number to the device's own phone app.
+    areaLevel: () => 'none',
   }),
 }));
 vi.mock('@/context/CrmCurrencyContext', () => {

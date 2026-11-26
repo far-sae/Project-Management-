@@ -33,13 +33,13 @@ import type { CallBackSettings } from "./shared/types.js";
  * Only an organisation's owner and admins may place calls and hear recordings.
  */
 
-export const OWNER_ONLY_MESSAGE = "Only the owner and admins can place calls.";
+export const OWNER_ONLY_MESSAGE = "Only the owner, admins and people who were given calling can place calls.";
 export const NOT_FOUND_MESSAGE = "This lead or company is not in your CRM.";
 export const CALL_NOT_FOUND_MESSAGE = "This call was not found.";
 export const ORG_NOT_ALLOWED_MESSAGE = "Calling is not switched on for this organisation.";
 export const LEAD_NOT_FOUND_MESSAGE = "This lead was not found.";
 export const CHOOSE_WORKSPACE_MESSAGE = "Choose a workspace.";
-export const CALLS_OWNER_ONLY_MESSAGE = "Only the owner and admins can see calls.";
+export const CALLS_OWNER_ONLY_MESSAGE = "Only the owner, admins and people who were given calling can see calls.";
 export const NO_WORKSPACE_MESSAGE = "This record is not in a workspace, so its call could not be logged. Add it to a workspace first.";
 export const TABLES_MISSING_MESSAGE = "Calling is not set up yet: run supabase/migrations/188_crm_calls.sql in the Supabase SQL editor.";
 export const TOO_MANY_MESSAGE = "Too many calls in one minute. Wait a moment, then try again.";
@@ -86,9 +86,26 @@ function readyConfig(d: VoiceDeps): VoiceConfig {
   return state.config;
 }
 
-async function refuseUnlessAdmin(d: VoiceDeps, organizationId: string, userId: string): Promise<void> {
-  const role = await d.store.orgRole(organizationId, userId);
-  if (role !== "owner" && role !== "admin") throw new AppError(OWNER_ONLY_MESSAGE, 403);
+/** How far a person's calling goes: every call of the organisation, or only their own. */
+export type CallReach = "all" | "own";
+
+/**
+ * The owner and admins have every call. A member has what the owner gave them
+ * on the Team page: their own calls, or all calls. Anybody else has none.
+ */
+export async function callReach(store: Pick<VoiceStore, "orgRole" | "callsGiven">, organizationId: string, userId: string): Promise<CallReach | null> {
+  const role = await store.orgRole(organizationId, userId);
+  if (role === "owner" || role === "admin") return "all";
+  if (role !== "member") return null;
+  const given = await store.callsGiven(organizationId, userId);
+  return given === "manage" ? "all" : given === "use" ? "own" : null;
+}
+
+/** The person's reach, or the refusal for somebody who may not call at all. */
+async function reachOrRefuse(d: VoiceDeps, organizationId: string, userId: string): Promise<CallReach> {
+  const reach = await callReach(d.store, organizationId, userId);
+  if (!reach) throw new AppError(OWNER_ONLY_MESSAGE, 403);
+  return reach;
 }
 
 const DURATION = (seconds: number): string => {
@@ -157,21 +174,23 @@ async function setup(d: VoiceDeps): Promise<RouteResult> {
   return { status: 200, json: out };
 }
 
-/** The calls of a workspace, for its organisation's owner and admins. */
+/** The calls of a workspace: all of them for the owner, admins and a person given all calls; a person's own otherwise. */
 async function list(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
   const workspaceId = r.query?.workspaceId;
   const organizationId = isUuid(workspaceId) ? await d.store.workspaceOrg(workspaceId as string) : null;
   const role = organizationId ? await d.store.orgRole(organizationId, r.user.id) : null;
   // An outsider learns nothing about whether the workspace exists.
   if (!organizationId || !role) throw new AppError(CHOOSE_WORKSPACE_MESSAGE, 403);
-  if (role !== "owner" && role !== "admin") throw new AppError(CALLS_OWNER_ONLY_MESSAGE, 403);
+  const reach = await callReach(d.store, organizationId, r.user.id);
+  if (!reach) throw new AppError(CALLS_OWNER_ONLY_MESSAGE, 403);
   if (!(await d.store.tablesReady())) throw new AppError(TABLES_MISSING_MESSAGE, 503);
+  const only = reach === "own" ? r.user.id : undefined;
 
   const before = typeof r.query?.before === "string" && !Number.isNaN(Date.parse(r.query.before)) ? new Date(r.query.before).toISOString() : undefined;
   const since = new Date(nowOf(d).getTime() - SUMMARY_DAYS * 24 * 3600_000).toISOString();
   const [rows, results] = await Promise.all([
-    d.store.listCalls(workspaceId as string, { before, limit: PAGE_SIZE + 1 }),
-    d.store.callResults(workspaceId as string, since),
+    d.store.listCalls(workspaceId as string, { before, limit: PAGE_SIZE + 1, userId: only }),
+    d.store.callResults(workspaceId as string, since, only),
   ]);
   const page = rows.slice(0, PAGE_SIZE);
   const unique = (ids: Array<string | null>) => [...new Set(ids.filter((id): id is string => Boolean(id)))];
@@ -221,7 +240,7 @@ async function start(d: VoiceDeps, r: RouteRequest): Promise<RouteResult> {
     target = { kind: "contact", id: "", organizationId, workspaceId: workspaceId as string };
   }
   if (!target) throw new AppError(NOT_FOUND_MESSAGE, 404);
-  await refuseUnlessAdmin(d, target.organizationId, r.user.id);
+  await reachOrRefuse(d, target.organizationId, r.user.id);
   // The phone account is one for the whole site: when a list of organisations is set, only they may spend it.
   if (!orgMayCall(config, target.organizationId)) throw new AppError(ORG_NOT_ALLOWED_MESSAGE, 403);
   // The timeline entry a call leaves needs the record's workspace.
@@ -279,11 +298,16 @@ async function leadWithNumber(d: VoiceDeps, workspaceId: string, e164: string, c
   }
 }
 
-/** The caller's own call, or 404; and they must still be an owner or admin. */
+/**
+ * A call this person may look at, or 404. They must still be allowed to call;
+ * a person who has only their own calls gets nobody else's.
+ */
 async function ownCall(d: VoiceDeps, id: string, userId: string): Promise<Call> {
   const call = isUuid(id) ? await d.store.getCall(id) : null;
   if (!call) throw new AppError(CALL_NOT_FOUND_MESSAGE, 404);
-  await refuseUnlessAdmin(d, call.organizationId, userId);
+  const reach = await reachOrRefuse(d, call.organizationId, userId);
+  // The same answer as for a call that is not there: nothing is told about other people's calls.
+  if (reach === "own" && call.userId !== userId) throw new AppError(CALL_NOT_FOUND_MESSAGE, 404);
   return call;
 }
 
@@ -582,8 +606,8 @@ export async function webhook(d: VoiceDeps, r: WebhookRequest): Promise<string> 
     const call = isUuid(id) ? await d.store.getCall(id) : null;
     const fresh = call ? nowOf(d).getTime() - new Date(call.createdAt).getTime() <= START_WINDOW_MS : false;
     if (!call || call.status !== "starting" || !fresh || !isIdentity(r.params.From, call.userId)) return hangupTwiml(SORRY);
-    const role = await d.store.orgRole(call.organizationId, call.userId);
-    if (role !== "owner" && role !== "admin") return hangupTwiml(SORRY);
+    // Still allowed to call at the moment the line opens (it may have been taken away since).
+    if (!(await callReach(d.store, call.organizationId, call.userId))) return hangupTwiml(SORRY);
     const sid = typeof r.params.CallSid === "string" && /^CA[0-9a-fA-F]{32}$/.test(r.params.CallSid) ? r.params.CallSid : null;
     await d.store.patchCall(call.id, { status: "ringing", callSid: sid });
     return dialTwiml({ base: r.base, callId: call.id, to: call.toNumber, callerId: call.fromNumber, country: call.country });

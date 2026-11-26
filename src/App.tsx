@@ -393,7 +393,7 @@ const router = createBrowserRouter(
               // Calls placed from the CRM: its own page in the sidebar, under the CRM's permission.
               path: '/calls',
               element: (
-                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="calls">
                   {lazyAppRoute(<CrmCallsPage />)}
                 </ProtectedRoute>
               ),

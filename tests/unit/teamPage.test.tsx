@@ -10,7 +10,9 @@ const h = vi.hoisted(() => ({
   startCall: vi.fn(),
   invitations: [] as Array<Record<string, unknown>>,
   loadOrgAccess: vi.fn(),
-  setMemberAccess: vi.fn(),
+  saveMemberPages: vi.fn(),
+  clearMemberPages: vi.fn(),
+  features: new Set<string>(['crm', 'email_campaigns', 'team_collaboration']),
   internals: { visible: true },
   toast: { success: vi.fn(), error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }));
@@ -43,7 +45,7 @@ vi.mock('@/hooks/useSelectedWorkspace', () => {
 });
 vi.mock('sonner', () => ({ toast: h.toast }));
 vi.mock('@/hooks/useInternalsVisible', () => ({ useInternalsVisible: () => h.internals.visible }));
-vi.mock('@/services/supabase/memberAccess', () => ({ loadOrgAccess: h.loadOrgAccess, setMemberAccess: h.setMemberAccess }));
+vi.mock('@/services/supabase/memberAccess', () => ({ loadOrgAccess: h.loadOrgAccess, saveMemberPages: h.saveMemberPages, clearMemberPages: h.clearMemberPages }));
 vi.mock('@/context/AuthContext', () => ({
   useAuth: () => ({
     user: { userId: 'me', displayName: 'Mia Owner', email: 'mia@x.io', organizationId: 'org1' },
@@ -67,7 +69,7 @@ vi.mock('@/hooks/useProjects', () => ({
 }));
 vi.mock('@/context/SubscriptionContext', () => ({
   useSubscription: () => ({
-    hasFeature: () => true,
+    hasFeature: (f: string) => f === 'team_collaboration' || h.features.has(f),
     currentTier: 'advanced',
     pricing: { currencySymbol: '$', tiers: { advanced: { extraUserPrice: 5, extraUserPriceId: '' } } },
   }),
@@ -135,67 +137,145 @@ beforeEach(() => {
   h.startCall.mockReset();
   h.invitations = [];
   h.loadOrgAccess.mockReset().mockResolvedValue({ ready: true, byUser: {} });
-  h.setMemberAccess.mockReset().mockResolvedValue(undefined);
+  h.saveMemberPages.mockReset().mockResolvedValue(undefined);
+  h.clearMemberPages.mockReset().mockResolvedValue(undefined);
+  h.features = new Set(['crm', 'email_campaigns', 'team_collaboration']);
   h.toast.success.mockReset();
   h.toast.error.mockReset();
   h.internals.visible = true;
 });
 afterEach(() => { cleanup(); setInternalsVisible(true); });
 
-describe('Social media for one person, without making them an admin', () => {
-  const socialOf = (name: string) => within(rowOf(name)).queryByLabelText(`Social media access of ${name}`) as HTMLSelectElement | null;
+describe('the pages of one person, chosen by the owner', () => {
+  // By its label, not by its role: while the window is open the page behind it is hidden from role queries.
+  const pagesButton = (name: string) => screen.queryByLabelText(`Pages of ${name}`);
+  const openPages = async (name = 'Alice') => {
+    renderTeam();
+    await screen.findByText(name);
+    await waitFor(() => expect(pagesButton(name)).toBeTruthy());
+    fireEvent.click(pagesButton(name) as HTMLElement);
+    return screen.findByRole('dialog');
+  };
+  const toggle = (dialog: HTMLElement, label: string) => within(dialog).getByRole('switch', { name: label });
+  const isOn = (dialog: HTMLElement, label: string) => toggle(dialog, label).getAttribute('aria-checked') === 'true';
+  const ALL_OFF = { dashboard: 'off', projects_analytics: 'off', workload: 'off', inbox: 'off', reports: 'off', crm: 'off', calls: 'off', email: 'off', social: 'off' } as const;
 
-  it('is a choice on the row of a plain member: no access, posts only, or everything', async () => {
+  it('is a button on the row of a plain member, and not for the owner, an admin or a viewer', async () => {
     renderTeam();
     await screen.findByText('Alice');
-    await waitFor(() => expect(socialOf('Alice')).toBeTruthy());
+    await waitFor(() => expect(pagesButton('Alice')).toBeTruthy());
     expect(h.loadOrgAccess).toHaveBeenCalledWith('org1');
-    const choice = socialOf('Alice') as HTMLSelectElement;
-    expect(choice.value).toBe('none');
-    expect([...choice.options].map((o) => o.textContent)).toEqual(['Social: no access', 'Social: posts only', 'Social: everything']);
+    expect(pagesButton('Alice')?.textContent).toBe('Pages: standard');
+    expect(pagesButton('Mia Owner')).toBeNull();
+    expect(pagesButton('Tom')).toBeNull();
+    expect(pagesButton('Dana')).toBeNull();
   });
 
-  it('is not offered for the owner, an admin or a viewer', async () => {
-    renderTeam();
-    await screen.findByText('Alice');
-    await waitFor(() => expect(socialOf('Alice')).toBeTruthy());
-    expect(socialOf('Mia Owner')).toBeNull();
-    expect(socialOf('Tom')).toBeNull();
-    expect(socialOf('Dana')).toBeNull();
+  it('opens with what a member has in the menu today: only Workload on', async () => {
+    const dialog = await openPages();
+    expect(within(dialog).getByRole('heading', { name: 'What Alice can see' })).toBeTruthy();
+    expect(dialog.textContent).toContain('My Tasks, Calendar, their own projects and their own settings are always on.');
+    expect(within(dialog).getByRole('status').textContent).toContain('Nothing was chosen for Alice yet.');
+    const names = within(dialog).getAllByRole('switch').map((sw) => sw.getAttribute('aria-label') ?? sw.id);
+    expect(names).toHaveLength(9);
+    // The Team page is empty for somebody who runs no project, so it is not offered.
+    expect(within(dialog).queryByRole('switch', { name: 'Team' })).toBeNull();
+    expect(isOn(dialog, 'Workload')).toBe(true);
+    for (const page of ['Project Management', 'Projects analytics', 'Inbox', 'Reports', 'CRM', 'Calls', 'Email', 'Social media']) expect(isOn(dialog, page)).toBe(false);
   });
 
-  it('shows what the person has, gives more, and takes it away', async () => {
-    h.loadOrgAccess.mockResolvedValue({ ready: true, byUser: { alice: { social: 'use' } } });
-    renderTeam();
-    await screen.findByText('Alice');
-    await waitFor(() => expect(socialOf('Alice')?.value).toBe('use'));
-    fireEvent.change(socialOf('Alice') as HTMLSelectElement, { target: { value: 'manage' } });
-    await waitFor(() => expect(h.setMemberAccess).toHaveBeenCalledWith('org1', 'alice', 'social', 'manage', 'me'));
-    await waitFor(() => expect(socialOf('Alice')?.value).toBe('manage'));
-    expect(h.toast.success).toHaveBeenCalledWith('Alice now has Social media: everything.');
-    fireEvent.change(socialOf('Alice') as HTMLSelectElement, { target: { value: 'none' } });
-    await waitFor(() => expect(h.setMemberAccess).toHaveBeenLastCalledWith('org1', 'alice', 'social', null, 'me'));
-    await waitFor(() => expect(socialOf('Alice')?.value).toBe('none'));
-    expect(h.toast.success).toHaveBeenLastCalledWith('Alice no longer sees Social media.');
+  it('saves a row for every page, on or off, so the choice is exactly what the person gets', async () => {
+    const dialog = await openPages();
+    fireEvent.click(toggle(dialog, 'Social media'));
+    fireEvent.click(toggle(dialog, 'CRM'));
+    fireEvent.click(toggle(dialog, 'Workload'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.saveMemberPages).toHaveBeenCalledTimes(1));
+    expect(h.saveMemberPages.mock.calls[0]).toEqual(['org1', 'alice', { ...ALL_OFF, social: 'use', crm: 'use' }, 'me']);
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Saved. Alice sees the new pages the next time they open the app.'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(pagesButton('Alice')?.textContent).toBe('Pages: 2 on');
   });
 
-  it('keeps what was there and says so in plain words when it cannot be changed', async () => {
-    h.setMemberAccess.mockRejectedValue(new Error('The access could not be changed. Please try again.'));
-    renderTeam();
-    await screen.findByText('Alice');
-    await waitFor(() => expect(socialOf('Alice')).toBeTruthy());
-    fireEvent.change(socialOf('Alice') as HTMLSelectElement, { target: { value: 'use' } });
-    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('The access could not be changed. Please try again.'));
-    expect(socialOf('Alice')?.value).toBe('none');
+  it('asks how much of a page with admin things is given: Social media and Calls', async () => {
+    const dialog = await openPages();
+    expect(within(dialog).queryByLabelText('How much of Social media')).toBeNull();
+    fireEvent.click(toggle(dialog, 'Social media'));
+    const social = within(dialog).getByLabelText('How much of Social media') as HTMLSelectElement;
+    expect([...social.options].map((o) => o.textContent)).toEqual(['Posts only', 'Everything, with accounts and the autopilot']);
+    fireEvent.change(social, { target: { value: 'manage' } });
+    fireEvent.click(toggle(dialog, 'Calls'));
+    expect([...(within(dialog).getByLabelText('How much of Calls') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(['Own calls only', 'All calls and recordings']);
+    expect(within(dialog).queryByLabelText('How much of CRM')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.saveMemberPages.mock.calls[0]?.[2]).toMatchObject({ social: 'manage', calls: 'use', workload: 'use', crm: 'off' }));
   });
 
-  it('offers no choice while the database cannot keep it, and tells the people who run the site which step is missing', async () => {
+  it('shows what was chosen before, and saves only once something changed', async () => {
+    h.loadOrgAccess.mockResolvedValue({ ready: true, byUser: { alice: { ...ALL_OFF, social: 'manage', email: 'use' } } });
+    const dialog = await openPages();
+    expect(pagesButton('Alice')?.textContent).toBe('Pages: 2 on');
+    expect(within(dialog).queryByRole('status')).toBeNull();
+    expect(isOn(dialog, 'Social media')).toBe(true);
+    expect(isOn(dialog, 'Email')).toBe(true);
+    expect(isOn(dialog, 'Workload')).toBe(false);
+    expect((within(dialog).getByLabelText('How much of Social media') as HTMLSelectElement).value).toBe('manage');
+    const save = within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(toggle(dialog, 'Email'));
+    expect(save.disabled).toBe(false);
+  });
+
+  it('can put a person back to the standard pages of a member', async () => {
+    h.loadOrgAccess.mockResolvedValue({ ready: true, byUser: { alice: { ...ALL_OFF, crm: 'use' } } });
+    const dialog = await openPages();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Back to standard' }));
+    await waitFor(() => expect(h.clearMemberPages).toHaveBeenCalledWith('org1', 'alice'));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Alice has the standard pages of a member again.'));
+    await waitFor(() => expect(pagesButton('Alice')?.textContent).toBe('Pages: standard'));
+    expect(h.saveMemberPages).not.toHaveBeenCalled();
+  });
+
+  it('offers no "back to standard" for somebody nothing was chosen for', async () => {
+    const dialog = await openPages();
+    expect(within(dialog).queryByRole('button', { name: 'Back to standard' })).toBeNull();
+  });
+
+  it('leaves out a page the plan does not have', async () => {
+    h.features = new Set(['team_collaboration']);
+    const dialog = await openPages();
+    for (const page of ['CRM', 'Calls', 'Email']) expect(within(dialog).queryByRole('switch', { name: page })).toBeNull();
+    expect(within(dialog).getByRole('switch', { name: 'Social media' })).toBeTruthy();
+  });
+
+  it('keeps the window open and says so in plain words when it cannot be saved', async () => {
+    h.saveMemberPages.mockRejectedValue(new Error('The pages could not be saved. Please try again.'));
+    const dialog = await openPages();
+    fireEvent.click(toggle(dialog, 'Reports'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('The pages could not be saved. Please try again.'));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(pagesButton('Alice')?.textContent).toBe('Pages: standard');
+  });
+
+  it('changes nothing when the window is closed without saving', async () => {
+    const dialog = await openPages();
+    fireEvent.click(toggle(dialog, 'CRM'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(h.saveMemberPages).not.toHaveBeenCalled();
+    // Opened again, it shows what is saved, not what was clicked.
+    fireEvent.click(pagesButton('Alice') as HTMLElement);
+    expect(isOn(await screen.findByRole('dialog'), 'CRM')).toBe(false);
+  });
+
+  it('offers no button while the database cannot keep it, and tells the people who run the site which step is missing', async () => {
     h.loadOrgAccess.mockResolvedValue({ ready: false, byUser: {} });
     renderTeam();
     await screen.findByText('Alice');
     const note = await screen.findByText(/is not switched on yet/);
     expect(note.textContent).toContain('Run supabase/crm_setup.sql in the Supabase SQL editor, then reload.');
-    expect(socialOf('Alice')).toBeNull();
+    expect(pagesButton('Alice')).toBeNull();
     cleanup();
     h.internals.visible = false;
     renderTeam();

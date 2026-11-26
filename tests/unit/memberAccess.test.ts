@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { managesSocial, mayManageSocial, roleIn } from '../../api/_social/access';
 
 const h = vi.hoisted(() => ({
-  calls: [] as Array<{ table: string; op: string; values?: Record<string, unknown>; filters: Array<[string, unknown]>; options?: unknown }>,
+  calls: [] as Array<{ table: string; op: string; values?: Record<string, unknown> | Array<Record<string, unknown>>; filters: Array<[string, unknown]>; options?: unknown }>,
   rows: [] as Array<Record<string, unknown>>,
   error: null as null | { code?: string; message?: string },
 }));
@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/services/supabase/config', () => ({
   supabase: {
     from: (table: string) => {
-      const start = (op: string, values?: Record<string, unknown>, options?: unknown) => {
+      const start = (op: string, values?: Record<string, unknown> | Array<Record<string, unknown>>, options?: unknown) => {
         const call = { table, op, values, filters: [] as Array<[string, unknown]>, options };
         h.calls.push(call);
         const link = {
@@ -25,14 +25,14 @@ vi.mock('@/services/supabase/config', () => ({
       return {
         select: () => start('select'),
         delete: () => start('delete'),
-        upsert: (values: Record<string, unknown>, options: unknown) => start('upsert', values, options),
+        upsert: (values: Array<Record<string, unknown>>, options: unknown) => start('upsert', values, options),
       };
     },
   },
 }));
 
-import { loadMyAccess, loadOrgAccess, setMemberAccess } from '@/services/supabase/memberAccess';
-import { ACCESS_NOT_SET_UP_MESSAGE } from '@/lib/memberAccess';
+import { clearMemberPages, loadMyAccess, loadOrgAccess, saveMemberPages } from '@/services/supabase/memberAccess';
+import { ACCESS_AREAS, ACCESS_NOT_SET_UP_MESSAGE, givenIn, hasOwnPages, pagesFor, pagesOn } from '@/lib/memberAccess';
 
 const ORG = '22222222-2222-4222-8222-222222222222';
 const OWNER = 'u-owner';
@@ -136,8 +136,8 @@ describe('who may connect accounts and change the autopilot', () => {
 
 describe('what the browser reads', () => {
   it('gives a person their own areas, and nothing for a value it does not know', async () => {
-    h.rows = [{ area: 'social', level: 'use' }, { area: 'payroll', level: 'manage' }, { area: 'social2', level: 'boss' }];
-    expect(await loadMyAccess(ORG, 'u-junaid')).toEqual({ social: 'use' });
+    h.rows = [{ area: 'social', level: 'use' }, { area: 'crm', level: 'off' }, { area: 'payroll', level: 'manage' }, { area: 'email', level: 'boss' }];
+    expect(await loadMyAccess(ORG, 'u-junaid')).toEqual({ social: 'use', crm: 'off' });
     expect(h.calls[0]).toMatchObject({ table: 'org_member_access', op: 'select', filters: [['organization_id', ORG], ['user_id', 'u-junaid']] });
   });
 
@@ -157,28 +157,67 @@ describe('what the browser reads', () => {
     h.error = { code: '42P01', message: 'relation "org_member_access" does not exist' };
     expect(await loadOrgAccess(ORG)).toEqual({ ready: false, byUser: {} });
     h.error = { code: '500', message: 'connection reset by peer' };
-    await expect(loadOrgAccess(ORG)).rejects.toThrow('The access of your people could not be read. Please try again.');
+    await expect(loadOrgAccess(ORG)).rejects.toThrow('The pages of your people could not be read. Please try again.');
+  });
+});
+
+describe('what the window on the Team page works with', () => {
+  it('starts a person nothing was chosen for at what a member has in the menu: only Workload', () => {
+    const pages = pagesFor(undefined);
+    expect(Object.keys(pages)).toEqual(ACCESS_AREAS);
+    expect(pagesOn(pages)).toBe(1);
+    expect(pages.workload).toBe('use');
+    expect(pages.crm).toBe('off');
+    expect(hasOwnPages(undefined)).toBe(false);
+    expect(hasOwnPages({})).toBe(false);
+  });
+
+  it('shows what was chosen, and counts the pages that are on', () => {
+    const pages = pagesFor({ workload: 'off', social: 'manage', crm: 'use' });
+    expect(pages).toMatchObject({ workload: 'off', social: 'manage', crm: 'use', email: 'off' });
+    expect(pagesOn(pages)).toBe(2);
+    expect(hasOwnPages({ workload: 'off' })).toBe(true);
+  });
+
+  it('counts a closed page as nothing given', () => {
+    expect(givenIn({ social: 'off' }, 'social')).toBe('none');
+    expect(givenIn({}, 'social')).toBe('none');
+    expect(givenIn({ social: 'use' }, 'social')).toBe('use');
+    expect(givenIn({ social: 'manage' }, 'social')).toBe('manage');
   });
 });
 
 describe('what the browser writes', () => {
-  it('gives an area at a level, once for each person and area', async () => {
-    await setMemberAccess(ORG, 'u-junaid', 'social', 'manage', OWNER);
+  it('keeps a row for every page of one person, on or off', async () => {
+    await saveMemberPages(ORG, 'u-junaid', { ...pagesFor(undefined), social: 'manage', workload: 'off' }, OWNER);
+    expect(h.calls).toHaveLength(1);
     expect(h.calls[0]).toMatchObject({ table: 'org_member_access', op: 'upsert', options: { onConflict: 'organization_id,user_id,area' } });
-    expect(h.calls[0].values).toMatchObject({ organization_id: ORG, user_id: 'u-junaid', area: 'social', level: 'manage', granted_by: OWNER });
+    const rows = h.calls[0].values as Array<Record<string, unknown>>;
+    expect(rows.map((r) => r.area)).toEqual(ACCESS_AREAS);
+    expect(rows.every((r) => r.organization_id === ORG && r.user_id === 'u-junaid' && r.granted_by === OWNER)).toBe(true);
+    expect(Object.fromEntries(rows.map((r) => [r.area, r.level]))).toMatchObject({ social: 'manage', workload: 'off', crm: 'off', dashboard: 'off' });
   });
 
-  it('takes it away by deleting only that person’s row for that area', async () => {
-    await setMemberAccess(ORG, 'u-junaid', 'social', null);
-    expect(h.calls[0]).toMatchObject({ op: 'delete', filters: [['organization_id', ORG], ['user_id', 'u-junaid'], ['area', 'social']] });
+  it('writes "off" for a level it does not know, never something wider', async () => {
+    await saveMemberPages(ORG, 'u-junaid', { ...pagesFor(undefined), crm: 'boss' as never });
+    const rows = h.calls[0].values as Array<Record<string, unknown>>;
+    expect(rows.find((r) => r.area === 'crm')?.level).toBe('off');
+  });
+
+  it('puts a person back to standard by deleting only that person\'s rows', async () => {
+    await clearMemberPages(ORG, 'u-junaid');
+    expect(h.calls[0]).toMatchObject({ op: 'delete', filters: [['organization_id', ORG], ['user_id', 'u-junaid']] });
   });
 
   it('says who may change it, and that the SQL is not run yet, in words for the reader', async () => {
     h.error = { code: '42501', message: 'new row violates row-level security policy for table "org_member_access"' };
-    await expect(setMemberAccess(ORG, 'u-junaid', 'social', 'use')).rejects.toThrow('Only the owner or an admin can change what a person may do.');
+    await expect(saveMemberPages(ORG, 'u-junaid', pagesFor(undefined))).rejects.toThrow('Only the owner or an admin can change what a person sees.');
     h.error = { code: 'PGRST205', message: "Could not find the table 'public.org_member_access' in the schema cache" };
-    await expect(setMemberAccess(ORG, 'u-junaid', 'social', 'use')).rejects.toThrow(ACCESS_NOT_SET_UP_MESSAGE);
+    await expect(saveMemberPages(ORG, 'u-junaid', pagesFor(undefined))).rejects.toThrow(ACCESS_NOT_SET_UP_MESSAGE);
+    // The table of the first update is there, but it does not know "off" yet.
+    h.error = { code: '23514', message: 'new row for relation "org_member_access" violates check constraint "org_member_access_level_check"' };
+    await expect(saveMemberPages(ORG, 'u-junaid', pagesFor(undefined))).rejects.toThrow(ACCESS_NOT_SET_UP_MESSAGE);
     h.error = { code: '500', message: 'connection reset by peer' };
-    await expect(setMemberAccess(ORG, 'u-junaid', 'social', 'use')).rejects.toThrow('The access could not be changed. Please try again.');
+    await expect(clearMemberPages(ORG, 'u-junaid')).rejects.toThrow('The pages could not be saved. Please try again.');
   });
 });

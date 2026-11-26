@@ -7,7 +7,7 @@ import { getOrganization } from '@/services/supabase/organizations';
 import { supabase } from '@/services/supabase/config';
 import { resolvePagePermissions, type BuiltinRole } from "@/lib/pagePermissions";
 import { type PageKey, type PageAccessLevel } from "@/lib/pageCatalog";
-import type { AccessArea, AreaAccess, MemberAccess } from '@/lib/memberAccess';
+import { givenIn, type AccessArea, type AreaAccess, type MemberAccess } from '@/lib/memberAccess';
 import { loadMyAccess } from '@/services/supabase/memberAccess';
 
 interface OrganizationContextType {
@@ -33,8 +33,9 @@ interface OrganizationContextType {
   /** True until org + custom roles have loaded — guards should wait on this
    *  before deciding page access (avoids a wrong-access flash). */
   permissionsLoading: boolean;
-  /** What this person has in an area (Team page, for example "Social media").
-   *  The owner and admins have 'manage' everywhere; a viewer has 'none'. */
+  /** What the owner gave this person on a page (Team page, "Pages"). 'none' for a
+   *  page that was closed or never chosen. The owner and admins have 'manage'
+   *  everywhere; a viewer has 'none'. */
   areaLevel: (area: AccessArea) => AreaAccess;
 }
 
@@ -359,7 +360,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode; }> = ({ child
       canAccessPage: (page: PageKey) => pageLevel(page) !== 'none',
       canEditPage: (page: PageKey) => pageLevel(page) === 'edit',
       permissionsLoading: loading || accessLoading,
-      areaLevel: (area: AccessArea): AreaAccess => (isAdmin ? 'manage' : role === 'member' ? (access[area] ?? 'none') : 'none'),
+      areaLevel: (area: AccessArea): AreaAccess => (isAdmin ? 'manage' : role === 'member' ? givenIn(access, area) : 'none'),
     };
   }, [organization, loading, error, isOwner, isAdmin, isViewer, canInviteMembers, canManageBilling, canManageSettings, role, user?.userId, access, accessLoading]);
 
