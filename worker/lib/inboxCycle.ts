@@ -63,6 +63,7 @@ import {
   extractBouncedAddress,
   isAutoReply,
   matchReplies,
+  matchReplyEnvelopes,
   normalizeAddress,
   SCAN_OVERLAP_MS,
   scanWindow,
@@ -87,6 +88,13 @@ export interface InboxDeps {
    * on `scanInbox` itself.
    */
   scan: (cfg: ImapConfig, since: Date) => Promise<MailboxScan>;
+  /**
+   * The words of a few messages, by their place in the mailbox. In production
+   * `fetchReplyBodies` from worker/lib/imap.ts: a second, short session, opened
+   * only when this scan recorded a new reply to an email we sent. Absent: the
+   * text of replies is not kept, and everything else works as before.
+   */
+  bodies?: (cfg: ImapConfig, uids: number[]) => Promise<Map<number, string>>;
   now: () => Date;
   env: { tokenKey: string };
   /**
@@ -507,6 +515,10 @@ async function scanMailbox(
       (isAutoReply(envelope.headers) ? machines : humans).push(envelope);
     }
 
+    // The message of each reply, to go back for its words once it is recorded.
+    const replyEnvelope = new Map(matchReplyEnvelopes(humans, sentTo.addresses).map((m) => [m.address, m.envelope]));
+    const newReplies: Array<{ address: string; uid: number; subject: string }> = [];
+
     for (const reply of matchReplies(humans, sentTo.addresses)) {
       // Already answered, already recorded. The overlap between windows means
       // this scan sees the same reply the last one did, and every pass used to
@@ -516,9 +528,18 @@ async function scanMailbox(
       // that had to happen anyway, so this costs nothing.
       if (sentTo.alreadyReplied.has(reply.address)) continue;
       const recorded = await record(deps, note, row, 'reply', reply.address, reply.at, who);
-      if (recorded) result.replies += 1;
-      else incomplete = true;
+      if (recorded) {
+        result.replies += 1;
+        const found = replyEnvelope.get(reply.address);
+        if (found && typeof found.uid === 'number') newReplies.push({ address: reply.address, uid: found.uid, subject: found.subject });
+      } else incomplete = true;
     }
+
+    // The words of the replies just recorded. Only those: mail from anybody
+    // this organisation did not write to is never opened, and neither is an
+    // automatic answer. A failure here loses the text and nothing else: the
+    // reply itself is recorded, so the window is done and is not read again.
+    if (deps.bodies && newReplies.length > 0) await keepReplyTexts(deps, note, row, cfg, newReplies, who);
 
     // Matched through the same gate a reply gets: an out-of-office from
     // somebody this organisation never wrote to is not an event about us, and
@@ -785,6 +806,48 @@ async function record(
     note(who, `a ${kind} could not be recorded: ${short(err)}`);
   }
   return false;
+}
+
+/**
+ * Reads the words of the replies this scan recorded, and keeps each with its
+ * reply (save_reply_text, migration 217). Never throws, and never holds the
+ * scan back: the text is an extra, the reply is already counted.
+ */
+async function keepReplyTexts(
+  deps: InboxDeps,
+  note: Note,
+  row: MailboxRow,
+  cfg: ImapConfig,
+  replies: Array<{ address: string; uid: number; subject: string }>,
+  who: string,
+): Promise<void> {
+  let texts: Map<number, string>;
+  try {
+    texts = await (deps.bodies as NonNullable<InboxDeps['bodies']>)(cfg, replies.map((r) => r.uid));
+  } catch (err) {
+    note(who, `the text of a reply could not be read: ${short(err)}`);
+    return;
+  }
+  for (const reply of replies) {
+    const body = (texts.get(reply.uid) ?? '').trim();
+    if (!body) continue;
+    try {
+      const { error } = await deps.db.rpc('save_reply_text', {
+        p_account: row.id,
+        p_address: reply.address,
+        p_subject: reply.subject.slice(0, 500),
+        p_body: body,
+      });
+      // A database that has not run 217 has no such function: said once per scan, and nothing else changes.
+      if (error) {
+        note(who, `the text of a reply could not be kept: ${error.message}`);
+        return;
+      }
+    } catch (err) {
+      note(who, `the text of a reply could not be kept: ${short(err)}`);
+      return;
+    }
+  }
 }
 
 /**

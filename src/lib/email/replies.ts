@@ -33,6 +33,8 @@ export interface RepliedCampaign {
 
 export interface ReplyRow {
   id: string;
+  /** The sent email this answers, so that the two can be shown together. */
+  messageId: string;
   /** The person's name when the sent email had one, else their address. */
   who: string;
   address: string;
@@ -73,6 +75,7 @@ export function buildReplies(
     const mailbox = event.accountId ? mailboxById.get(event.accountId) : undefined;
     rows.push({
       id: event.id,
+      messageId: message.id,
       who: message.toName?.trim() || event.address,
       address: event.address,
       automatic: event.kind === 'auto_reply',

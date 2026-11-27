@@ -332,6 +332,12 @@ export interface InboxEnvelope {
    * into this process. Empty when the server sent none, which is not an error.
    */
   headers: Record<string, string>;
+  /**
+   * Where the message is in the mailbox (its IMAP UID), when the scan read
+   * one. Used for one thing: going back for the text of a reply once it is
+   * known to be a reply to an email we sent.
+   */
+  uid?: number;
 }
 
 /** A reply or bounce discovered during an inbox scan, ready to persist. */

@@ -32,7 +32,7 @@
 import { env, serviceClient } from './lib/db.js';
 import { domainAcceptsMail } from './lib/dns.js';
 import { runCycle } from './lib/engine.js';
-import { appendToSent, scanInbox } from './lib/imap.js';
+import { appendToSent, fetchReplyBodies, scanInbox } from './lib/imap.js';
 import { runInboxCycle } from './lib/inboxCycle.js';
 import { buildRaw, createTransport } from './lib/mailer.js';
 import { runSequenceCycle } from './lib/sequenceCycle.js';
@@ -205,6 +205,7 @@ async function main(): Promise<void> {
         const result = await runInboxCycle({
           db,
           scan: scanInbox,
+          bodies: fetchReplyBodies,
           now: () => new Date(),
           env: { tokenKey },
           shouldStop: () => !running,

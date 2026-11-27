@@ -7,11 +7,13 @@ import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/common/StatusPill';
 import { listReplies } from '@/services/supabase/emailReplies';
 import { realReplies, type ReplyRow } from '@/lib/email/replies';
+import { FullEmailDialog } from './FullEmailDialog';
 
 /**
  * Everyone who answered an email, newest first: the work list after a
- * campaign. The text of a reply is not kept here (the inbox scan stores no
- * subject and no body), so each row says which mailbox to read it in.
+ * campaign. A reply opens in full, with the email of ours that it answers
+ * (FullEmailDialog). The words are kept for replies seen since migration 217;
+ * for an older one the window says which mailbox to read it in.
  */
 
 interface Props {
@@ -23,6 +25,8 @@ export const RepliesTab: React.FC<Props> = ({ orgId, workspaceId }) => {
   const [rows, setRows] = useState<ReplyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState('');
+  /** The reply that is open in full, or null. */
+  const [reading, setReading] = useState<ReplyRow | null>(null);
 
   const load = useCallback(async () => {
     if (!orgId) { setRows([]); setLoading(false); return; }
@@ -47,8 +51,8 @@ export const RepliesTab: React.FC<Props> = ({ orgId, workspaceId }) => {
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-foreground">Replies</h2>
           <p className="mt-1 text-pretty text-xs text-muted-foreground">
-            People who answered your campaigns and sequences, newest first. The reply itself is in your mailbox: this list
-            keeps who answered and when, not what they wrote.
+            People who answered your campaigns and sequences, newest first: open one to read what they wrote, with the
+            email of yours that they answered.
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
@@ -96,6 +100,11 @@ export const RepliesTab: React.FC<Props> = ({ orgId, workspaceId }) => {
                   <time dateTime={row.at.toISOString()} className="text-xs tabular-nums text-muted-foreground">
                     {format(row.at, 'd MMM yyyy, HH:mm')}
                   </time>
+                  {!row.automatic && (
+                    <Button size="sm" variant="outline" aria-label={`Read the reply from ${row.who}`} onClick={() => setReading(row)}>
+                      Read
+                    </Button>
+                  )}
                   {row.contactId ? (
                     <Button asChild size="sm" variant="outline">
                       <Link to={`/crm/contacts/${row.contactId}`}>Open lead</Link>
@@ -109,6 +118,14 @@ export const RepliesTab: React.FC<Props> = ({ orgId, workspaceId }) => {
           </ul>
         </>
       )}
+
+      <FullEmailDialog
+        open={reading !== null}
+        onOpenChange={(open) => { if (!open) setReading(null); }}
+        messageId={reading?.messageId ?? null}
+        replyEventId={reading?.id ?? null}
+        reply={reading ? { who: reading.who, address: reading.address, at: reading.at, mailbox: reading.mailbox } : undefined}
+      />
     </section>
   );
 };

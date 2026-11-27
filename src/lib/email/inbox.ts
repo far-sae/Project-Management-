@@ -82,6 +82,92 @@ export function matchReplies(
   return [...earliest.entries()].map(([address, at]) => ({ address, at }));
 }
 
+/**
+ * The same match as `matchReplies`, but handing back the message itself: the
+ * earliest one from each address we wrote to. It is what tells the scan which
+ * messages are replies to OUR emails, and so the only ones whose text may be
+ * read: everything else in the inbox is the person's own correspondence.
+ */
+export function matchReplyEnvelopes(
+  incoming: InboxEnvelope[],
+  sentTo: string[],
+): Array<{ address: string; envelope: InboxEnvelope }> {
+  const sentSet = new Set(sentTo.map(normalizeAddress).filter((address) => address !== ''));
+  const earliest = new Map<string, InboxEnvelope>();
+  for (const message of incoming) {
+    const address = normalizeAddress(message.from);
+    if (address === '' || !sentSet.has(address)) continue;
+    const existing = earliest.get(address);
+    if (!existing || message.at.getTime() < existing.at.getTime()) earliest.set(address, message);
+  }
+  return [...earliest.entries()].map(([address, envelope]) => ({ address, envelope }));
+}
+
+/** One part of a message, as a mail server describes its structure. */
+export interface MessagePart {
+  type?: string;
+  /** The part's number ("1", "1.2"); absent on a message that is one part only. */
+  part?: string;
+  disposition?: string;
+  childNodes?: MessagePart[];
+}
+
+/**
+ * The part of a message that holds what the person wrote: the plain text when
+ * there is one, else the HTML. Never an attachment. Null when the message has
+ * neither (a picture on its own, a calendar invitation).
+ */
+export function pickTextPart(structure: MessagePart | null | undefined): { part: string; html: boolean } | null {
+  const found: Record<'plain' | 'html', string | null> = { plain: null, html: null };
+  const walk = (node: MessagePart | null | undefined): void => {
+    if (!node) return;
+    const type = String(node.type ?? '').toLowerCase();
+    if (String(node.disposition ?? '').toLowerCase() === 'attachment') return;
+    if (type === 'text/plain' && found.plain === null) found.plain = node.part ?? '1';
+    else if (type === 'text/html' && found.html === null) found.html = node.part ?? '1';
+    for (const child of node.childNodes ?? []) walk(child);
+  };
+  walk(structure);
+  if (found.plain !== null) return { part: found.plain, html: false };
+  if (found.html !== null) return { part: found.html, html: true };
+  return null;
+}
+
+/** The most of one reply that is kept: far more than a person writes, and a bound on a newsletter that came back as a "reply". */
+export const REPLY_TEXT_MAX = 50_000;
+const CUT_NOTE = '[The rest of this email was not kept.]';
+
+/**
+ * The words of a reply, as they are kept and shown: plain text, whatever the
+ * message was written in. An HTML reply is turned into its words, so nothing
+ * of it can run on the page that shows it.
+ */
+export function replyText(raw: string, isHtml: boolean): string {
+  let text = String(raw ?? '');
+  if (isHtml) {
+    text = text
+      .replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|h[1-6]|li|tr|blockquote)>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&');
+  }
+  text = text
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text.length > REPLY_TEXT_MAX ? `${text.slice(0, REPLY_TEXT_MAX).trimEnd()}\n\n${CUT_NOTE}` : text;
+}
+
 const BOUNCE_SENDERS = /(mailer-daemon|postmaster|no-?reply.*bounce)/i;
 const BOUNCE_SUBJECTS = /(undeliverable|delivery status|returned mail|failure notice)/i;
 

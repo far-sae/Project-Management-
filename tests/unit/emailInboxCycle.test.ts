@@ -214,6 +214,8 @@ interface Stubs {
   /** The newest message a truncated stubbed session read; see MailboxScan. */
   resumeAt?: Date | null;
   shouldStop?: () => boolean;
+  /** The text of messages by their place in the mailbox (UID), for the second, short session that reads replies. */
+  bodies?: Record<number, string> | (() => Promise<Map<number, string>>);
 }
 
 /**
@@ -238,15 +240,22 @@ function makeDeps(fx: Fixtures, stubs: Stubs = {}) {
     };
   });
 
+  const bodies = vi.fn(async (_cfg: unknown, uids: number[]): Promise<Map<number, string>> => {
+    if (typeof stubs.bodies === 'function') return stubs.bodies();
+    const all = stubs.bodies ?? {};
+    return new Map(uids.filter((uid) => all[uid] !== undefined).map((uid) => [uid, all[uid]]));
+  });
+
   const deps: InboxDeps = {
     db: harness.db,
     scan,
+    bodies,
     now: () => NOW,
     env: { tokenKey: KEY },
     shouldStop: stubs.shouldStop,
   };
 
-  return { ...harness, deps, scan };
+  return { ...harness, deps, scan, bodies, texts: () => harness.rpcCalls.filter((c) => c.name === 'save_reply_text') };
 }
 
 /* ------------------------------------------------------------------- tests */
@@ -899,5 +908,86 @@ describe('runInboxCycle', () => {
     expect(h.touches()).toHaveLength(1);
     expect(result.scanned).toBe(1);
     expect(result.errors).toEqual([]);
+  });
+});
+
+describe('runInboxCycle — the words of a reply', () => {
+  const sentTo = (address: string, over: Row = {}) => sentRow(address, over);
+
+  it('goes back for the text of a reply to an email we sent, and keeps it with its subject', async () => {
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com')] },
+      { envelopes: [envelope({ uid: 41, subject: 'Re: A quick idea' })], bodies: { 41: 'Hi Sam,\n\nYes please.\n\nAda' } },
+    );
+    const result = await runInboxCycle(h.deps);
+    expect(result.replies).toBe(1);
+    expect(h.bodies).toHaveBeenCalledTimes(1);
+    expect(h.bodies.mock.calls[0][1]).toEqual([41]);
+    expect(h.texts().map((c) => c.args)).toEqual([{ p_account: 'mbx-1', p_address: 'ada@acme.com', p_subject: 'Re: A quick idea', p_body: 'Hi Sam,\n\nYes please.\n\nAda' }]);
+    // The reply is recorded first: its text is added to that record.
+    expect(h.names().indexOf('record_inbox_result')).toBeLessThan(h.names().indexOf('save_reply_text'));
+  });
+
+  it('reads nothing of mail from people we never wrote to, of automatic answers, or of a reply it already has', async () => {
+    const stranger = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com')] },
+      { envelopes: [envelope({ from: 'stranger@elsewhere.com', uid: 7 })], bodies: { 7: 'private' } },
+    );
+    await runInboxCycle(stranger.deps);
+    expect(stranger.bodies).not.toHaveBeenCalled();
+
+    const away = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com')] },
+      { envelopes: [envelope({ uid: 8, headers: { 'auto-submitted': 'auto-replied' } })], bodies: { 8: 'I am away' } },
+    );
+    await runInboxCycle(away.deps);
+    expect(away.bodies).not.toHaveBeenCalled();
+    expect(away.texts()).toHaveLength(0);
+
+    const again = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com', { replied_at: '2026-09-19T10:00:00Z' })] },
+      { envelopes: [envelope({ uid: 9 })], bodies: { 9: 'the same reply, seen again' } },
+    );
+    await runInboxCycle(again.deps);
+    expect(again.bodies).not.toHaveBeenCalled();
+  });
+
+  it('opens no second session when no reply came in', async () => {
+    const h = makeDeps({ mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com')] }, { envelopes: [] });
+    await runInboxCycle(h.deps);
+    expect(h.bodies).not.toHaveBeenCalled();
+  });
+
+  it('still counts the reply, and still finishes the scan, when the text cannot be read', async () => {
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com')] },
+      { envelopes: [envelope({ uid: 41 })], bodies: async () => { throw new Error('IMAP went away'); } },
+    );
+    const result = await runInboxCycle(h.deps);
+    expect(result.replies).toBe(1);
+    expect(h.texts()).toHaveLength(0);
+    // The reply itself is recorded, so the window is done: the cursor moves on.
+    expect(h.touches().at(-1)?.args.p_status).toBe('active');
+    expect(result.errors.join(' ')).toContain('the text of a reply could not be read');
+  });
+
+  it('keeps nothing for a reply whose message has no text, or was not found again', async () => {
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com'), sentTo('grace@acme.com')] },
+      { envelopes: [envelope({ uid: 41 }), envelope({ from: 'grace@acme.com', uid: 42 })], bodies: { 41: '   ' } },
+    );
+    await runInboxCycle(h.deps);
+    expect(h.bodies.mock.calls[0][1].sort()).toEqual([41, 42]);
+    expect(h.texts()).toHaveLength(0);
+  });
+
+  it('works as before with a scan that tells no place in the mailbox', async () => {
+    const h = makeDeps(
+      { mailboxes: [mailboxRow()], secrets: [secretRow()], messages: [sentTo('ada@acme.com')] },
+      { envelopes: [envelope()], bodies: { 41: 'x' } },
+    );
+    const result = await runInboxCycle(h.deps);
+    expect(result.replies).toBe(1);
+    expect(h.bodies).not.toHaveBeenCalled();
   });
 });

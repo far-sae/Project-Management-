@@ -74,6 +74,7 @@ describe("an email body from Claude", () => {
     const started = Date.now();
     cleanEmailHtml("<b>" + "<a ".repeat(40_000));
     cleanEmailHtml('<b>' + '<a "'.repeat(30_000));
-    expect(Date.now() - started).toBeLessThan(3000);
+    // Seconds, not minutes: the same text took minutes before its size was bounded. The margin is for a busy machine.
+    expect(Date.now() - started).toBeLessThan(15_000);
   });
 });

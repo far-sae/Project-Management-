@@ -12,7 +12,7 @@
 
 import { ImapFlow, type FetchMessageObject } from 'imapflow';
 
-import { looksLikeBounce } from '@/lib/email/inbox';
+import { looksLikeBounce, pickTextPart, replyText, type MessagePart } from '@/lib/email/inbox';
 import type { InboxEnvelope } from '@/lib/email/types';
 
 export interface ImapConfig {
@@ -203,6 +203,8 @@ function toEnvelope(msg: FetchMessageObject, since: Date, ceiling: Date): InboxE
     from: msg.envelope?.from?.[0]?.address ?? '',
     subject: msg.envelope?.subject ?? '',
     at: messageDate(msg, since, ceiling),
+    // Where the message is in the mailbox, so the text of a reply can be read later. Nothing else uses it.
+    uid: typeof msg.uid === 'number' ? msg.uid : undefined,
     headers: parseHeaders((msg as { headers?: unknown }).headers),
   };
 }
@@ -484,4 +486,57 @@ export async function appendToSent(cfg: ImapConfig, messages: Buffer[]): Promise
   }
 
   return saved;
+}
+
+/** Replies whose text is read in one session, and the most of one that is downloaded. */
+const REPLY_BODY_LIMIT = 25;
+const REPLY_BODY_BYTES = 400_000;
+
+/**
+ * The words of a few messages, by their place in the mailbox (UID).
+ *
+ * Called only for messages the scan has already recognised as replies to
+ * emails this organisation sent: it is the one place a message's body is read
+ * for anything but a bounce, and nothing here decides which messages those
+ * are. A second, short session on purpose: which messages are replies is
+ * known only after the scan's own session has closed and its envelopes have
+ * been matched against the database, and most scans find none.
+ *
+ * For each message: its structure, then the one part that holds what the
+ * person wrote (the plain text, else the HTML), decoded and in UTF-8 as the
+ * library hands it over, and turned into plain text. A message that cannot be
+ * read is left out; the rest are still returned.
+ */
+export async function fetchReplyBodies(cfg: ImapConfig, uids: number[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const wanted = [...new Set(uids)].filter((uid) => Number.isInteger(uid) && uid > 0).slice(0, REPLY_BODY_LIMIT);
+  if (wanted.length === 0) return out;
+
+  const client = createImapClient(cfg);
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      for (const uid of wanted) {
+        try {
+          const one = await client.fetchOne(String(uid), { uid: true, bodyStructure: true }, { uid: true });
+          const structure = one ? ((one as { bodyStructure?: unknown }).bodyStructure as MessagePart | undefined) : undefined;
+          const part = pickTextPart(structure);
+          if (!part) continue;
+          const { content } = await client.download(String(uid), part.part, { uid: true, maxBytes: REPLY_BODY_BYTES });
+          const chunks: Buffer[] = [];
+          for await (const chunk of content) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer));
+          const text = replyText(Buffer.concat(chunks).toString('utf8'), part.html);
+          if (text) out.set(uid, text);
+        } catch {
+          // One message that will not download is not a reason to lose the others.
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await closeImapClient(client);
+  }
+  return out;
 }

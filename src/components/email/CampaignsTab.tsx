@@ -19,6 +19,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { EmailCampaign, EmailMessage, CampaignStatus, MessageStatus } from '@/lib/email/types';
+import { FullEmailDialog } from './FullEmailDialog';
 
 interface CampaignsTabProps {
   orgId: string;
@@ -136,6 +137,8 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** The one email that is open in full (email_messages.id), or null. */
+  const [viewing, setViewing] = useState<string | null>(null);
   const [messagesByCampaign, setMessagesByCampaign] = useState<Record<string, EmailMessage[]>>({});
   const [messagesLoading, setMessagesLoading] = useState<Record<string, boolean>>({});
   /** The campaign being paused, resumed or deleted, so its buttons wait. */
@@ -503,6 +506,9 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
                                 <div className="flex items-center gap-2 shrink-0">
                                   {inboxBadge(message)}
                                   {messageStatusBadge(message.status)}
+                                  <Button size="sm" variant="ghost" aria-label={`View the email to ${message.toEmail}`} onClick={() => setViewing(message.id)}>
+                                    View
+                                  </Button>
                                 </div>
                               </div>
                             ))}
@@ -517,6 +523,8 @@ export const CampaignsTab: React.FC<CampaignsTabProps> = ({
           )}
         </CardContent>
       </Card>
+
+      <FullEmailDialog open={viewing !== null} onOpenChange={(open) => { if (!open) setViewing(null); }} messageId={viewing} />
 
       <AlertDialog open={askMany} onOpenChange={(open) => { if (!open && manyDone === null) setAskMany(false); }}>
         <AlertDialogContent>
