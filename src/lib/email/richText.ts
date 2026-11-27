@@ -21,7 +21,19 @@ const PLACEHOLDER = /\{\{\s*([a-z0-9_]+)\s*\}\}/gi;
  * placeholder the browser split across two elements is never substituted and
  * the recipient is greeted as `{{first_name}}`.
  */
-const SPLIT_PLACEHOLDER = /\{\{[^}]*<[^>]+>[^}]*\}\}/i;
+function hasSplitPlaceholder(html: string): boolean {
+  // One pass over the text on purpose. A single pattern for this
+  // (`{{`, anything, a tag, anything, `}}`) takes seconds on a few thousand
+  // characters of `{{<b>`, and this runs on every render of the editor: a
+  // template holding that text froze the page of whoever opened it.
+  for (let i = html.indexOf('{{'); i !== -1; ) {
+    const end = html.indexOf('}', i + 2);
+    if (end === -1) return false;
+    if (html[end + 1] === '}' && /<[^>]+>/.test(html.slice(i + 2, end))) return true;
+    i = html.indexOf('{{', end + 1);
+  }
+  return false;
+}
 
 /**
  * True when every `{{...}}` in this HTML is still whole.
@@ -30,7 +42,7 @@ const SPLIT_PLACEHOLDER = /\{\{[^}]*<[^>]+>[^}]*\}\}/i;
  * by Compose to warn before a campaign goes out with a broken merge field.
  */
 export function placeholdersIntact(html: string): boolean {
-  return !SPLIT_PLACEHOLDER.test(html);
+  return !hasSplitPlaceholder(html);
 }
 
 /** Every placeholder name used in this HTML, lower-cased, without repeats. */

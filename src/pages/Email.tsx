@@ -15,6 +15,7 @@ import { listAccounts, listMailboxStatus } from '@/services/supabase/email';
 import { SetupChecklist } from '@/components/email/SetupChecklist';
 import { PageHeader } from '@/components/common/PageHeader';
 import { WarmupServiceCard } from '@/components/email/WarmupServiceCard';
+import { ClaudeCard } from '@/components/email/ClaudeCard';
 
 /**
  * Prospects and Groups lead, in that order: they are the audience, and every
@@ -207,6 +208,7 @@ export const Email: React.FC = () => {
         <TabsContent value="settings">
           <SettingsTab orgId={orgId} isAdmin={isAdmin} orgTimezone={organization?.settings?.timezone ?? 'UTC'} />
           <WarmupServiceCard orgId={orgId} isAdmin={isAdmin} />
+          <ClaudeCard orgId={orgId} userId={user?.userId ?? ''} people={organization?.members ?? []} />
         </TabsContent>
       </Tabs>
       </>

@@ -28,6 +28,13 @@ describe('placeholdersIntact', () => {
   it('accepts a body with no placeholders at all', () => {
     expect(placeholdersIntact('<p>Hello there</p>')).toBe(true);
   });
+
+  it('answers at once for a text made to be slow (it runs on every render of the editor)', () => {
+    const started = Date.now();
+    // A single pattern needed fifteen seconds for this; the page of whoever opened such a template froze.
+    expect(placeholdersIntact('{{<b>'.repeat(3200))).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
 });
 
 describe('placeholdersUsed', () => {

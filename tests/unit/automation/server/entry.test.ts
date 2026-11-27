@@ -299,7 +299,8 @@ describe("vercel.json", () => {
     // and the one for the social media autopilot.
     expect(v.rewrites).toContainEqual({ source: "/api/social/autopilot/:path*", destination: "/api/social/publish?autopilot=:path*" });
     expect(v.rewrites.findIndex((r: { source: string }) => r.source === "/api/social/autopilot/:path*")).toBeLessThan(spa);
-    expect(v.rewrites).toHaveLength(6);
+    // Six more belong to Claude's connector (tests/unit/mcp/routes.test.ts).
+    expect(v.rewrites).toHaveLength(12);
   });
 
   it("gives the function 300 seconds and leaves the documents function as it was", () => {

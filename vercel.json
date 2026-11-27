@@ -13,12 +13,29 @@
     "api/social/publish.ts": { "maxDuration": 300 },
     "api/social/account-secret.ts": { "maxDuration": 30 }
   },
+  "headers": [
+    {
+      "source": "/connect/(.*)",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Content-Security-Policy", "value": "frame-ancestors 'none'" },
+        { "key": "Referrer-Policy", "value": "same-origin" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ],
   "rewrites": [
     { "source": "/api/signroom/:path*", "destination": "/api/signroom?path=:path*" },
     { "source": "/api/automation/:path*", "destination": "/api/automation?path=:path*" },
     { "source": "/api/voice/:path*", "destination": "/api/voice?path=:path*" },
     { "source": "/api/social/connect/:path*", "destination": "/api/social/account-secret?connect=:path*" },
     { "source": "/api/social/autopilot/:path*", "destination": "/api/social/publish?autopilot=:path*" },
+    { "source": "/api/mcp", "destination": "/api/email/warmup?mcp=rpc" },
+    { "source": "/api/mcp/:path*", "destination": "/api/email/warmup?mcp=:path*" },
+    { "source": "/.well-known/oauth-protected-resource", "destination": "/api/email/warmup?mcp=well-known/protected-resource" },
+    { "source": "/.well-known/oauth-protected-resource/:path*", "destination": "/api/email/warmup?mcp=well-known/protected-resource" },
+    { "source": "/.well-known/oauth-authorization-server", "destination": "/api/email/warmup?mcp=well-known/authorization-server" },
+    { "source": "/.well-known/oauth-authorization-server/:path*", "destination": "/api/email/warmup?mcp=well-known/authorization-server" },
     {
       "source": "/((?!api/|google[a-z0-9]+\\.html$).*)",
       "destination": "/index.html"

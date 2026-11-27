@@ -7,12 +7,18 @@ import { refuseForeign } from "../_signroom/host/origin.js";
 import { mailReach } from "../_warmup/mailreach.js";
 import { route as realRoute, type RouteRequest, type RouteResult, type WarmupDeps } from "../_warmup/router.js";
 import { supabaseStore } from "../_warmup/store.js";
+import mcp from "../_mcp/entry.js";
 
 /**
  * Mailbox warm-up (MailReach): /api/email/warmup?do=<status|key|connect|pause>.
  * Our own pages only, a small body, the signed-in account, then the router
  * (rules: _warmup/router.ts). The warm-up service's key and the mailbox
  * passwords are read and used here only; neither is ever sent to a browser.
+ *
+ * The same function is also the door for Claude's connector (?mcp=..., see
+ * _mcp/entry.ts): the plan allows no more functions. Those requests come from
+ * Claude's servers, not from our pages, so they are handed over before the
+ * "our own pages only" check below, and are checked there in their own way.
  */
 export const config = { maxDuration: 60 };
 
@@ -26,6 +32,8 @@ export type WarmupHandlerDeps = {
   route: (deps: WarmupDeps, r: RouteRequest) => Promise<RouteResult>;
   /** The route deps for one request, or null when the database is not configured. */
   build: () => WarmupDeps | null;
+  /** Claude's connector, which shares this function. The real one when left out. */
+  connector?: (req: VercelRequest, res: VercelResponse) => Promise<void>;
 };
 
 const first = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[0] : v) ?? "";
@@ -44,6 +52,7 @@ function bodyOf(raw: unknown): Record<string, unknown> {
 
 export function warmupHandler(d: WarmupHandlerDeps) {
   return async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+    if ((req.query ?? {}).mcp !== undefined) return (d.connector ?? mcp)(req, res);
     if (refuseForeign(req, res)) return;
     if (refuseOversize(req, res, MAX_BODY_BYTES, BODY_TOO_LARGE_MESSAGE)) return;
     const who = await d.signedIn(req, res);
