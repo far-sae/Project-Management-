@@ -16,6 +16,7 @@ import {
 } from '@/lib/email/providers';
 import { MailboxImapFields, type ImapFieldsValues } from './MailboxImapFields';
 import { MailboxSendingFields, type SendingFieldsValues } from './MailboxSendingFields';
+import type { SignInValues } from './mailboxSignIn';
 
 export interface AccountFormState {
   label: string;
@@ -306,7 +307,7 @@ export type PoolFormState = SendingFieldsValues;
 /** Everything MailboxLimitsDialog edits: the Sending fields plus the Inbox
  *  section's IMAP fields, since reconfiguring an existing mailbox is also
  *  where its IMAP settings get filled in or changed after the fact. */
-export type MailboxSettingsFormState = PoolFormState & ImapFieldsValues;
+export type MailboxSettingsFormState = PoolFormState & ImapFieldsValues & SignInValues;
 
 interface MailboxLimitsDialogProps {
   open: boolean;
@@ -323,22 +324,27 @@ interface MailboxLimitsDialogProps {
 
 /**
  * Reconfigures an existing mailbox — the "reconfigure a mailbox" action from
- * the admin-only gate, opened from MailboxCard's "Limits" button. Never
- * touches SMTP credentials (host, port, username, password): those are set
- * once at creation and are not editable here. IMAP is a second identity for
- * the same mailbox, though, and this is where it gets added or changed after
- * the mailbox already exists — which is the ordinary case, since an admin
- * usually creates a mailbox to send from first and only wires up inbox
- * scanning once it is already in use.
+ * the admin-only gate, opened from MailboxCard's "Limits" button.
+ *
+ * It also holds the mailbox's sign-in (outgoing server, port, username and a
+ * new password). That used to be written once, at creation: a mailbox whose
+ * password was typed wrongly, or changed at the provider later, could only be
+ * deleted and added again. The password box is empty on purpose: a saved
+ * password is never read back, and leaving the box empty keeps it.
+ *
+ * IMAP is a second identity for the same mailbox, and this is where it gets
+ * added or changed after the mailbox already exists — which is the ordinary
+ * case, since an admin usually creates a mailbox to send from first and only
+ * wires up inbox scanning once it is already in use.
  */
 export const MailboxLimitsDialog: React.FC<MailboxLimitsDialogProps> = ({
   open, onOpenChange, label, smtpHost, form, onFormChange, saving, error, onSubmit,
 }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="sm:max-w-[440px]">
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[440px]">
       <DialogHeader>
         <DialogTitle>Mailbox settings — {label}</DialogTitle>
-        <DialogDescription>Daily volume, warmup ramp and inbox scanning for this mailbox.</DialogDescription>
+        <DialogDescription>Sign-in, daily volume, warmup ramp and inbox scanning for this mailbox.</DialogDescription>
       </DialogHeader>
       <form onSubmit={onSubmit} className="space-y-4">
         {error && (
@@ -346,6 +352,36 @@ export const MailboxLimitsDialog: React.FC<MailboxLimitsDialogProps> = ({
             <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
           </div>
         )}
+        <fieldset className="space-y-3 rounded-md border border-border p-3">
+          <legend className="px-1 text-sm font-medium text-foreground">Sign-in</legend>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2 space-y-1.5">
+              <Label htmlFor="limits-smtp-host">Outgoing server (SMTP)</Label>
+              <Input id="limits-smtp-host" value={form.smtpHost} autoComplete="off"
+                onChange={(e) => onFormChange((f) => ({ ...f, smtpHost: e.target.value }))} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="limits-smtp-port">Port</Label>
+              <Input id="limits-smtp-port" inputMode="numeric" value={form.smtpPort}
+                onChange={(e) => onFormChange((f) => ({ ...f, smtpPort: e.target.value.replace(/[^0-9]/g, '').slice(0, 5) }))} required />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="limits-smtp-username">Username</Label>
+            <Input id="limits-smtp-username" value={form.smtpUsername} autoComplete="off"
+              onChange={(e) => onFormChange((f) => ({ ...f, smtpUsername: e.target.value }))} required />
+            <p className="text-xs text-muted-foreground">Almost always the whole email address.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="limits-smtp-password">New password</Label>
+            <Input id="limits-smtp-password" type="password" value={form.password} autoComplete="new-password"
+              placeholder="Leave empty to keep the saved password"
+              onChange={(e) => onFormChange((f) => ({ ...f, password: e.target.value }))} />
+            <p className="text-xs text-muted-foreground">
+              The password of the mailbox itself. When you change anything here, a test email is sent to you to check it.
+            </p>
+          </div>
+        </fieldset>
         <MailboxSendingFields
           idPrefix="limits"
           values={form}

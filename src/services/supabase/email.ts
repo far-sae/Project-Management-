@@ -602,6 +602,25 @@ export const updateAccountImap = async (
 };
 
 /**
+ * Changes the outgoing server, port, encryption and username of a saved
+ * mailbox. The password is not here: it goes through `saveAccountSecret`.
+ */
+export const updateAccountSmtp = async (
+  accountId: string,
+  input: { smtpHost: string; smtpPort: number; smtpSecure: boolean; smtpUsername: string },
+): Promise<void> => {
+  const { error } = await supabase
+    .from("email_accounts")
+    .update({ smtp_host: input.smtpHost, smtp_port: input.smtpPort, smtp_secure: input.smtpSecure, smtp_username: input.smtpUsername })
+    .eq("id", accountId);
+
+  if (error) {
+    logger.error("Failed to update mailbox sign-in:", error);
+    throw error;
+  }
+};
+
+/**
  * Bounce rates per mailbox, over the last thirty days.
  *
  * From the `mailbox_bounce_rate` view (migration 164b), which measures rather

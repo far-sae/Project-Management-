@@ -12,10 +12,11 @@ import { useAuth } from '@/context/AuthContext';
 import {
   listBounceRates,
   listMailboxStatus, listAccounts, createAccount, deleteAccount, resumeAccount,
-  updateAccountPool, updateAccountImap,
+  updateAccountPool, updateAccountImap, updateAccountSmtp, saveAccountSecret,
 } from '@/services/supabase/email';
 import type { EmailAccount, MailboxHealth } from '@/lib/email/types';
 import { verifyAccount } from './verifyAccount';
+import { saveSignIn, signInFrom } from './mailboxSignIn';
 import {
   AccountFormDialog, EMPTY_ACCOUNT_FORM, MailboxLimitsDialog, type MailboxSettingsFormState,
 } from './AccountFormDialog';
@@ -45,7 +46,10 @@ const EMPTY_POOL_FORM: MailboxSettingsFormState = {
   imapPort: '993',
   imapSecure: true,
   sentFolderEnabled: true,
+  ...signInFrom(null),
 };
+
+const SIGN_IN_WRITERS = { updateSmtp: updateAccountSmtp, savePassword: saveAccountSecret };
 
 export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, isAdmin }) => {
   const { user } = useAuth();
@@ -282,6 +286,11 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       // would report the mailbox as verified while its warmup, daily limit
       // or inbox settings silently stayed at column defaults, with nothing
       // in the UI saying so.
+      // What is in the form NOW is what gets checked. The password, the
+      // username and the server are the things a person corrects after a
+      // failed check; before, none of them was sent again, so Retry checked
+      // the first password for ever.
+      await saveSignIn(SIGN_IN_WRITERS, pendingAccountId, null, { smtpHost: form.smtpHost, smtpPort: form.smtpPort, smtpUsername: form.smtpUsername, password: form.password });
       await applyPoolSettings(pendingAccountId);
       await applyImapSettings(pendingAccountId);
       await refresh();
@@ -366,6 +375,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       imapPort: String(account?.imapPort ?? 993),
       imapSecure: account?.imapSecure ?? true,
       sentFolderEnabled: account?.sentFolderEnabled ?? true,
+      ...signInFrom(account),
     });
     setEditError(null);
   };
@@ -391,6 +401,22 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
         imapSecure: editForm.imapSecure,
         sentFolderEnabled: editForm.sentFolderEnabled,
       });
+      // The sign-in last: when it changed, the mailbox is checked with it straight away, so a
+      // wrong password is found here and not by a campaign.
+      const signInChanged = await saveSignIn(SIGN_IN_WRITERS, editTarget.id, accounts[editTarget.id] ?? null, editForm);
+      if (signInChanged) {
+        const result = await runVerify(editTarget.id);
+        await refresh();
+        if (!result.ok) {
+          // The window stays open with what to change; the password box is emptied, since that password is saved now.
+          setEditForm((f) => ({ ...f, password: '' }));
+          setEditError(result.error ?? 'The mailbox could not be checked. Please try again.');
+          return;
+        }
+        toast.success(`Mailbox settings saved. A test email was sent to ${user?.email ?? 'your inbox'}.`);
+        setEditTarget(null);
+        return;
+      }
       toast.success('Mailbox settings updated');
       setEditTarget(null);
       await refresh();
