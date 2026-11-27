@@ -7,7 +7,7 @@ import {
 } from '../../../api/_warmup/shared/types';
 
 /**
- * Warm-up of one mailbox, as the warm-up service (MailReach) reports it: is it
+ * Warm-up of one mailbox, as the warm-up service (MailReach or Mailivery) reports it: is it
  * warming, its reputation score, how many of its warm-up emails landed in
  * spam, and whether it is ready to send campaigns from.
  *
@@ -41,6 +41,7 @@ export const WarmupPanel: React.FC<WarmupPanelProps> = ({ status, mailbox, isAdm
 
   const pill = mailbox?.ready ? { label: 'Warmed up', tone: 'success' as StatusTone } : STATE[mailbox?.state ?? 'not_connected'];
   const linked = status.linked && !status.problem;
+  const service = status.service ?? 'mailreach';
 
   return (
     <div className="mt-3 rounded-lg border border-border p-3">
@@ -56,8 +57,8 @@ export const WarmupPanel: React.FC<WarmupPanelProps> = ({ status, mailbox, isAdm
         <p role="alert" className="mt-1.5 text-xs text-destructive">{status.problem}</p>
       ) : !status.linked ? (
         <p className="mt-1.5 text-xs text-muted-foreground">
-          No warm-up service is connected. Add your MailReach key in Settings to warm this mailbox up before
-          sending campaigns from it.
+          No warm-up service is connected. Add your MailReach or Mailivery key in Settings to see how this mailbox
+          is warming, before you send campaigns from it.
         </p>
       ) : !mailbox || mailbox.state === 'not_connected' ? (
         <>
@@ -69,7 +70,9 @@ export const WarmupPanel: React.FC<WarmupPanelProps> = ({ status, mailbox, isAdm
               <Button size="sm" variant="outline" onClick={onStart} disabled={busy}>
                 {busy && <Loader2 className="animate-spin" aria-hidden />}Start warm-up
               </Button>
-              <span className="text-xs text-muted-foreground">Uses one warm-up seat of your MailReach plan.</span>
+              <span className="text-xs text-muted-foreground">
+                {service === 'mailivery' ? 'Adds this mailbox to your Mailivery account.' : 'Uses one warm-up seat of your MailReach plan.'}
+              </span>
             </div>
           )}
         </>
@@ -99,7 +102,7 @@ export const WarmupPanel: React.FC<WarmupPanelProps> = ({ status, mailbox, isAdm
               : `No warm-up emails in the last ${status.periodDays} days yet.`}
           </p>
           <p className={mailbox.ready ? 'mt-1 text-xs text-success-soft-foreground' : 'mt-1 text-xs text-foreground'}>
-            {mailbox.ready ? 'Ready to send campaigns from.' : `Not ready for campaigns yet. ${notReadyReason(mailbox)}`}
+            {mailbox.ready ? 'Ready to send campaigns from.' : `Not ready for campaigns yet. ${notReadyReason(mailbox, service)}`}
           </p>
           {isAdmin && (mailbox.state === 'warming' || mailbox.state === 'paused') && (
             <Button

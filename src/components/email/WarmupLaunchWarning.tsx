@@ -28,7 +28,7 @@ export const WarmupLaunchWarning: React.FC<{
 
   if (!status || !status.linked || status.problem) return null;
   const cold = mailboxes
-    .map((m) => ({ email: m.fromEmail, reason: notReadyReason(status.mailboxes[m.id] ?? { state: 'not_connected', score: null, days: null, sent: 0, spam: 0, spamPercent: null, ready: false }) }))
+    .map((m) => ({ email: m.fromEmail, reason: notReadyReason(status.mailboxes[m.id] ?? { state: 'not_connected', score: null, days: null, sent: 0, spam: 0, spamPercent: null, ready: false }, status.service) }))
     .filter((m): m is { email: string; reason: string } => m.reason !== null);
   if (cold.length === 0) return null;
 

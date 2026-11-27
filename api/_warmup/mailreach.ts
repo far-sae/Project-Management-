@@ -37,7 +37,8 @@ export type MrAccount = {
   score: number | null;
 };
 
-export type MrStats = { sent: number; spam: number };
+/** `score` is given by a service that reports its score with the figures (Mailivery), not with the list of inboxes. */
+export type MrStats = { sent: number; spam: number; score?: number | null };
 
 export type MrConnect = {
   email: string;

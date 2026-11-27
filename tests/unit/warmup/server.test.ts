@@ -195,7 +195,7 @@ describe("warm-up: where each mailbox stands", () => {
     const w = world();
     w.link();
     w.state.failWith = new MailReachError(401);
-    expect((await w.as(OWNER).status()).json).toEqual({ linked: true, problem: KEY_NO_LONGER_MESSAGE, periodDays: 14, mailboxes: {} });
+    expect((await w.as(OWNER).status()).json).toEqual({ linked: true, service: "mailreach", problem: KEY_NO_LONGER_MESSAGE, periodDays: 14, mailboxes: {} });
     w.state.failWith = new MailReachError(500);
     expect(((await w.as(OWNER).status()).json as WarmupStatus).problem).toBe(UNAVAILABLE_MESSAGE);
   });

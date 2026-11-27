@@ -6,7 +6,7 @@
  */
 import { publicMessage } from '@/lib/publicError';
 import { supabase } from '@/services/supabase/config';
-import type { WarmupMailbox, WarmupStatus } from '../../../api/_warmup/shared/types';
+import type { WarmupMailbox, WarmupServiceName, WarmupStatus } from '../../../api/_warmup/shared/types';
 
 const BASE = '/api/email/warmup';
 
@@ -59,8 +59,8 @@ export const warmupStatus = (organizationId: string, workspaceId: string | null)
   call<WarmupStatus>('status', 'GET', workspaceId ? { organizationId, workspaceId } : { organizationId });
 
 /** Checks the key with the warm-up service and keeps it; resolves to how many inboxes the key's project has. */
-export const saveWarmupKey = (organizationId: string, apiKey: string): Promise<number> =>
-  call<{ inboxes: number }>('key', 'POST', {}, { organizationId, apiKey }).then((r) => r.inboxes);
+export const saveWarmupKey = (organizationId: string, apiKey: string, service: WarmupServiceName = 'mailreach'): Promise<number> =>
+  call<{ inboxes: number }>('key', 'POST', {}, { organizationId, apiKey, service }).then((r) => r.inboxes);
 
 export const removeWarmupKey = (organizationId: string): Promise<void> =>
   call('key', 'DELETE', {}, { organizationId }).then(() => undefined);

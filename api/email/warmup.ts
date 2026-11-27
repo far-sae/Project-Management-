@@ -4,13 +4,14 @@ import { adminClient } from "../_signroom/host/admin.js";
 import { refuseSignedOut } from "../_signroom/host/auth.js";
 import { refuseOversize } from "../_signroom/host/bodySize.js";
 import { refuseForeign } from "../_signroom/host/origin.js";
+import { mailivery } from "../_warmup/mailivery.js";
 import { mailReach } from "../_warmup/mailreach.js";
 import { route as realRoute, type RouteRequest, type RouteResult, type WarmupDeps } from "../_warmup/router.js";
 import { supabaseStore } from "../_warmup/store.js";
 import mcp from "../_mcp/entry.js";
 
 /**
- * Mailbox warm-up (MailReach): /api/email/warmup?do=<status|key|connect|pause>.
+ * Mailbox warm-up (MailReach or Mailivery): /api/email/warmup?do=<status|key|connect|pause>.
  * Our own pages only, a small body, the signed-in account, then the router
  * (rules: _warmup/router.ts). The warm-up service's key and the mailbox
  * passwords are read and used here only; neither is ever sent to a browser.
@@ -91,7 +92,7 @@ function buildDeps(): WarmupDeps | null {
   const serverKey = (process.env.INTEGRATION_TOKEN_KEY ?? "").trim();
   return {
     store: supabaseStore(sb),
-    service: (apiKey) => mailReach(apiKey, fetch),
+    service: (apiKey, name) => (name === "mailivery" ? mailivery(apiKey, fetch) : mailReach(apiKey, fetch)),
     crypto: serverKey ? { encrypt: (plain) => encryptSecret(plain, serverKey), decrypt: (packed) => decryptSecret(packed, serverKey) } : null,
   };
 }

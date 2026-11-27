@@ -76,6 +76,14 @@ describe('warm-up on a mailbox', () => {
     expect(onStart).toHaveBeenCalled();
   });
 
+  it('names Mailivery where that is the service connected', () => {
+    panel(box({ state: 'not_connected', ready: false, score: null, days: null, sent: 0, spam: 0, spamPercent: null }), { status: status({ service: 'mailivery' }) });
+    expect(screen.getByText('Adds this mailbox to your Mailivery account.')).toBeTruthy();
+    cleanup();
+    panel(box({ state: 'off', ready: false }), { status: status({ service: 'mailivery' }) });
+    expect(screen.getByText(/Warm-up is switched off for this mailbox in Mailivery\./)).toBeTruthy();
+  });
+
   it('resumes a paused mailbox and reconnects a disconnected one', () => {
     const paused = panel(box({ state: 'paused', ready: false }));
     fireEvent.click(screen.getByRole('button', { name: 'Resume warm-up' }));
@@ -95,7 +103,7 @@ describe('warm-up on a mailbox', () => {
 
   it('points to Settings while no warm-up service is connected', () => {
     panel(undefined, { status: status({ linked: false }) });
-    expect(screen.getByText(/Add your MailReach key in Settings/)).toBeTruthy();
+    expect(screen.getByText(/Add your MailReach or Mailivery key in Settings/)).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
   });
 
@@ -121,7 +129,7 @@ describe('warm-up service in Email settings', () => {
     expect(screen.getByRole('button', { name: 'Connect' }).hasAttribute('disabled')).toBe(true);
     fireEvent.change(field, { target: { value: 'mr_live_0123456789abcdef' } });
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-    await waitFor(() => expect(h.saveWarmupKey).toHaveBeenCalledWith('org-1', 'mr_live_0123456789abcdef'));
+    await waitFor(() => expect(h.saveWarmupKey).toHaveBeenCalledWith('org-1', 'mr_live_0123456789abcdef', 'mailreach'));
     expect(await screen.findByText('Connected. 1 of your mailboxes is in MailReach.')).toBeTruthy();
     expect(h.toast.success).toHaveBeenCalledWith('MailReach connected: 3 inboxes found.');
     expect((screen.getByLabelText('Replace the API key') as HTMLInputElement).value).toBe('');
@@ -151,6 +159,29 @@ describe('warm-up service in Email settings', () => {
     h.warmupStatus.mockResolvedValue(status({ linked: false, problem: 'Warm-up is not set up yet: run supabase/migrations/189_email_warmup.sql in the Supabase SQL editor.' }));
     render(<WarmupServiceCard orgId="org-1" isAdmin />);
     expect((await screen.findByRole('alert')).textContent).toContain('189_email_warmup.sql');
+  });
+
+  it('connects Mailivery instead when that is the service chosen', async () => {
+    h.warmupStatus.mockResolvedValueOnce(status({ linked: false })).mockResolvedValue(status({ service: 'mailivery', mailboxes: { a: box() } }));
+    h.saveWarmupKey.mockResolvedValue(2);
+    render(<WarmupServiceCard orgId="org-1" isAdmin />);
+    fireEvent.change(await screen.findByLabelText('Warm-up service'), { target: { value: 'mailivery' } });
+    const field = screen.getByLabelText('Mailivery API key') as HTMLInputElement;
+    expect(screen.getByText(/open Settings, then Team Settings, then API Access/)).toBeTruthy();
+    fireEvent.change(field, { target: { value: 'mv_live_0123456789abcdef' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(h.saveWarmupKey).toHaveBeenCalledWith('org-1', 'mv_live_0123456789abcdef', 'mailivery'));
+    expect(await screen.findByText('Connected. 1 of your mailboxes is in Mailivery.')).toBeTruthy();
+    expect(h.toast.success).toHaveBeenCalledWith('Mailivery connected: 2 mailboxes found.');
+    // Once connected, the card shows the service that is connected, whatever was last chosen.
+    expect((screen.getByLabelText('Warm-up service') as HTMLSelectElement).value).toBe('mailivery');
+  });
+
+  it('opens on the service that is already connected', async () => {
+    h.warmupStatus.mockResolvedValue(status({ service: 'mailivery' }));
+    render(<WarmupServiceCard orgId="org-1" isAdmin />);
+    expect(await screen.findByText('Connected. No mailbox is warming yet: open Accounts and press Start warm-up on a mailbox, or wait until Mailivery knows the address.')).toBeTruthy();
+    expect((screen.getByLabelText('Warm-up service') as HTMLSelectElement).value).toBe('mailivery');
   });
 
   it('is closed to a member, without asking the server', () => {
