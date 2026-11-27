@@ -3,7 +3,7 @@
 // keeps their numbers, studies them, looks up the trends, plans a week, has
 // the pictures and videos made, and releases the posts (to be approved, or to
 // go out). Nothing in these tests talks to a real service.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FeedError, feedItemOf, numbersOf, readFeed } from "../../../api/_social/autopilot/feed";
 import { IMAGE_MODEL, MakerError, VIDEO_MODEL, imageRequest, makerOn, startMaking, taskState, videoPrompt, videoRequest } from "../../../api/_social/autopilot/runway";
 import { TRENDS_SEARCHES, ownerBlock, ownerRules, recordLines, usable, type PlannedPost, type StudyPost } from "../../../api/_social/autopilot/brain";
@@ -11,7 +11,7 @@ import {
   DAY_MS, HOUR_MS, MEDIA_REFUSED, NO_TRENDS_TITLE, fitSchedule, improvePost, localTime, nextThinking, optionsFor, refreshTrends, remake, runWorkspace, tick, weekdayIn,
   type EngineDeps, type JobRow, type NewNote, type NewPost, type PilotAccount, type PilotRow, type PilotStore,
 } from "../../../api/_social/autopilot/engine";
-import { BUDGET_USED, BUSY, NOTHING_DUE, SITE_UNREADABLE, SWITCH_ON_FIRST, TRENDS_FAILED, TRENDS_NOTHING, pilotHandler } from "../../../api/_social/autopilot/router";
+import { BUDGET_USED, BUSY, NOTHING_DUE, RUN_FAILED, SAVE_FIRST, SITE_UNREADABLE, SWITCH_ON_FIRST, TRENDS_FAILED, TRENDS_NOTHING, WRITING_OFF, pilotHandler } from "../../../api/_social/autopilot/router";
 import { sameFeedPost, settingsOf } from "../../../api/_social/autopilot/supabaseStore";
 import {
   DEFAULT_CUSTOM, DEFAULT_SETTINGS, cleanCustom, cleanDays, cleanTimes, jobCredits, linkOf, noTrendsIn, readTags, readTimes, settingProblems, siteOf, verdictOf,
@@ -443,7 +443,7 @@ describe("a workspace that has just been switched on", () => {
     const w = world();
     await w.run();
     w.k.feed = w.k.feed.slice(0, 2);
-    expect(await w.run()).toEqual([]);
+    expect(await w.run()).toEqual(["looked at your pages: too few posts with numbers to learn from yet"]);
     expect(w.k.notes.at(-1)).toMatchObject({ kind: "study", title: "Not enough posts to learn from yet" });
     // It looks again in two days, not in a week.
     expect(nextThinking(w.row(), NOW + 2 * DAY_MS + 1)).toBe("studied_at");
@@ -929,16 +929,91 @@ describe("the autopilot's routes", () => {
     const w = world();
     const out = res();
     await handler(w)(req("POST", { workspaceId: WS }), out as never, "run");
-    expect(out.body).toEqual({ did: ["read your pages", "looked up the latest trends"], next: "" });
+    // More is due (the study, then the plan): the page presses on by itself.
+    expect(out.body).toEqual({ did: ["read your pages", "looked up the latest trends"], next: "", more: true });
     // Nothing more is due once everything is done and the pictures are ready.
     for (let i = 0; i < 5; i++) await w.run();
     const again = res();
     await handler(w)(req("POST", { workspaceId: WS }), again as never, "run");
-    expect(again.body).toEqual({ did: [], next: NOTHING_DUE });
+    expect(again.body).toEqual({ did: [], next: NOTHING_DUE, more: false });
     (w.k.rows.get(WS) as { busy: boolean }).busy = true;
     const busy = res();
     await handler(w)(req("POST", { workspaceId: WS }), busy as never, "run");
-    expect(busy.body).toEqual({ did: [], next: BUSY });
+    expect(busy.body).toEqual({ did: [], next: BUSY, more: false });
+  });
+
+  it("carries a new workspace from the first press to a planned week, one step for each press, and then stops", async () => {
+    const w = world();
+    const steps: string[][] = [];
+    for (let i = 0; i < 8; i++) {
+      const out = res();
+      await handler(w)(req("POST", { workspaceId: WS }), out as never, "run");
+      const body = out.body as { did: string[]; more: boolean };
+      steps.push(body.did);
+      if (!body.more) break;
+    }
+    expect(steps.flat().some((line) => /^planned \d+ posts?$/.test(line))).toBe(true);
+    expect(steps.length).toBeLessThan(8);
+    expect(w.k.posts.length).toBeGreaterThan(0);
+  });
+
+  it("says why nothing ran, each in its own words, instead of 'nothing was due'", async () => {
+    // Never saved: there is nothing to run yet.
+    const fresh = world();
+    fresh.k.rows.delete(WS);
+    const none = res();
+    await handler(fresh)(req("POST", { workspaceId: WS }), none as never, "run");
+    expect(none.body).toEqual({ did: [], next: SAVE_FIRST, more: false });
+
+    // Switched off: it is not "already working".
+    const off = world({ settings: { mode: "off" } });
+    const offOut = res();
+    await handler(off)(req("POST", { workspaceId: WS }), offOut as never, "run");
+    expect(offOut.body).toEqual({ did: [], next: SWITCH_ON_FIRST, more: false });
+
+    // Writing is not switched on: it can read the pages, and says that it cannot plan.
+    const mute = world({ claude: null });
+    const muteOut = res();
+    await handler(mute)(req("POST", { workspaceId: WS }), muteOut as never, "run");
+    expect(muteOut.body).toEqual({ did: ["read your pages"], next: WRITING_OFF, more: false });
+  });
+
+  it("says what stopped it when the step it ran wrote a problem down", async () => {
+    // No account to post to: the plan cannot be made, and the person is told what to do.
+    const w = world();
+    w.k.accounts = [];
+    let last: { did: string[]; next: string; more: boolean } = { did: [], next: "", more: true };
+    for (let i = 0; i < 8 && last.more; i++) {
+      const out = res();
+      await handler(w)(req("POST", { workspaceId: WS }), out as never, "run");
+      last = out.body as typeof last;
+    }
+    expect(last.next).toBe("No account to post to. Connect at least one social account on the Accounts tab. For TikTok, also choose in the autopilot's settings who can see the videos.");
+    expect(last.more).toBe(false);
+
+    // The month's money is gone: the same, with the reason.
+    const broke = world({ settings: { budgetCents: 500 } });
+    broke.k.spentBefore = 500;
+    const out = res();
+    await handler(broke)(req("POST", { workspaceId: WS }), out as never, "run");
+    expect(out.body).toMatchObject({ did: ["read your pages"], more: false });
+    expect((out.body as { next: string }).next).toContain("This month's budget is used up.");
+  });
+
+  it("says a step failed when it did, and lets the workspace go so the next press can run", async () => {
+    const w = world();
+    w.store.feed = async () => { throw new Error("connection reset by peer"); };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    let last = { did: [] as string[], next: "", more: true };
+    for (let i = 0; i < 4 && last.more; i++) {
+      const out = res();
+      await handler(w)(req("POST", { workspaceId: WS }), out as never, "run");
+      last = out.body as typeof last;
+    }
+    expect(last).toMatchObject({ next: RUN_FAILED, more: false });
+    expect(JSON.stringify(last)).not.toContain("connection reset");
+    expect((w.k.rows.get(WS) as { busy: boolean }).busy).toBe(false);
+    log.mockRestore();
   });
 
   it("makes a picture again for the owner or an admin, and starts on it at once", async () => {
@@ -1030,7 +1105,8 @@ describe("a look-up of the trends that found nothing", () => {
 
   it("is not kept as trends: the owner is told, and it is tried again in six hours", async () => {
     const w = world({ claude: fakeClaude({ trends: APOLOGY }).claude });
-    expect(await w.run()).toEqual(["read your pages"]);
+    // It says that it looked and found none: a press of "Run now" never ends without a word.
+    expect(await w.run()).toEqual(["read your pages", "looked for the latest trends and found none this time"]);
     expect(w.k.notes.map((n) => n.kind)).toEqual(["problem"]);
     expect(w.k.notes[0].title).toBe(NO_TRENDS_TITLE);
     // What the search cost is still counted against the month.

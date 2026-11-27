@@ -40,6 +40,8 @@ interface Props {
   onDelete: (items: SocialContent[]) => Promise<void> | void;
 }
 
+/** The most steps one press of "Run now" asks for: enough for a new workspace to reach its first plan, with room to spare. */
+const RUN_STEPS_AT_MOST = 8;
 const CARD = 'rounded-lg border border-border bg-card';
 const HEAD = 'border-b border-border px-4 py-3';
 
@@ -81,6 +83,8 @@ export const Autopilot: React.FC<Props> = ({ organizationId, workspaceId, accoun
   const [form, setForm] = useState<AutopilotSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  /** What "Run now" has done so far, while it is still working; null when it is not running. */
+  const [progress, setProgress] = useState<string[] | null>(null);
   const [confirmAuto, setConfirmAuto] = useState(false);
   const [busyIdea, setBusyIdea] = useState<string | null>(null);
   /** The idea open in the "Change this post" window. */
@@ -156,17 +160,38 @@ export const Autopilot: React.FC<Props> = ({ organizationId, workspaceId, accoun
     else void doSave();
   };
 
+  /**
+   * One press of "Run now". The server does one step for each request (a step
+   * can take minutes, and a request may not), and says whether another step is
+   * due. So the page asks again by itself: a new workspace goes from reading
+   * its pages to a planned week in one press, and the page says how far it is.
+   */
   const run = async () => {
     setRunning(true);
+    setProgress([]);
+    const done: string[] = [];
+    let why = '';
     try {
-      const report = await runAutopilot(workspaceId);
-      toast.success(report.did.length ? `Done: ${report.did.join(', ')}.` : report.next || 'Nothing was due just now.');
+      for (let step = 0; step < RUN_STEPS_AT_MOST; step += 1) {
+        const report = await runAutopilot(workspaceId);
+        done.push(...report.did);
+        why = report.next;
+        setProgress([...done]);
+        if (!report.more) break;
+      }
+      const planned = done.some((line) => line.startsWith('planned '));
+      const said = done.length ? `Done: ${done.join(', ')}.` : '';
+      const then = why || (planned ? 'The pictures and videos are being made now. The posts appear here when they are ready, in a few minutes.' : '');
+      toast.success([said, then].filter(Boolean).join(' ') || 'Nothing was due just now.');
       await load();
       onChanged();
     } catch (error) {
+      // What was done before the fault is still done: the page shows it after the reload.
       toast.error(publicMessage(error, 'The autopilot could not run just now. Please try again.'));
+      if (done.length) await load().catch(() => undefined);
     } finally {
       setRunning(false);
+      setProgress(null);
     }
   };
 
@@ -290,6 +315,13 @@ export const Autopilot: React.FC<Props> = ({ organizationId, workspaceId, accoun
           <Button variant="outline" onClick={() => void run()} disabled={running}>
             {running ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}{running ? 'Working…' : 'Run now'}
           </Button>
+        )}
+        {progress !== null && (
+          <p role="status" className="basis-full text-sm text-muted-foreground">
+            {progress.length === 0
+              ? 'Working. A step can take a few minutes; you can leave this page open.'
+              : `Done so far: ${progress.join(', ')}. Still working…`}
+          </p>
         )}
       </section>
 

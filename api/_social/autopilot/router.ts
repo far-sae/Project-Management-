@@ -19,7 +19,7 @@ import { CHANGE_MAX, SPOKEN_MAX, siteOf, type AutopilotReady, type RunReport, ty
 import { briefFromSite, readSite } from "./brain.js";
 import { serviceOn } from "../service.js";
 import { makerOn } from "./runway.js";
-import { improvePost, refreshTrends, remake, runMedia, tick, type EngineDeps, type PilotStore } from "./engine.js";
+import { improvePost, refreshTrends, remake, runMedia, runNow, tick, type EngineDeps, type PilotStore } from "./engine.js";
 
 export type PilotRouterDeps = {
   engine: EngineDeps;
@@ -39,6 +39,9 @@ export const readyOf = (d: EngineDeps): AutopilotReady => ({ writing: d.claude !
 export const NOTHING_DUE = "Nothing was due just now. The autopilot looks again every five minutes.";
 export const BUSY = "The autopilot is already working on this workspace. Look again in a minute.";
 export const SWITCH_ON_FIRST = "Switch the autopilot on first.";
+export const SAVE_FIRST = "Save the autopilot's settings first: choose how it works, then press Save.";
+export const RUN_FAILED = "That step did not work this time. Nothing was posted. Press Run now again in a minute.";
+export const WRITING_OFF = "The autopilot read what it could, but it cannot study or plan yet: writing is not switched on.";
 export const DONE_BEFORE = "A second try was already made for this post.";
 export const SITE_UNREADABLE = "That website could not be read. Check the address, or write about your business yourself.";
 export const TRENDS_NOTHING = "The search gave nothing this time. Please try again in a little while.";
@@ -70,8 +73,14 @@ export function pilotHandler(d: PilotRouterDeps) {
       const organizationId = UUID.test(workspaceId) ? await d.organizationOf(workspaceId) : null;
       // The same answer for "no such workspace" and "not yours": nothing is told about other organisations.
       if (!organizationId || !(await d.isAdmin(organizationId, userId))) { res.status(403).json({ error: "Only the owner or an admin can run the autopilot." }); return; }
-      const result = await tick(d.store, d.engine, workspaceId);
-      const report: RunReport = { did: result.did, next: result.workspaces === 0 ? BUSY : result.did.length === 0 ? NOTHING_DUE : "" };
+      const result = await runNow(d.store, d.engine, workspaceId);
+      const why = result.status === "none" ? SAVE_FIRST
+        : result.status === "off" ? SWITCH_ON_FIRST
+        : result.status === "busy" ? BUSY
+        : result.status === "failed" ? RUN_FAILED
+        // The step ran. What it could not get past comes first; then that writing is off; then that nothing was due.
+        : result.stop ?? (!d.engine.claude ? WRITING_OFF : result.did.length === 0 && !result.more ? NOTHING_DUE : "");
+      const report: RunReport = { did: result.did, next: why, more: result.more };
       res.status(200).json(report);
       return;
     }

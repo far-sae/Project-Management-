@@ -656,6 +656,39 @@ describe('Run now', () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it('presses on by itself while more is due, and says everything it did at the end', async () => {
+    h.run
+      .mockResolvedValueOnce({ did: ['read your pages', 'looked up the latest trends'], next: '', more: true })
+      .mockResolvedValueOnce({ did: ['looked at your pages: too few posts with numbers to learn from yet'], next: '', more: true })
+      .mockResolvedValueOnce({ did: ['planned 4 posts'], next: '', more: false });
+    await open(data());
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    // While it works, the page says how far it has come.
+    expect(await screen.findByText(/Done so far: read your pages, looked up the latest trends/)).toBeTruthy();
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith(
+      'Done: read your pages, looked up the latest trends, looked at your pages: too few posts with numbers to learn from yet, planned 4 posts. The pictures and videos are being made now. The posts appear here when they are ready, in a few minutes.',
+    ));
+    expect(h.run).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText(/Done so far/)).toBeNull();
+  });
+
+  it('says what stopped it, after what it did', async () => {
+    h.run
+      .mockResolvedValueOnce({ did: ['read your pages'], next: '', more: true })
+      .mockResolvedValueOnce({ did: [], next: 'No account to post to. Connect at least one social account on the Accounts tab.', more: false });
+    await open(data());
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Done: read your pages. No account to post to. Connect at least one social account on the Accounts tab.'));
+  });
+
+  it('does not press on for ever', async () => {
+    h.run.mockResolvedValue({ did: ['read your pages'], next: '', more: true });
+    await open(data());
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalled());
+    expect(h.run.mock.calls.length).toBeLessThanOrEqual(8);
+  });
+
   it('says so when nothing was due, and never shows a raw error', async () => {
     h.run.mockResolvedValue({ did: [], next: 'Nothing was due just now. The autopilot looks again every five minutes.' });
     await open(data());

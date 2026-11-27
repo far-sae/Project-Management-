@@ -434,6 +434,8 @@ async function learnSite(store: PilotStore, d: EngineDeps, row: PilotRow, did: s
   const notes = await readSite(meter.ai, { workspaceId: row.workspaceId, feature: "web" }, site);
   if (!notes) {
     await problem(store, row, "Your website could not be read", `The autopilot could not read ${site.domain}. Check the address in the autopilot's settings. Until then it works from what you wrote about your business.`, d.now());
+    // Said, not passed over in silence: the person pressed a button and should hear what came of it.
+    did.push("tried to read your website and could not");
     return;
   }
   await store.saveSiteNotes(row.workspaceId, notes);
@@ -454,6 +456,7 @@ async function lookUpTrends(store: PilotStore, d: EngineDeps, row: PilotRow, did
     if (!last || last.title !== NO_TRENDS_TITLE || d.now() - new Date(last.createdAt).getTime() >= DAY_MS) {
       await store.addNote(row, { kind: "problem", title: NO_TRENDS_TITLE, body: NO_TRENDS_BODY, costMicroUsd: meter.cost() });
     }
+    did.push("looked for the latest trends and found none this time");
     return false;
   }
   await store.addNote(row, { kind: "trends", title: "What is working right now", body: text, costMicroUsd: meter.cost() });
@@ -481,6 +484,7 @@ async function studyPages(store: PilotStore, d: EngineDeps, row: PilotRow, did: 
       await store.addNote(row, { kind: "study", title, body: "Your pages have too few posts with numbers to compare. The autopilot starts from the latest trends, tries a different thing in each post, and studies again as soon as the numbers come in." });
     }
     await store.stamp(row.workspaceId, "studied_at", dueAgainIn(STUDY_AGAIN_MS, d.now()));
+    did.push("looked at your pages: too few posts with numbers to learn from yet");
     return;
   }
   const meter = metered(d.claude);
@@ -590,6 +594,54 @@ export async function runWorkspace(store: PilotStore, d: EngineDeps, row: PilotR
     if (step === "planned_at") await problem(store, row, "The week could not be planned", "The autopilot could not make a plan this time. It tries again in a few hours.", now);
   }
   return did;
+}
+
+/**
+ * "Run now": one step for one workspace, and the truth about what came of it.
+ *
+ * A step that found nothing, a switch that is off, a workspace another run
+ * holds, a step that failed and a plan that could not be made all used to end
+ * the same way for the person who pressed the button: nothing. Each has its
+ * own answer here.
+ *   status  "none"   the autopilot was never saved for this workspace
+ *           "off"    it is switched off
+ *           "busy"   another run holds the workspace
+ *           "failed" the step threw (the workspace is let go again)
+ *           "ok"     the step ran
+ *   more    another step is due right now, so asking again does something
+ *   stop    what the step wrote down as the reason it could not go on, if anything
+ */
+export type RunNow = { status: "none" | "off" | "busy" | "failed" | "ok"; did: string[]; more: boolean; stop: string | null };
+
+export async function runNow(store: PilotStore, d: EngineDeps, workspaceId: string): Promise<RunNow> {
+  const nothing = { did: [] as string[], more: false, stop: null };
+  const before = await store.get(workspaceId);
+  if (!before) return { status: "none", ...nothing };
+  if (before.settings.mode === "off") return { status: "off", ...nothing };
+  const started = d.now();
+  const rows = await store.claim(1, new Date(started), workspaceId);
+  if (rows.length === 0) return { status: "busy", ...nothing };
+
+  let did: string[] = [];
+  let failed = false;
+  try {
+    did = await runWorkspace(store, d, rows[0]);
+  } catch (e) {
+    failed = true;
+    console.error("[autopilot] a run failed", e instanceof Error ? e.name : "unknown");
+  } finally {
+    await store.release(workspaceId, new Date(d.now())).catch(() => undefined);
+  }
+  if (failed) return { status: "failed", ...nothing };
+
+  // What the step wrote down as a problem: in this run, or (when the run did nothing at all) earlier today.
+  const note = await store.latestNote(workspaceId, "problem");
+  const written = note ? new Date(note.createdAt).getTime() : 0;
+  const stop = note && (written >= started || (did.length === 0 && d.now() - written < DAY_MS)) ? `${note.title}. ${note.body}` : null;
+
+  const after = await store.get(workspaceId);
+  const more = stop === null && d.claude !== null && after !== null && nextThinking(after, d.now()) !== null;
+  return { status: "ok", did, more, stop };
 }
 
 /** How many workspaces one timed run takes, and how long it may go on. */

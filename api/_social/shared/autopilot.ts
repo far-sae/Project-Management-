@@ -313,5 +313,11 @@ export type AutopilotReady = { writing: boolean; media: boolean; posting: boolea
 /** What the autopilot proposes after reading the business's website. */
 export type SiteReading = { brief: string; audience: string; tone: string; language: string; notes: string };
 
-/** What one run did, for the "Run now" button. */
-export type RunReport = { did: string[]; next: string };
+/**
+ * What one run did, for the "Run now" button. One run is one step (reading
+ * the pages, or the trends, or the study, or the plan), because a step can
+ * take minutes. `more` says another step is due right now: the page then
+ * asks again by itself, so one press carries on to the plan. `next` is what
+ * to tell the person when nothing more will happen: why, in a sentence.
+ */
+export type RunReport = { did: string[]; next: string; more?: boolean };
