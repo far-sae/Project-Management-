@@ -23,6 +23,11 @@ interface LaunchReviewProps {
   account: EmailAccount | null;
   /** Every mailbox that could take this, for the pool case. */
   poolAccounts: EmailAccount[];
+  /** True when a campaign for all mailboxes is shared out over them (migration 216); false when it is given one (168). */
+  takesTurns?: boolean;
+  /** The one sender name and reply address the campaign carries for all of them, when it has them. */
+  senderName?: string | null;
+  replyTo?: string | null;
   recipients: Recipient[];
   excludedCount: number;
   estimate: LaunchEstimate;
@@ -52,7 +57,7 @@ function previewRecipient(recipients: Recipient[]): Recipient | null {
  * message is worse than none: it is trusted and wrong.
  */
 export const LaunchReview: React.FC<LaunchReviewProps> = ({
-  open, onOpenChange, subject, bodyHtml, account, poolAccounts, recipients,
+  open, onOpenChange, subject, bodyHtml, account, poolAccounts, takesTurns = false, senderName = null, replyTo = null, recipients,
   excludedCount, estimate, scheduledAt, sending, onConfirm,
 }) => {
   const person = previewRecipient(recipients);
@@ -120,8 +125,16 @@ export const LaunchReview: React.FC<LaunchReviewProps> = ({
                 <p>
                   {poolAccounts.length === 1
                     ? 'Your one mailbox.'
-                    : `One of these ${poolAccounts.length} mailboxes: the one used least recently when the campaign starts.`}
+                    : takesTurns
+                      ? `These ${poolAccounts.length} mailboxes, in turn. Each sends from its own address.`
+                      : `One of these ${poolAccounts.length} mailboxes: the one used least recently when the campaign starts.`}
                 </p>
+                {takesTurns && poolAccounts.length > 1 && (senderName || replyTo) && (
+                  <p>
+                    {senderName ? `Shown as “${senderName}”. ` : ''}
+                    {replyTo ? `Replies go to ${replyTo}.` : ''}
+                  </p>
+                )}
                 <ul className="text-xs text-muted-foreground">
                   {poolAccounts.map((a) => (
                     <li key={a.id}>

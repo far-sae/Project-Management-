@@ -66,7 +66,9 @@ export interface EmailStore {
   sendWindow(organizationId: string): Promise<SendWindow | null>;
   templates(organizationId: string, workspaceId: string): Promise<Template[]>;
   saveTemplate(t: { id?: string; organizationId: string; workspaceId: string; userId: string; name: string; subject: string; bodyHtml: string }): Promise<string | null>;
-  createCampaign(c: { organizationId: string; workspaceId: string; userId: string; accountId: string | null; name: string; subject: string; bodyHtml: string }): Promise<string>;
+  /** True when a campaign that names no mailbox is shared out over every working mailbox of its workspace (migration 216), false when it is given one. */
+  takesTurns(): Promise<boolean>;
+  createCampaign(c: { organizationId: string; workspaceId: string; userId: string; accountId: string | null; name: string; subject: string; bodyHtml: string; senderName?: string | null; replyTo?: string | null }): Promise<string>;
   addToOutbox(campaignId: string, organizationId: string, rows: OutboxRow[]): Promise<void>;
   setCounts(campaignId: string, queued: number, leftOut: number): Promise<void>;
   campaign(organizationId: string, id: string): Promise<Campaign | null>;
@@ -458,7 +460,17 @@ const prepareCampaign: Handler = async (c, a) => {
   if (rows.length > MAX_RECIPIENTS) throw new AppError(tooManyMessage(rows.length));
   if (rows.length === 0) throw new AppError(NOBODY_MESSAGE);
 
-  const id = await store.createCampaign({ organizationId: org, workspaceId: ws.id, userId: c.who.userId, accountId: mailboxId ? mailbox.id : null, name, subject, bodyHtml });
+  // One name and one reply address for every mailbox that sends it. Kept only where the database can keep them.
+  const takesTurns = await store.takesTurns();
+  const replyTyped = str(a.reply_to).toLowerCase();
+  if (replyTyped && !isEmail(replyTyped)) throw new AppError("reply_to is not an email address.");
+  const senderName = takesTurns ? oneLine(a.sender_name, NAME_MAX) || null : null;
+  const replyTo = takesTurns ? replyTyped || null : null;
+  // With no mailbox named, every working mailbox of the workspace takes a turn (from 216 on).
+  const sharing = !mailboxId && takesTurns ? boxes.filter(isReady) : [mailbox];
+  const aDay = sharing.reduce((total, m) => total + Math.max(m.dailyAllowance, 0), 0);
+
+  const id = await store.createCampaign({ organizationId: org, workspaceId: ws.id, userId: c.who.userId, accountId: mailboxId ? mailbox.id : null, name, subject, bodyHtml, senderName, replyTo });
   try {
     await store.addToOutbox(id, org, rows);
     await store.setCounts(id, rows.length, onList);
@@ -473,7 +485,8 @@ const prepareCampaign: Handler = async (c, a) => {
   const unknown = fieldsUsed(`${subject} ${bodyHtml}`).filter((f) => f !== "signature" && !(MERGE_FIELDS as readonly string[]).includes(f));
   const sample = rows[0];
   const empty = (MERGE_FIELDS as readonly string[]).filter((f) => fieldsUsed(`${subject} ${bodyHtml}`).includes(f) && rows.some((r) => !r.mergeData[f]));
-  const days = Math.max(1, Math.ceil(rows.length / Math.max(1, mailbox.dailyAllowance)));
+  const days = Math.max(1, Math.ceil(rows.length / Math.max(1, aDay)));
+  const dayWord = `about ${days} sending ${days === 1 ? "day" : "days"}`;
   const warnings = [
     ...unknown.map((f) => `{{${f}}} is not a field of a lead, so it will be empty in the email. The fields are: ${MERGE_FIELDS.map((m) => `{{${m}}}`).join(", ")} and {{signature}}.`),
     ...empty.map((f) => `{{${f}}} is empty for some of these people; for them nothing is written there.`),
@@ -485,8 +498,12 @@ const prepareCampaign: Handler = async (c, a) => {
     people: rows.length,
     chosen_from: chosen.from,
     left_out: { on_the_do_not_email_list: onList, without_a_usable_email_address: chosen.noEmail, doubles: chosen.doubles, ...(chosen.notFound ? { leads_not_found: chosen.notFound } : {}) },
-    sends_from: mailbox.fromEmail,
-    pace: `${mailbox.fromEmail} sends up to ${mailbox.dailyAllowance} emails a day, so this takes about ${days} sending ${days === 1 ? "day" : "days"}.`,
+    sends_from: sharing.length > 1 ? `your ${sharing.length} working mailboxes, in turn (${sharing.slice(0, 10).map((m) => m.fromEmail).join(", ")})` : sharing[0].fromEmail,
+    pace: sharing.length > 1
+      ? `Together they send up to ${aDay} emails a day, so this takes ${dayWord}. Each email comes from the address of the mailbox that sends it.`
+      : `${sharing[0].fromEmail} sends up to ${aDay} emails a day, so this takes ${dayWord}.`,
+    ...(senderName ? { shown_as: senderName } : {}),
+    ...(replyTo ? { replies_go_to: replyTo } : {}),
     sending_hours: sendingHours(await store.sendWindow(org)),
     unsubscribe: "Every email gets an unsubscribe link. People who unsubscribed or bounced before are never emailed.",
     sample: { to: sample.email, subject: substitutePlaceholders(subject, sample.mergeData), body: textOf(substitutePlaceholders(bodyHtml.replace(/\{\{\s*signature\s*\}\}/gi, ""), sample.mergeData)) },
@@ -646,7 +663,9 @@ export const TOOLS: ToolDef[] = [
           },
           additionalProperties: false,
         },
-        mailbox_id: { type: "string", description: "The mailbox to send from (id from list_mailboxes). Leave out to let the app choose a working one." },
+        mailbox_id: { type: "string", description: "The mailbox to send from (id from list_mailboxes). Leave out to send through all working mailboxes of the workspace in turn, which sends the most a day." },
+        sender_name: { type: "string", description: "The name every email is shown as from, whichever mailbox sends it. Leave out to use each mailbox's own name." },
+        reply_to: { type: "string", description: "The one address every reply goes to, whichever mailbox sent the email. Leave out to use each mailbox's own." },
       },
       ["workspace_id", "name", "subject", "body", "to"],
     ),

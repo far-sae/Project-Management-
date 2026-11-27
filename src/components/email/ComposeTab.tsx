@@ -11,7 +11,7 @@ import { Loader2, Send, SendHorizonal, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import {
-  listAccounts, listMailboxStatus, listSuppressions, createCampaign, getEmailSettings,
+  listAccounts, listMailboxStatus, listSuppressions, createCampaign, getEmailSettings, mailboxesTakeTurns,
   queueRecipients, setCampaignStatus,
 } from '@/services/supabase/email';
 import type {
@@ -33,7 +33,7 @@ const DEFAULT_WINDOW_FOR_ESTIMATE: SendWindow = {
   days: [1, 2, 3, 4, 5],
   timezone: 'UTC',
 };
-import { isUsable, likelyPooledMailbox } from '@/lib/email/mailboxPool';
+import { campaignSender, isUsable, likelyPooledMailbox, pooledSendingSentence } from '@/lib/email/mailboxPool';
 import { verifyAccount } from './verifyAccount';
 import { testDraftFor } from '@/lib/email/testDraft';
 import { AudiencePicker, type AudienceSelection } from './AudiencePicker';
@@ -83,6 +83,8 @@ const WHOLE_POOL = '__whole_pool__';
 const EMPTY_FORM = {
   name: '', accountId: WHOLE_POOL, subject: '', bodyHtml: '',
   templateId: null as string | null,
+  // For a campaign that goes out through all mailboxes: one name and one reply address for all of them.
+  senderName: '', replyTo: '',
 };
 
 /** No audience until somebody picks one — see AudiencePicker on why. */
@@ -119,6 +121,8 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
   const [scheduledAt, setScheduledAt] = useState('');
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
+  // Whether a campaign for "all mailboxes" is really shared out over them on this database (216), or given one (168).
+  const [takesTurns, setTakesTurns] = useState(false);
 
   useEffect(() => {
     if (!orgId) return;
@@ -138,6 +142,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     // cannot act on.
     listMailboxStatus(orgId, workspaceId).then(setPoolHealth).catch(() => setPoolHealth([]));
     getEmailSettings(orgId).then(setSettings).catch(() => setSettings(null));
+    mailboxesTakeTurns().then(setTakesTurns).catch(() => setTakesTurns(false));
   }, [orgId, workspaceId]);
 
   // Copies the template's wording in and records which template it came from.
@@ -200,8 +205,14 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
     [mailboxes],
   );
 
-  // "Any mailbox" does not rotate: the database gives the campaign one mailbox when it starts.
+  // Before 216 "all mailboxes" does not rotate: the database gives the campaign one mailbox when it starts.
   const likelyMailbox = useMemo(() => likelyPooledMailbox(mailboxes.filter(isUsable)), [mailboxes]);
+  const sharedOut = usesPool && takesTurns;
+  // One name and one reply address for every mailbox that sends it; only for a campaign that is shared out.
+  const sender = useMemo(
+    () => (sharedOut ? campaignSender({ senderName: form.senderName, replyTo: form.replyTo }) : { senderName: null, replyTo: null, problem: null }),
+    [sharedOut, form.senderName, form.replyTo],
+  );
 
   const canSendFrom = usesPool
     ? usableIds.size > 0
@@ -213,18 +224,15 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
       + 'Fix one on the Accounts tab first.';
 
   const sendsFrom = usesPool
-    ? (usableIds.size > 0
-      ? (likelyMailbox
-        ? `The whole campaign goes from one mailbox: the one used least recently when it starts. Right now that is ${likelyMailbox.label} (${likelyMailbox.fromEmail}).`
-        : 'The whole campaign goes from one mailbox: the one used least recently when it starts.')
-      : noneUsable)
+    ? (usableIds.size > 0 ? pooledSendingSentence(mailboxes.filter(isUsable), takesTurns) : noneUsable)
     : (!selectedAccount
       ? 'That mailbox is no longer available — choose another.'
       : usableIds.has(selectedAccount.id)
         ? `Sends from ${selectedAccount.label} (${selectedAccount.fromEmail}) only.`
         : `${selectedAccount.label} is paused or needs re-verifying, so nothing would go out from it.`);
 
-  const sendingMailboxId = usesPool ? (likelyMailbox?.id ?? null) : (selectedAccount?.id ?? null);
+  // Null means "the whole pool": a campaign that is shared out is paced by all of them together.
+  const sendingMailboxId = usesPool ? (takesTurns ? null : (likelyMailbox?.id ?? null)) : (selectedAccount?.id ?? null);
 
   /**
    * What this campaign will actually cost in time.
@@ -240,7 +248,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
       // will actually be mailed, which is the only one an estimate of "how
       // long will this take" can honestly be built on.
       recipients: audience.sendableCount,
-      // One mailbox sends the whole campaign: the chosen one, or the one "any mailbox" will be given.
+      // One mailbox sends the whole campaign (the chosen one, or before 216 the one it will be given), or all of them in turn.
       mailboxes: sendingMailboxId ? poolHealth.filter((m) => m.id === sendingMailboxId) : poolHealth,
       window,
       windowOpenNow: isWithinSendWindow(window, new Date()),
@@ -255,7 +263,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
   // offer to send it.
   const canSubmit = canSendFrom
     && form.subject.trim().length > 0 && form.bodyHtml.trim().length > 0
-    && audience.sendableCount > 0 && !sending
+    && audience.sendableCount > 0 && !sending && sender.problem === null
     && (scheduleMode === 'now' || (scheduledAt.length > 0 && !scheduleInPast));
 
   const resetForm = () => {
@@ -306,6 +314,8 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
         subject: form.subject.trim(),
         bodyHtml: form.bodyHtml,
         scheduledAt: scheduledDate,
+        senderName: sender.senderName,
+        replyTo: sender.replyTo,
         // Provenance, so the Templates tab can total this campaign's sends
         // against the wording it started from. The subject and body above are
         // the campaign's own and stay that way.
@@ -361,7 +371,7 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
               <Select value={form.accountId} onValueChange={(v) => setForm((f) => ({ ...f, accountId: v }))}>
                 <SelectTrigger><SelectValue placeholder="Choose an active account" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={WHOLE_POOL}>Any mailbox (the one used least recently)</SelectItem>
+                  <SelectItem value={WHOLE_POOL}>{takesTurns ? 'All mailboxes, in turn' : 'Any mailbox (the one used least recently)'}</SelectItem>
                   {activeAccounts.length === 0
                     ? <div className="px-3 py-2 text-sm text-muted-foreground">No active accounts — verify one first</div>
                     : activeAccounts.map((a) => (
@@ -372,6 +382,26 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
               <p className="text-xs text-muted-foreground">{sendsFrom}</p>
             </div>
           </div>
+          {sharedOut && usableIds.size > 1 && (
+            <fieldset className="grid grid-cols-1 gap-4 rounded-md border border-border p-3 sm:grid-cols-2">
+              <legend className="px-1 text-sm font-medium text-foreground">Look like one sender</legend>
+              <div className="space-y-2">
+                <Label htmlFor="cmp-sender-name">Sender name</Label>
+                <Input id="cmp-sender-name" value={form.senderName} maxLength={120} placeholder="Each mailbox's own name"
+                  onChange={(e) => setForm((f) => ({ ...f, senderName: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cmp-reply-to">Replies go to</Label>
+                <Input id="cmp-reply-to" type="email" value={form.replyTo} placeholder="Each mailbox's own address" aria-invalid={sender.problem !== null}
+                  onChange={(e) => setForm((f) => ({ ...f, replyTo: e.target.value }))} />
+                {sender.problem && <p role="alert" className="text-xs text-destructive">{sender.problem}</p>}
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                Every email shows this name, and every reply comes to this one address, whichever mailbox sent it. The address an
+                email comes from is always the sending mailbox&rsquo;s own: a mail server does not send for another address.
+              </p>
+            </fieldset>
+          )}
           <div className="space-y-2">
             <Label htmlFor="cmp-subject">Subject</Label>
             <Input id="cmp-subject" value={form.subject}
@@ -472,6 +502,9 @@ export const ComposeTab: React.FC<ComposeTabProps> = ({
         bodyHtml={form.bodyHtml}
         account={selectedAccount}
         poolAccounts={activeAccounts}
+        takesTurns={takesTurns}
+        senderName={sender.senderName}
+        replyTo={sender.replyTo}
         recipients={audience.recipients}
         excludedCount={Math.max(audience.recipients.length - audience.sendableCount, 0)}
         estimate={estimate}

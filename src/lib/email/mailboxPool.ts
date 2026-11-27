@@ -108,3 +108,41 @@ export function blockedReason(pool: MailboxHealth[]): string | null {
   }
   return 'No mailbox is currently able to send.';
 }
+
+/**
+ * What "all mailboxes" means for a campaign, in one sentence for the compose
+ * screen. `takesTurns` is whether this database shares a campaign out over the
+ * mailboxes (migration 216) or still gives it one (168): the sentence says
+ * what will really happen. Empty when no mailbox can send.
+ */
+export function pooledSendingSentence(pool: MailboxHealth[], takesTurns: boolean): string {
+  const working = pool.filter((m) => m.status === 'active' && m.isActive);
+  if (working.length === 0) return '';
+  if (!takesTurns) {
+    const likely = likelyPooledMailbox(working);
+    return likely
+      ? `The whole campaign goes from one mailbox: the one used least recently when it starts. Right now that is ${likely.label} (${likely.fromEmail}).`
+      : 'The whole campaign goes from one mailbox: the one used least recently when it starts.';
+  }
+  const aDay = working.reduce((total, m) => total + Math.max(m.effectiveLimit, 0), 0);
+  if (working.length === 1) {
+    return `You have one working mailbox (${working[0].label}), so it sends the whole campaign: up to ${aDay} emails a day. Add more mailboxes on the Accounts tab to send more.`;
+  }
+  return `Goes out through your ${working.length} working mailboxes in turn: up to ${aDay} emails a day together. Each one keeps its own daily limit.`;
+}
+
+export const SENDER_NAME_MAX = 120;
+const ADDRESS = /^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[a-z]{2,}$/i;
+
+/**
+ * The sender name and reply address a campaign carries for every mailbox that
+ * sends it. Empty means "each mailbox's own" and is stored as nothing. The
+ * name is kept on one line: it goes into the email's header.
+ */
+export function campaignSender(input: { senderName: string; replyTo: string }): { senderName: string | null; replyTo: string | null; problem: string | null } {
+  // eslint-disable-next-line no-control-regex
+  const senderName = input.senderName.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, SENDER_NAME_MAX) || null;
+  const typed = input.replyTo.trim().toLowerCase();
+  if (typed && (typed.length > 254 || !ADDRESS.test(typed))) return { senderName, replyTo: null, problem: 'The reply address is not an email address.' };
+  return { senderName, replyTo: typed || null, problem: null };
+}

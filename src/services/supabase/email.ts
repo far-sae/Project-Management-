@@ -89,6 +89,13 @@ export interface CreateCampaignInput {
   bodyHtml: string;
   scheduledAt?: Date | null;
   /**
+   * The sender name and the reply address this campaign carries for every
+   * mailbox that sends it (migration 216), so that a campaign shared out over
+   * several mailboxes reads as one sender. Absent or empty: each mailbox's own.
+   */
+  senderName?: string | null;
+  replyTo?: string | null;
+  /**
    * The template this campaign's wording was COPIED from, or null/absent when
    * it was written from scratch.
    *
@@ -899,6 +906,10 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<EmailC
     // Written alongside the copied wording, never instead of it. See
     // CreateCampaignInput.templateId.
     template_id: input.templateId ?? null,
+    // Only named when there is something to store, so a database that has not
+    // run 216 never hears of these two columns unless they were asked for.
+    ...(input.senderName ? { sender_name: input.senderName } : {}),
+    ...(input.replyTo ? { reply_to: input.replyTo } : {}),
     // rate_per_hour is deliberately not written. Migration 156 removed the
     // claim's hourly arithmetic and the worker has no hourly logic, so any
     // value stored there would be a number the product collects and never
@@ -928,8 +939,10 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<EmailC
   // What is lost on the retry is provenance: the campaign is created and sent
   // exactly as before, and its template simply is not recorded. That is the
   // right thing to lose.
-  if (error.code === "PGRST204" && "template_id" in row) {
-    const { template_id: _omitted, ...withoutTemplate } = row;
+  if (error.code === "PGRST204") {
+    // The same for 216's two columns: without them each mailbox uses its own
+    // name and reply address, and the campaign still goes out.
+    const { template_id: _omitted, sender_name: _name, reply_to: _reply, ...withoutTemplate } = row as typeof row & { sender_name?: string; reply_to?: string };
     const retry = await supabase
       .from("email_campaigns")
       .insert(withoutTemplate)
@@ -942,6 +955,17 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<EmailC
 
   logger.error("Failed to create email campaign:", error);
   throw error;
+};
+
+/**
+ * Whether this database shares a campaign with no mailbox out over every
+ * working mailbox of its workspace (migration 216), or still gives it one
+ * (168). Told by the column 216 adds: the screens say what will really happen.
+ * False on any doubt, which is the cautious thing to tell somebody.
+ */
+export const mailboxesTakeTurns = async (): Promise<boolean> => {
+  const { error } = await supabase.from("email_campaigns").select("sender_name").limit(1);
+  return !error;
 };
 
 /**

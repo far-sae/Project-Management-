@@ -131,6 +131,8 @@ function transportError(code: string, message = 'could not connect'): Error {
 /* ------------------------------------------------------------- the stub db */
 
 interface Fixtures {
+  /** True for a database that has not run 216: a campaign has no sender name or reply address of its own. */
+  campaignsBefore216?: boolean;
   settings?: Row[];
   mailboxes?: Row[];
   accounts?: Row[];
@@ -192,8 +194,13 @@ function makeDb(fx: Fixtures) {
       return builder;
     };
 
+    // A database from before 216 has no sender_name / reply_to on a campaign: asking for them is an error.
+    let refused = false;
     const builder: Record<string, unknown> = {
-      select: () => builder,
+      select: (columns?: string) => {
+        if (table === 'email_campaigns' && fx.campaignsBefore216 && /sender_name|reply_to/.test(String(columns ?? ''))) refused = true;
+        return builder;
+      },
       order: () => builder,
       limit: () => builder,
       range: (start: number, end: number) => {
@@ -220,7 +227,9 @@ function makeDb(fx: Fixtures) {
       },
       maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
       then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) =>
-        Promise.resolve({ data: rows(), error: null }).then(ok, bad),
+        Promise.resolve(refused
+          ? { data: null, error: { code: '42703', message: 'column email_campaigns.sender_name does not exist' } }
+          : { data: rows(), error: null }).then(ok, bad),
     };
     return builder;
   };
@@ -1828,5 +1837,48 @@ describe('worker/lib/engine — the sending mailbox signs the message', () => {
     const html = String(composer.built[0].mail.html);
     expect(html).toContain('— to Person 1');
     expect(html).not.toContain('{{first_name}}');
+  });
+});
+
+describe('worker/lib/engine — one campaign through many mailboxes', () => {
+  // Every mailbox sends from its own address (a mail server sends for no other), so what makes
+  // them one sender to the person reading is the name, and where a reply goes.
+  it('shows the campaign\'s own sender name and reply address, whichever mailbox sends it', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      accounts: [accountRow({ reply_to: 'ada-own@example.com' })],
+      campaigns: [campaignRow({ sender_name: '  Northwind Studio ', reply_to: 'hello@northwind.test' })],
+    });
+    await runCycle(makeDeps(stub.db, makeMailer(okSend).createTransport, { buildRaw: composer.buildRaw }));
+    expect(composer.built[0].mail.from).toEqual({ name: 'Northwind Studio', address: 'ada@example.com' });
+    expect(composer.built[0].mail.replyTo).toBe('hello@northwind.test');
+  });
+
+  it('keeps the mailbox\'s own name and reply address when the campaign has none', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], {
+      accounts: [accountRow({ reply_to: 'ada-own@example.com' })],
+      campaigns: [campaignRow({ sender_name: '   ', reply_to: null })],
+    });
+    await runCycle(makeDeps(stub.db, makeMailer(okSend).createTransport, { buildRaw: composer.buildRaw }));
+    expect(composer.built[0].mail.from).toEqual({ name: 'Ada Lovelace', address: 'ada@example.com' });
+    expect(composer.built[0].mail.replyTo).toBe('ada-own@example.com');
+  });
+
+  it('does not use a reply address that is not an address', async () => {
+    const composer = makeComposer();
+    const stub = oneMailbox([claimedRow(1)], { campaigns: [campaignRow({ reply_to: 'not an address' })] });
+    await runCycle(makeDeps(stub.db, makeMailer(okSend).createTransport, { buildRaw: composer.buildRaw }));
+    expect(composer.built[0].mail.replyTo).toBeUndefined();
+  });
+
+  it('still sends on a database that has not got the two columns yet', async () => {
+    const composer = makeComposer();
+    const mailer = makeMailer(okSend);
+    const stub = oneMailbox([claimedRow(1)], { campaignsBefore216: true });
+    const result = await runCycle(makeDeps(stub.db, mailer.createTransport, { buildRaw: composer.buildRaw }));
+    expect(mailer.sent).toHaveLength(1);
+    expect(result.sent).toBe(1);
+    expect(composer.built[0].mail.from).toEqual({ name: 'Ada Lovelace', address: 'ada@example.com' });
   });
 });

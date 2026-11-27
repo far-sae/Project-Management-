@@ -182,6 +182,26 @@ interface CampaignRow {
   kind: CampaignKind;
   subject: string;
   body_html: string;
+  /**
+   * The sender name and reply address a campaign carries for every mailbox
+   * that sends it (migration 216), so that several mailboxes read as one
+   * sender. Absent or empty: each mailbox's own.
+   */
+  sender_name?: string | null;
+  reply_to?: string | null;
+}
+
+/** The name a campaign's emails are shown as from: the campaign's own when it has one, else the mailbox's. */
+function senderNameFor(campaign: CampaignRow | undefined, account: { from_name: string | null }): string {
+  const own = String(campaign?.sender_name ?? '').trim();
+  return own || String(account.from_name ?? '');
+}
+
+/** Where a reply goes: the campaign's own address when it has a usable one, else the mailbox's. */
+function replyToFor(campaign: CampaignRow | undefined, account: { reply_to: string | null }): string | undefined {
+  const own = String(campaign?.reply_to ?? '').trim();
+  if (/^[^\s@<>(),;:"]+@[^\s@<>(),;:"]+\.[a-z]{2,}$/i.test(own)) return own;
+  return account.reply_to ?? undefined;
 }
 
 interface ClaimedRow {
@@ -752,10 +772,19 @@ async function sendBatch(
 
   // The bodies, once for the batch rather than once per recipient.
   const campaignIds = [...new Set(rows.map((r) => r.campaign_id))];
-  const campaignRes = await deps.db
+  let campaignRes = await deps.db
     .from('email_campaigns')
-    .select('id, kind, subject, body_html')
+    .select('id, kind, subject, body_html, sender_name, reply_to')
     .in('id', campaignIds);
+  if (campaignRes.error) {
+    // A database that has not run 216 has no sender name or reply address on a
+    // campaign. That must not stop the sending: ask again for what every
+    // database has, and each mailbox uses its own name.
+    campaignRes = (await deps.db
+      .from('email_campaigns')
+      .select('id, kind, subject, body_html')
+      .in('id', campaignIds)) as typeof campaignRes;
+  }
   if (campaignRes.error) {
     // Without the bodies nothing in this batch can be built. Hand every row
     // straight back rather than leaving the whole batch stranded in 'sending'.
@@ -944,8 +973,10 @@ async function sendBatch(
         // Objects, not `"name" <addr>` strings: a CSV-sourced name holding a
         // quote would otherwise inject a second recipient that no suppression
         // check ever saw.
-        from: { name: String(account.from_name ?? ''), address: String(account.from_email) },
-        replyTo: account.reply_to ?? undefined,
+        // The address is always the sending mailbox's own. The name and the reply address are the campaign's
+        // when it has them, so a campaign shared out over several mailboxes still reads as one sender.
+        from: { name: senderNameFor(campaign, account), address: String(account.from_email) },
+        replyTo: replyToFor(campaign, account),
         to: { name: String(row.to_name ?? ''), address: String(row.to_email) },
         subject: built.subject,
         html: built.html,
@@ -1071,10 +1102,10 @@ async function sendBatch(
           copies.push(
             await deps.buildRaw({
               from: {
-                name: String(account.from_name ?? ''),
+                name: senderNameFor(campaign, account),
                 address: String(account.from_email),
               },
-              replyTo: account.reply_to ?? undefined,
+              replyTo: replyToFor(campaign, account),
               to: { name: String(row.to_name ?? ''), address: String(row.to_email) },
               subject: built.subject,
               html: sentCopyHtml,

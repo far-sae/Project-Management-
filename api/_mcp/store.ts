@@ -287,10 +287,25 @@ export function supabaseStore(sb: SupabaseClient): McpAuthStore & ConnectionStor
       return row.id;
     },
 
+    async takesTurns() {
+      // Told by a column 216 adds: where it is missing, a campaign is still given one mailbox when it starts.
+      const { error } = await sb.from("email_campaigns").select("sender_name").limit(1);
+      return !error;
+    },
+
     async createCampaign(c) {
       // Always "bulk": that is the kind that gets the unsubscribe link, whatever the number of people.
       const row = must(
-        await sb.from("email_campaigns").insert({ organization_id: c.organizationId, workspace_id: c.workspaceId, created_by: c.userId, account_id: c.accountId, kind: "bulk", name: c.name, subject: c.subject, body_html: c.bodyHtml }).select("id").single(),
+        await sb
+          .from("email_campaigns")
+          .insert({
+            organization_id: c.organizationId, workspace_id: c.workspaceId, created_by: c.userId, account_id: c.accountId, kind: "bulk", name: c.name, subject: c.subject, body_html: c.bodyHtml,
+            // Named only when there is something to keep, so a database from before 216 never hears of them.
+            ...(c.senderName ? { sender_name: c.senderName } : {}),
+            ...(c.replyTo ? { reply_to: c.replyTo } : {}),
+          })
+          .select("id")
+          .single(),
       ) as Row;
       return row.id;
     },

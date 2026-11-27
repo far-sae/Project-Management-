@@ -67,6 +67,9 @@ function world() {
   const templates: Array<{ id: string; workspaceId: string; name: string; subject: string; bodyHtml: string }> = [];
   const tests: TestSend[] = [];
   const fail = { outbox: false, test: false, log: "" };
+  /** Whether this database shares a campaign out over the mailboxes (216) or gives it one (168). */
+  const turns = { on: false };
+  const made: Array<{ senderName?: string | null; replyTo?: string | null; accountId: string | null }> = [];
 
   const store: EmailStore = {
     orgRole: async (org, user) => (org === ORG ? roles[user] ?? null : null),
@@ -96,7 +99,9 @@ function world() {
       templates.push({ id, workspaceId: t.workspaceId, name: t.name, subject: t.subject, bodyHtml: t.bodyHtml });
       return id;
     },
+    takesTurns: async () => turns.on,
     createCampaign: async (c) => {
+      made.push({ senderName: c.senderName, replyTo: c.replyTo, accountId: c.accountId });
       const id = `0e200000-0000-4000-8000-${String(++state.n).padStart(12, "0")}`;
       campaigns.set(id, { id, organizationId: c.organizationId, workspaceId: c.workspaceId, kind: "bulk", name: c.name, subject: c.subject, bodyHtml: c.bodyHtml, status: "draft", accountId: c.accountId, scheduledAt: null, createdAt: state.now.toISOString(), counts: { queued: 0, sent: 0, failed: 0, leftOut: 0, replied: 0, bounced: 0, opened: 0 } });
       return id;
@@ -167,7 +172,7 @@ function world() {
     if (!out.ok) throw new Error(out.message);
     return (out.data as { campaign_id: string }).campaign_id;
   };
-  return { state, roles, given, memberWorkspaces, ownOnly, mailboxes, contacts, suppressed, campaigns, outbox, actions, templates, tests, fail, store, deps, as, draft, prepared };
+  return { state, roles, given, memberWorkspaces, ownOnly, mailboxes, contacts, suppressed, campaigns, outbox, actions, templates, tests, fail, turns, made, store, deps, as, draft, prepared };
 }
 
 const data = <T,>(out: { ok: boolean; data?: unknown; message?: string }): T => {
@@ -313,6 +318,35 @@ describe("Claude and email: preparing a campaign", () => {
     const id = await w.prepared({ mailbox_id: BOX });
     expect(w.campaigns.get(id)?.accountId).toBe(BOX);
     expect(data<{ mailboxes: Array<{ state: string; why_paused?: string }> }>(await w.as(OWNER)("list_mailboxes", { workspace_id: WS })).mailboxes[1]).toMatchObject({ state: "paused", why_paused: "too many bounces" });
+  });
+
+  it("shares a campaign out over all working mailboxes when none is named, with one sender name and one reply address", async () => {
+    const w = world();
+    w.turns.on = true;
+    w.mailboxes[WS].push({ id: BOX2, label: "Second", fromEmail: "second@northwind.test", status: "active", isActive: true, pausedReason: null, dailyAllowance: 25, sentToday: 0 });
+    w.mailboxes[WS].push({ id: "0f000000-0000-4000-8000-000000000003", label: "Paused", fromEmail: "paused@northwind.test", status: "active", isActive: false, pausedReason: "x", dailyAllowance: 99, sentToday: 0 });
+    const out = data<Record<string, any>>(await w.as(OWNER)("prepare_campaign", { ...w.draft, sender_name: "  Northwind   Studio ", reply_to: " Hello@Northwind.test " }));
+    expect(out.sends_from).toBe("your 2 working mailboxes, in turn (sam@northwind.test, second@northwind.test)");
+    expect(out.pace).toBe("Together they send up to 65 emails a day, so this takes about 1 sending day. Each email comes from the address of the mailbox that sends it.");
+    expect(out.shown_as).toBe("Northwind Studio");
+    expect(out.replies_go_to).toBe("hello@northwind.test");
+    expect(w.made[0]).toEqual({ senderName: "Northwind Studio", replyTo: "hello@northwind.test", accountId: null });
+    expect(refusal(await w.as(OWNER)("prepare_campaign", { ...w.draft, reply_to: "not an address" }))).toBe("reply_to is not an email address.");
+  });
+
+  it("says one mailbox sends it all when a mailbox is named, or on a database where mailboxes do not take turns yet", async () => {
+    const w = world();
+    w.mailboxes[WS].push({ id: BOX2, label: "Second", fromEmail: "second@northwind.test", status: "active", isActive: true, pausedReason: null, dailyAllowance: 25, sentToday: 0 });
+    const before = data<Record<string, any>>(await w.as(OWNER)("prepare_campaign", { ...w.draft, sender_name: "Northwind Studio", reply_to: "hello@northwind.test" }));
+    expect(before.sends_from).toBe("sam@northwind.test");
+    expect(before.shown_as).toBeUndefined();
+    // Nothing the database cannot keep is written.
+    expect(w.made[0]).toEqual({ senderName: null, replyTo: null, accountId: null });
+    w.turns.on = true;
+    const named = data<Record<string, any>>(await w.as(OWNER)("prepare_campaign", { ...w.draft, mailbox_id: BOX2, sender_name: "Northwind Studio" }));
+    expect(named.sends_from).toBe("second@northwind.test");
+    expect(named.pace).toContain("second@northwind.test sends up to 25 emails a day");
+    expect(w.made[1]).toMatchObject({ accountId: BOX2, senderName: "Northwind Studio" });
   });
 
   it("refuses more people than one campaign may have, and too many campaigns in an hour", async () => {
