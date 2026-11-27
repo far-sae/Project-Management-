@@ -1,11 +1,15 @@
-import { publicMessage } from '@/lib/publicError';
+import { publicMessage, publicText } from '@/lib/publicError';
 import { supabase } from "@/services/supabase/config";
 import type { TestDraft } from "@/lib/email/testDraft";
 
 export interface VerifyResult {
   ok: boolean;
   error?: string;
+  /** The outgoing server the check found to be the right one, when that was not the one saved. */
+  server?: string;
 }
+
+export const CHECK_FAILED_MESSAGE = 'The mailbox could not be checked. Please try again.';
 
 /**
  * Calls `POST /api/email/verify` to send a test message through
@@ -33,11 +37,12 @@ export const verifyAccount = async (accountId: string, draft?: TestDraft | null)
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(draft ? { accountId, draft } : { accountId }),
     });
-    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; server?: string };
     if (!res.ok || body.ok === false) {
-      return { ok: false, error: body.error ?? `Verification failed: ${res.status}` };
+      // The server answers in plain sentences. A sentence about how the site is set up is for the people who run it only.
+      return { ok: false, error: publicText(typeof body.error === 'string' ? body.error : '', CHECK_FAILED_MESSAGE) };
     }
-    return { ok: true };
+    return { ok: true, ...(typeof body.server === 'string' ? { server: body.server } : {}) };
   } catch (err) {
     return { ok: false, error: publicMessage(err, "Network error") };
   }

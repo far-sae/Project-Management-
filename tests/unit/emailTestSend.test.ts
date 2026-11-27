@@ -6,7 +6,8 @@ import { testDraftFor } from '@/lib/email/testDraft';
 const h = vi.hoisted(() => ({ getSession: vi.fn() }));
 vi.mock('@/services/supabase/config', () => ({ supabase: { auth: { getSession: h.getSession } } }));
 
-import { verifyAccount } from '@/components/email/verifyAccount';
+import { CHECK_FAILED_MESSAGE, verifyAccount } from '@/components/email/verifyAccount';
+import { setInternalsVisible } from '@/lib/publicError';
 
 describe('the draft the browser sends', () => {
   const me = { name: 'Sam Carter', email: 'sam@example.com' };
@@ -119,5 +120,30 @@ describe('asking the server for the test', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ accountId: 'acc-1' });
     await verifyAccount('acc-1', null);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ accountId: 'acc-1' });
+  });
+
+  it('passes on the server\'s plain sentence when the mailbox could not send', async () => {
+    const sentence = 'IONOS did not accept this email address and password. Check three things.';
+    fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ ok: false, error: sentence }) });
+    expect(await verifyAccount('acc-1')).toEqual({ ok: false, error: sentence });
+  });
+
+  it('says which server the check found, when it was not the one saved', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, server: 'smtp.ionos.com' }) });
+    expect(await verifyAccount('acc-1')).toEqual({ ok: true, server: 'smtp.ionos.com' });
+  });
+
+  it('keeps how the site is set up, and anything a machine wrote, away from everybody but the people who run it', async () => {
+    const setUp = "Mailbox passwords cannot be read: INTEGRATION_TOKEN_KEY is missing or was changed in Vercel's environment variables.";
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({ ok: false, error: setUp }) });
+    setInternalsVisible(false);
+    expect((await verifyAccount('acc-1')).error).toBe('This is not switched on yet. Please contact support.');
+    setInternalsVisible(true);
+    expect((await verifyAccount('acc-1')).error).toBe(setUp);
+    setInternalsVisible(false);
+    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    expect((await verifyAccount('acc-1')).error).toBe(CHECK_FAILED_MESSAGE);
+    fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: 'TypeError: Cannot read properties of undefined' }) });
+    expect((await verifyAccount('acc-1')).error).toBe(CHECK_FAILED_MESSAGE);
   });
 });

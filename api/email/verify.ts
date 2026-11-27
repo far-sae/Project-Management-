@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
-import { env, serviceClient } from '../_lib/context';
+import { serviceClient } from '../_lib/context';
 import { decryptSecret } from '../_lib/crypto';
+import { checkMailbox, NO_PASSWORD_MESSAGE } from '../_lib/mailboxCheck';
 import { buildTestEmail, readTestDraft } from '../_lib/testEmail';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -51,64 +52,95 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  // Held outside the try so the finally below can close it whichever way the
-  // send goes; an unclosed transport leaks a socket in a warm lambda.
-  let transport: Transporter | null = null;
+  // A failure is stored and shown as a sentence a person can act on (see
+  // _lib/mailboxCheck.ts). What the mail server said in its own words goes
+  // nowhere: it told nobody what to do, and it can hold more than it should.
+  const fail = async (message: string, status = 400) => {
+    await db.from('email_accounts').update({ status: 'error', last_error: message }).eq('id', accountId);
+    return res.status(status).json({ ok: false, error: message });
+  };
+
+  const { data: secretRow } = await db
+    .from('email_account_secrets')
+    .select('secret_encrypted')
+    .eq('account_id', accountId)
+    .maybeSingle();
+  if (!secretRow) return fail(NO_PASSWORD_MESSAGE);
+
+  const serverKey = (process.env.INTEGRATION_TOKEN_KEY ?? '').trim();
+  let password: string;
   try {
-    const { data: secretRow } = await db
-      .from('email_account_secrets')
-      .select('secret_encrypted')
-      .eq('account_id', accountId)
-      .single();
-    if (!secretRow) throw new Error('No stored password for this account');
-    const password = await decryptSecret(secretRow.secret_encrypted, env('INTEGRATION_TOKEN_KEY'));
-
-    transport = nodemailer.createTransport({
-      host: account.smtp_host,
-      port: account.smtp_port,
-      secure: account.smtp_secure,
-      auth: { user: account.smtp_username, pass: password },
+    if (!serverKey) throw new Error('no key');
+    password = await decryptSecret(secretRow.secret_encrypted, serverKey);
+  } catch {
+    // Names a setting, so the page shows it only to the people who run the site (publicText).
+    return res.status(503).json({
+      ok: false,
+      error: 'Mailbox passwords cannot be read: INTEGRATION_TOKEN_KEY is missing or was changed in Vercel\'s environment variables.',
     });
-
-    await transport.sendMail({
-      // Objects, not `"name" <addr>` strings: a from_name holding a quote
-      // would otherwise inject a second address into the header.
-      from: { name: String(account.from_name ?? ''), address: String(account.from_email) },
-      to: { name: '', address: to },
-      // The email being written when the compose form sent one, else the plain line.
-      ...buildTestEmail(readTestDraft(req.body)),
-    });
-
-    // A send that actually worked settles every automatic doubt about this
-    // mailbox at once: the credential error, the failure streak
-    // record_mailbox_failure() has been counting, and the pause it imposed at
-    // three. Clearing only `status` left a mailbox that had been paused
-    // automatically still out of rotation with nothing on screen explaining
-    // why the test it just passed changed nothing.
-    await db
-      .from('email_accounts')
-      .update({
-        status: 'active',
-        last_error: null,
-        last_verified_at: new Date().toISOString(),
-        consecutive_failures: 0,
-        paused_reason: null,
-        is_active: true,
-      })
-      .eq('id', accountId);
-    return res.status(200).json({ ok: true });
-  } catch (err: any) {
-    const message = String(err?.message ?? err).slice(0, 500);
-    await db
-      .from('email_accounts')
-      .update({ status: 'error', last_error: message })
-      .eq('id', accountId);
-    return res.status(400).json({ ok: false, error: message });
-  } finally {
-    try {
-      transport?.close();
-    } catch {
-      // A transport that never connected has nothing to close.
-    }
   }
+
+  const mail = {
+    // Objects, not `"name" <addr>` strings: a from_name holding a quote
+    // would otherwise inject a second address into the header.
+    from: { name: String(account.from_name ?? ''), address: String(account.from_email) },
+    to: { name: '', address: to },
+    // The email being written when the compose form sent one, else the plain line.
+    ...buildTestEmail(readTestDraft(req.body)),
+  };
+
+  const result = await checkMailbox(
+    {
+      smtpHost: String(account.smtp_host ?? ''),
+      smtpPort: Number(account.smtp_port) || 587,
+      smtpSecure: account.smtp_secure === true,
+      username: String(account.smtp_username ?? ''),
+      imapHost: typeof account.imap_host === 'string' ? account.imap_host : null,
+    },
+    password,
+    async ({ host, port, secure, user, pass }) => {
+      // A transport for each try, closed whichever way the try goes: an
+      // unclosed one leaks a socket in a warm function.
+      let transport: Transporter | null = null;
+      try {
+        transport = nodemailer.createTransport({ host, port, secure, auth: { user, pass }, connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 20_000 });
+        await transport.sendMail(mail);
+      } catch (err) {
+        // The code only, for the server's log: the words can hold an address.
+        const e = err as { code?: unknown; responseCode?: unknown } | null;
+        console.error('[email] mailbox check failed', String(e?.code ?? 'unknown'), Number(e?.responseCode) || 0);
+        throw err;
+      } finally {
+        try {
+          transport?.close();
+        } catch {
+          // A transport that never connected has nothing to close.
+        }
+      }
+    },
+  );
+
+  if (!result.ok) return fail(result.message);
+
+  // A send that actually worked settles every automatic doubt about this
+  // mailbox at once: the credential error, the failure streak
+  // record_mailbox_failure() has been counting, and the pause it imposed at
+  // three. What the check put right on the way (the IONOS server of the
+  // right region, the encryption that fits the port) is saved with it, so
+  // the sender uses the settings that are known to work.
+  await db
+    .from('email_accounts')
+    .update({
+      status: 'active',
+      last_error: null,
+      last_verified_at: new Date().toISOString(),
+      consecutive_failures: 0,
+      paused_reason: null,
+      is_active: true,
+      ...(result.changed.smtpHost ? { smtp_host: result.changed.smtpHost } : {}),
+      ...(result.changed.imapHost ? { imap_host: result.changed.imapHost } : {}),
+      ...(result.changed.smtpSecure !== undefined ? { smtp_secure: result.changed.smtpSecure } : {}),
+    })
+    .eq('id', accountId);
+  return res.status(200).json({ ok: true, ...(result.changed.smtpHost ? { server: result.changed.smtpHost } : {}) });
 }

@@ -242,7 +242,8 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
 
       const result = await runVerify(account.id);
       if (result.ok) {
-        toast.success('Sending mailbox created and verified');
+        toast.success(result.server ? `Sending mailbox created and verified. The right server was ${result.server}: it is saved.` : 'Sending mailbox created and verified');
+        if (result.server) await refresh();
         closeAddDialog();
       } else {
         // The account row already exists (createAccount succeeded); leave
@@ -286,7 +287,8 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
       await refresh();
       const result = await runVerify(pendingAccountId);
       if (result.ok) {
-        toast.success('Sending mailbox verified');
+        toast.success(result.server ? `Sending mailbox verified. The right server was ${result.server}: it is saved.` : 'Sending mailbox verified');
+        if (result.server) await refresh();
         closeAddDialog();
       } else {
         setCreateError(result.error ?? 'Verification failed');
@@ -307,6 +309,7 @@ export const AccountsTab: React.FC<AccountsTabProps> = ({ orgId, workspaceId, is
     const result = await runVerify(mailbox.id);
     if (result.ok) {
       toast.success(`Test email sent to ${user?.email ?? 'your inbox'}`);
+      if (result.server) await refresh();
     } else {
       toast.error(result.error ?? 'Verification failed');
     }

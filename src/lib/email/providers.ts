@@ -189,10 +189,10 @@ export const MAIL_PROVIDERS: MailProvider[] = [
     imapPort: 993,
     imapSecure: true,
     domains: ['ionos.co.uk', 'ionos.com'],
-    setup: 'Use the full email address as the username, with the mailbox password.',
-    warning:
-      'IONOS hosts per country: if your account is not UK, change .co.uk to your own ' +
-      'IONOS domain (.com, .de, .fr) in both hosts above.',
+    setup:
+      'Use the whole email address as the username, with the password of the mailbox itself ' +
+      '(the one for IONOS webmail), not the password of your IONOS account. IONOS keeps ' +
+      'mailboxes in two regions; the right server is found for you when you press Verify.',
   },
 ];
 
