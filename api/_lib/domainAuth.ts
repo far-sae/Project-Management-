@@ -40,7 +40,9 @@ export const DKIM_SELECTORS: string[] = [
   'zmail',
   'zoho',
   'zohomail',
-  // IONOS / 1&1
+  // IONOS / 1&1. The first two are the names IONOS gives its keys today.
+  's1-ionos',
+  's2-ionos',
   's1',
   's2',
   's3',

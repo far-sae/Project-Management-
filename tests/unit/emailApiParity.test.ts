@@ -180,6 +180,28 @@ describe('interpretDomainAuth parity', () => {
     expect(apiDkimSelectors).toEqual(srcDkimSelectors);
   });
 
+  // IONOS publishes its keys as s1-ionos and s2-ionos. The list had "ionos1" and "ionos2", names IONOS
+  // does not use, so a domain with DKIM set up correctly at IONOS was told "No DKIM key found".
+  it('looks for the names IONOS really gives its DKIM keys', () => {
+    for (const list of [apiDkimSelectors, srcDkimSelectors]) {
+      expect(list).toContain('s1-ionos');
+      expect(list).toContain('s2-ionos');
+      expect(new Set(list).size).toBe(list.length);
+    }
+    const ionos: RawDnsRecords = {
+      domain: 'northwind.test',
+      rootTxt: ['v=spf1 include:_spf-eu.ionos.com ~all'],
+      dmarcTxt: ['v=DMARC1; p=reject'],
+      mx: ['mx00.ionos.co.uk', 'mx01.ionos.co.uk'],
+      dkimSelectors: [{ selector: 's1-ionos', records: ['v=DKIM1; p=MIIBIjANBgkq'] }, { selector: 's2-ionos', records: ['v=DKIM1; p=MIIBIjANBgkq'] }],
+    };
+    for (const report of [apiInterpretDomainAuth(ionos), srcInterpretDomainAuth(ionos)]) {
+      expect(report.dkim).toMatchObject({ ok: true, value: 's1-ionos, s2-ionos' });
+      expect(report.spf.ok).toBe(true);
+      expect(report.dmarc.ok).toBe(true);
+    }
+  });
+
   const FULLY_CONFIGURED: RawDnsRecords = {
     domain: 'Example.com',
     rootTxt: ['v=spf1 include:_spf.google.com ~all'],
