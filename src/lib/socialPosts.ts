@@ -1,12 +1,12 @@
 // The posts table of the Social page.
 //
 // One row for each platform a post went to (or will go to). Above it: tabs by
-// state, a search, filters for the platform, the account, the campaign and a
+// state, a search, filters for the platform, the account and a
 // span of date and time. Everything here is plain logic, so the table itself
 // only draws.
 import { publicText } from '@/lib/publicError';
 import { csvText } from '@/lib/signroom/billingCsv';
-import type { SocialAccount, SocialCampaign, SocialContent, SocialContentStatus } from '@/types/social';
+import type { SocialAccount, SocialContent, SocialContentStatus } from '@/types/social';
 import { PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
 
 export type PostTab = 'all' | 'scheduled' | 'posted' | 'failed' | 'approval' | 'drafts';
@@ -45,7 +45,6 @@ export type PostRow = {
   platform: string;
   platformName: string;
   accountName: string;
-  campaignName: string;
   /** The one date and time of the row: posted, planned, or made. */
   when: Date;
   whenLabel: 'Posted' | 'Planned' | 'Made';
@@ -56,9 +55,8 @@ export type PostRow = {
 const linkOf = (post: SocialContent): string | null =>
   post.status === 'published' && /^https:\/\/[^\s]+$/.test(post.externalPostId ?? '') ? (post.externalPostId as string) : null;
 
-export function postRows(content: SocialContent[], accounts: SocialAccount[], campaigns: SocialCampaign[]): PostRow[] {
+export function postRows(content: SocialContent[], accounts: SocialAccount[]): PostRow[] {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
-  const campaignById = new Map(campaigns.map((c) => [c.id, c]));
   return content.map((post) => {
     const account = post.accountId ? accountById.get(post.accountId) : undefined;
     const platform = account && isPlatform(account.provider) ? account.provider : '';
@@ -69,7 +67,6 @@ export function postRows(content: SocialContent[], accounts: SocialAccount[], ca
       platform,
       platformName: account ? (isPlatform(account.provider) ? PLATFORM_NAME[account.provider] : 'Other') : post.accountId ? 'Account removed' : 'No account',
       accountName: account?.displayName ?? '',
-      campaignName: post.campaignId ? campaignById.get(post.campaignId)?.name ?? '' : '',
       when,
       whenLabel: posted ? 'Posted' : post.scheduledAt ? 'Planned' : 'Made',
       link: linkOf(post),
@@ -83,13 +80,12 @@ export type PostFilters = {
   /** A platform ("youtube"), or "" for every platform. */
   platform: string;
   accountId: string;
-  campaignId: string;
   /** From and to, as the date-and-time box writes them ("2026-11-20T10:00"), or "". */
   from: string;
   to: string;
 };
 
-export const NO_FILTERS: PostFilters = { tab: 'all', search: '', platform: '', accountId: '', campaignId: '', from: '', to: '' };
+export const NO_FILTERS: PostFilters = { tab: 'all', search: '', platform: '', accountId: '', from: '', to: '' };
 
 /** A date-and-time box's text as a moment, or null when it is empty or half-typed. */
 const moment = (value: string): number | null => {
@@ -102,7 +98,6 @@ function matches(row: PostRow, f: PostFilters, withTab: boolean): boolean {
   if (withTab && f.tab !== 'all' && tabOf(row.post.status) !== f.tab) return false;
   if (f.platform && row.platform !== f.platform) return false;
   if (f.accountId && row.post.accountId !== f.accountId) return false;
-  if (f.campaignId && row.post.campaignId !== f.campaignId) return false;
 
   // Typed the wrong way round, the two are simply taken as earliest and latest.
   const a = moment(f.from);
@@ -116,7 +111,7 @@ function matches(row: PostRow, f: PostFilters, withTab: boolean): boolean {
 
   const word = f.search.trim().toLowerCase();
   if (word) {
-    const hay = `${row.post.title}\n${row.post.body}\n${row.accountName}\n${row.platformName}\n${row.campaignName}`.toLowerCase();
+    const hay = `${row.post.title}\n${row.post.body}\n${row.accountName}\n${row.platformName}`.toLowerCase();
     if (!hay.includes(word)) return false;
   }
   return true;
@@ -137,7 +132,7 @@ export function tabCounts(rows: PostRow[], filters: PostFilters): Record<PostTab
 
 /** How many filters are switched on. The tab is not one: it is always in view. */
 export const activeFilters = (f: PostFilters): number =>
-  [f.search.trim(), f.platform, f.accountId, f.campaignId, f.from || f.to].filter(Boolean).length;
+  [f.search.trim(), f.platform, f.accountId, f.from || f.to].filter(Boolean).length;
 
 // ── Date and time ────────────────────────────────────────────────────────────
 
@@ -229,7 +224,7 @@ const stamp = (d: Date): string => toLocalInput(d).replace('T', ' ');
 /** The rows shown, as a file for a spreadsheet. */
 export function rowsCsv(rows: PostRow[]): string {
   return csvText([
-    ['Post', 'Text', 'Platform', 'Account', 'State', 'Date and time', 'Campaign', 'Link', 'Problem'],
+    ['Post', 'Text', 'Platform', 'Account', 'State', 'Date and time', 'Link', 'Problem'],
     ...rows.map((row) => [
       row.post.title,
       row.post.body,
@@ -237,7 +232,6 @@ export function rowsCsv(rows: PostRow[]): string {
       row.accountName,
       STATE_LABEL[row.post.status],
       stamp(row.when),
-      row.campaignName,
       row.link ?? '',
       row.post.status === 'failed' && row.post.lastError ? publicText(row.post.lastError, 'The post was not accepted.') : '',
     ]),

@@ -17,7 +17,7 @@ import {
 import { publicMessage } from '@/lib/publicError';
 import { cn } from '@/lib/utils';
 import { createSocialPosts, removeSocialMedia, runSocialPublish, uploadSocialMedia } from '@/services/supabase/social';
-import type { SocialAccount, SocialCampaign } from '@/types/social';
+import type { SocialAccount } from '@/types/social';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -36,8 +36,6 @@ interface Props {
   workspaceId: string;
   userId?: string;
   accounts: SocialAccount[];
-  /** The campaigns a post can be put in. With none, the question is not asked. */
-  campaigns?: SocialCampaign[];
   /** Called after the posts are queued, so the page can show them. */
   onPosted: () => void;
   /** Open the page's Accounts tab (when there is nothing to post to yet). */
@@ -63,15 +61,12 @@ const Tick: React.FC<{ checked: boolean; onChange: (next: boolean) => void; chil
   </label>
 );
 
-export const SocialComposer: React.FC<Props> = ({ open, onOpenChange, organizationId, workspaceId, userId, accounts, campaigns = [], onPosted, onAddAccount }) => {
+export const SocialComposer: React.FC<Props> = ({ open, onOpenChange, organizationId, workspaceId, userId, accounts, onPosted, onAddAccount }) => {
   const id = useId();
   const fileInput = useRef<HTMLInputElement>(null);
   const usable = useMemo(() => postableAccounts(accounts), [accounts]);
 
   const [media, setMedia] = useState<PostMedia | null>(null);
-  const [campaignId, setCampaignId] = useState('');
-  /** A finished campaign takes no new posts. */
-  const openCampaigns = useMemo(() => campaigns.filter((c) => c.status !== 'finished'), [campaigns]);
   const [uploading, setUploading] = useState(false);
   const [title, setTitle] = useState('');
   const [text, setText] = useState('');
@@ -86,7 +81,7 @@ export const SocialComposer: React.FC<Props> = ({ open, onOpenChange, organizati
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
-      setMedia(null); setCampaignId(''); setTitle(''); setText(''); setTags(''); setChanged({}); setWhen('now'); setAt('');
+      setMedia(null); setTitle(''); setText(''); setTags(''); setChanged({}); setWhen('now'); setAt('');
       setChosen(usable.filter((a) => a.status === 'connected').map((a) => a.id));
     }
     wasOpen.current = open;
@@ -130,7 +125,6 @@ export const SocialComposer: React.FC<Props> = ({ open, onOpenChange, organizati
         organizationId, workspaceId, userId,
         title: postTitle(shared, media), body: text.trim(), media,
         scheduledAt: when === 'later' ? new Date(at) : undefined,
-        campaignId: openCampaigns.some((c) => c.id === campaignId) ? campaignId : null,
         posts: going.map((a) => ({ accountId: a.id, options: optionsFor(a.provider, shared, changed[a.id]) as unknown as Record<string, unknown> })),
       });
       const places = going.length === 1 ? '1 account' : `${going.length} accounts`;
@@ -352,19 +346,6 @@ export const SocialComposer: React.FC<Props> = ({ open, onOpenChange, organizati
                 <Input id={`${id}-tags`} value={tags} onChange={(e) => setTags(e.target.value)} placeholder="dental care, tips, smile" />
                 <p className={HINT}>A comma between tags. They become YouTube tags, and hashtags on the other platforms.</p>
               </div>
-              {openCampaigns.length > 0 && (
-                <div className={FIELD}>
-                  <Label htmlFor={`${id}-campaign`}>Campaign</Label>
-                  <select
-                    id={`${id}-campaign`} value={campaignId} onChange={(e) => setCampaignId(e.target.value)}
-                    className="h-11 w-full rounded-md border border-input bg-background px-3 text-base focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 md:h-8 md:text-sm"
-                  >
-                    <option value="">No campaign</option>
-                    {openCampaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <p className={HINT}>Posts of one campaign are counted together on the Campaigns tab.</p>
-                </div>
-              )}
             </section>
 
             <section className="flex flex-col gap-3" aria-label="Where it goes">

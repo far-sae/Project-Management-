@@ -673,7 +673,6 @@ export const CrmContactDetailPage: React.FC = () => {
                       organizationId={orgId}
                       workspaceId={contact.workspaceId}
                       contactId={contact.id}
-                      projects={workspaceProjects}
                       companyId={contact.companyId}
                     />
                   ) : (

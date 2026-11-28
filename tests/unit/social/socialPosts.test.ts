@@ -2,7 +2,7 @@
 // to, with tabs by state, filters (also by date and time), sorting, pages and
 // an export.
 import { describe, expect, it } from 'vitest';
-import type { SocialAccount, SocialCampaign, SocialContent } from '@/types/social';
+import type { SocialAccount, SocialContent } from '@/types/social';
 import {
   NO_FILTERS, PAGE_SIZE, POST_TABS, activeFilters, filterRows, pageOf, postRows, quickRange, rowsCsv, sortRows, tabCounts, tabOf, toLocalInput,
   type PostFilters,
@@ -11,9 +11,6 @@ import {
 const account = (id: string, provider: SocialAccount['provider'], displayName: string): SocialAccount => ({
   id, organizationId: 'org', workspaceId: 'ws', provider, displayName, externalAccountId: 'ext', status: 'connected', lastError: null, createdAt: new Date('2026-11-01'),
 });
-const campaign = (id: string, name: string): SocialCampaign => ({
-  id, organizationId: 'org', workspaceId: 'ws', name, objective: null, crmContactId: null, crmCompanyId: null, projectId: null, taskId: null, status: 'active', createdAt: new Date('2026-11-01'),
-});
 const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => ({
   id, organizationId: 'org', workspaceId: 'ws', campaignId: null, accountId: 'yt', crmContactId: null, crmCompanyId: null, projectId: null, taskId: null,
   title: `Post ${id}`, body: '', status: 'published', scheduledAt: null, publishedAt: null, lastError: null, createdAt: new Date('2026-11-10T09:00:00'),
@@ -21,7 +18,6 @@ const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => (
 });
 
 const ACCOUNTS = [account('yt', 'youtube', 'Northwind channel'), account('tt', 'tiktok', '@northwind'), account('ig', 'instagram', '@northwind.studio')];
-const CAMPAIGNS = [campaign('c1', 'Winter offer')];
 
 const CONTENT: SocialContent[] = [
   post('a', { title: 'Five tips for a brighter smile', body: 'Our dentist explains.', status: 'published', accountId: 'yt', campaignId: 'c1', publishedAt: new Date('2026-11-20T10:05:00'), scheduledAt: new Date('2026-11-20T10:00:00'), externalPostId: 'https://youtu.be/abc' }),
@@ -32,18 +28,19 @@ const CONTENT: SocialContent[] = [
   post('f', { title: 'New clinic', status: 'publishing', accountId: 'yt', scheduledAt: new Date('2026-11-21T12:00:00'), externalPostId: 'pfm:sp_1:1700000000000' }),
 ];
 
-const rows = () => postRows(CONTENT, ACCOUNTS, CAMPAIGNS);
+const rows = () => postRows(CONTENT, ACCOUNTS);
 const ids = (list: ReturnType<typeof rows>) => list.map((r) => r.post.id);
 const filters = (over: Partial<PostFilters> = {}): PostFilters => ({ ...NO_FILTERS, ...over });
 
 describe('a row of the posts table', () => {
-  it('names the platform, the account and the campaign', () => {
+  it('names the platform and the account, and nothing about a campaign', () => {
     const a = rows().find((r) => r.post.id === 'a')!;
-    expect(a).toMatchObject({ platformName: 'YouTube', accountName: 'Northwind channel', campaignName: 'Winter offer' });
+    expect(a).toMatchObject({ platformName: 'YouTube', accountName: 'Northwind channel' });
+    expect(Object.keys(a)).not.toContain('campaignName');
     const d = rows().find((r) => r.post.id === 'd')!;
-    expect(d).toMatchObject({ platformName: 'No account', accountName: '', campaignName: '' });
+    expect(d).toMatchObject({ platformName: 'No account', accountName: '' });
     // An account that was removed since.
-    expect(postRows([post('z', { accountId: 'gone' })], ACCOUNTS, CAMPAIGNS)[0].platformName).toBe('Account removed');
+    expect(postRows([post('z', { accountId: 'gone' })], ACCOUNTS)[0].platformName).toBe('Account removed');
   });
 
   it('has one date and time: when it was posted, when it is planned, or when it was made', () => {
@@ -62,8 +59,8 @@ describe('a row of the posts table', () => {
     expect(by.a.link).toBe('https://youtu.be/abc');
     // A post still on its way carries a note of ours, not an address.
     expect(by.f.link).toBeNull();
-    expect(postRows([post('x', { status: 'published', externalPostId: 'javascript:alert(1)' })], ACCOUNTS, [])[0].link).toBeNull();
-    expect(postRows([post('y', { status: 'published', externalPostId: 'tweet-123' })], ACCOUNTS, [])[0].link).toBeNull();
+    expect(postRows([post('x', { status: 'published', externalPostId: 'javascript:alert(1)' })], ACCOUNTS)[0].link).toBeNull();
+    expect(postRows([post('y', { status: 'published', externalPostId: 'tweet-123' })], ACCOUNTS)[0].link).toBeNull();
   });
 });
 
@@ -93,18 +90,16 @@ describe('filters', () => {
     expect(ids(filterRows(rows(), filters({ tab: 'all' })))).toHaveLength(6);
   });
 
-  it('find a word in the title, the text, the account or the campaign, whatever the capitals', () => {
+  it('find a word in the title, the text or the account, whatever the capitals', () => {
     expect(ids(filterRows(rows(), filters({ search: 'BRIGHTER' }))).sort()).toEqual(['a', 'b']);
     expect(ids(filterRows(rows(), filters({ search: 'dentist' })))).toEqual(['a']);
     expect(ids(filterRows(rows(), filters({ search: 'northwind.studio' }))).sort()).toEqual(['c', 'e']);
-    expect(ids(filterRows(rows(), filters({ search: 'winter' })))).toEqual(['a']);
     expect(ids(filterRows(rows(), filters({ search: '   ' })))).toHaveLength(6);
   });
 
-  it('narrow to a platform, an account or a campaign', () => {
+  it('narrow to a platform or an account', () => {
     expect(ids(filterRows(rows(), filters({ platform: 'instagram' }))).sort()).toEqual(['c', 'e']);
     expect(ids(filterRows(rows(), filters({ accountId: 'tt' })))).toEqual(['b']);
-    expect(ids(filterRows(rows(), filters({ campaignId: 'c1' })))).toEqual(['a']);
   });
 
   it('keep the posts between a date and time and another, both included', () => {
@@ -177,13 +172,13 @@ describe('the export', () => {
     const csv = rowsCsv(sortRows(filterRows(rows(), filters({ search: 'smile' })), { by: 'when', dir: 'desc' }));
     const lines = (csv.charCodeAt(0) === 0xfeff ? csv.slice(1) : csv).split('\r\n');
     expect(lines).toHaveLength(3);
-    expect(lines[0]).toBe('"Post","Text","Platform","Account","State","Date and time","Campaign","Link","Problem"');
-    expect(lines[1]).toContain('"Five tips for a brighter smile","Our dentist explains.","YouTube","Northwind channel","Posted","2026-11-20 10:05","Winter offer","https://youtu.be/abc",""');
+    expect(lines[0]).toBe('"Post","Text","Platform","Account","State","Date and time","Link","Problem"');
+    expect(lines[1]).toContain('"Five tips for a brighter smile","Our dentist explains.","YouTube","Northwind channel","Posted","2026-11-20 10:05","https://youtu.be/abc",""');
     expect(lines[2]).toContain('"TikTok did not accept the post: Video is too long."');
   });
 
   it('cannot be made to run a formula in a spreadsheet', () => {
-    const csv = rowsCsv(postRows([post('x', { title: '=HYPERLINK("http://evil","x")' })], ACCOUNTS, []));
+    const csv = rowsCsv(postRows([post('x', { title: '=HYPERLINK("http://evil","x")' })], ACCOUNTS));
     expect(csv).toContain(`"'=HYPERLINK(""http://evil"",""x"")"`);
   });
 });

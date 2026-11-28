@@ -6,13 +6,12 @@ import { StatStrip } from '@/components/common/StatStrip';
 import { insights, spanOf } from '@/lib/socialInsights';
 import { QUICK_RANGES, postRows, quickRange, quickRangeOf, type QuickRange } from '@/lib/socialPosts';
 import { cn } from '@/lib/utils';
-import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
+import type { SocialAccount, SocialContent, SocialMetric } from '@/types/social';
 import { PLATFORMS, PLATFORM_NAME } from '../../../api/_social/shared/platforms';
 
 interface Props {
   content: SocialContent[];
   accounts: SocialAccount[];
-  campaigns: SocialCampaign[];
   metrics: SocialMetric[];
   now?: () => Date;
 }
@@ -42,12 +41,12 @@ const Columns: React.FC<{ label: string; items: Array<{ key: string; label: stri
   );
 };
 
-export const SocialAnalytics: React.FC<Props> = ({ content, accounts, campaigns, metrics, now = () => new Date() }) => {
+export const SocialAnalytics: React.FC<Props> = ({ content, accounts, metrics, now = () => new Date() }) => {
   const [from, setFrom] = useState(() => quickRange('last30', now()).from);
   const [to, setTo] = useState(() => quickRange('last30', now()).to);
   const [platform, setPlatform] = useState('');
 
-  const rows = useMemo(() => postRows(content, accounts, campaigns), [content, accounts, campaigns]);
+  const rows = useMemo(() => postRows(content, accounts), [content, accounts]);
   const shown = useMemo(() => (platform ? rows.filter((r) => r.platform === platform) : rows), [rows, platform]);
   const data = useMemo(() => insights(shown, metrics, spanOf(from, to, now())), [shown, metrics, from, to, now]);
   const platforms = useMemo(() => PLATFORMS.filter((p) => accounts.some((a) => a.provider === p)), [accounts]);

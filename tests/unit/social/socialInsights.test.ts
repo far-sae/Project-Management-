@@ -1,18 +1,15 @@
-// What the Calendar, Campaigns and Analytics tabs of the Social page are
+// What the Calendar and Analytics tabs of the Social page are
 // worked out from: the days of a month, the posts of a day, a campaign's
 // counts, and the figures for a span of days.
 import { describe, expect, it } from 'vitest';
-import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
+import type { SocialAccount, SocialContent, SocialMetric } from '@/types/social';
 import { postRows } from '@/lib/socialPosts';
 import {
-  campaignRows, dayKey, insights, monthGrid, monthTitle, rowsByDay, spanOf, undated, weekDays, weekTitle,
+  dayKey, insights, monthGrid, monthTitle, rowsByDay, spanOf, undated, weekDays, weekTitle,
 } from '@/lib/socialInsights';
 
 const account = (id: string, provider: SocialAccount['provider'], displayName: string): SocialAccount => ({
   id, organizationId: 'org', workspaceId: 'ws', provider, displayName, externalAccountId: 'ext', status: 'connected', lastError: null, createdAt: new Date('2026-11-01'),
-});
-const campaign = (id: string, name: string, over: Partial<SocialCampaign> = {}): SocialCampaign => ({
-  id, organizationId: 'org', workspaceId: 'ws', name, objective: null, crmContactId: null, crmCompanyId: null, projectId: null, taskId: null, status: 'active', createdAt: new Date('2026-11-01'), ...over,
 });
 const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => ({
   id, organizationId: 'org', workspaceId: 'ws', campaignId: null, accountId: 'yt', crmContactId: null, crmCompanyId: null, projectId: null, taskId: null,
@@ -22,7 +19,6 @@ const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => (
 const metric = (contentId: string, over: Partial<SocialMetric> = {}): SocialMetric => ({ contentId, impressions: 0, reach: 0, clicks: 0, reactions: 0, comments: 0, shares: 0, ...over });
 
 const ACCOUNTS = [account('yt', 'youtube', 'Northwind channel'), account('tt', 'tiktok', '@northwind'), account('ig', 'instagram', '@northwind.studio')];
-const CAMPAIGNS = [campaign('c1', 'Winter offer', { projectId: 'p1' }), campaign('c2', 'Open day', { status: 'paused' })];
 const CONTENT: SocialContent[] = [
   post('a', { accountId: 'yt', campaignId: 'c1', publishedAt: new Date('2026-11-20T10:05:00') }),             // Friday 10h
   post('b', { accountId: 'tt', campaignId: 'c1', status: 'failed', scheduledAt: new Date('2026-11-20T10:00:00') }),
@@ -34,7 +30,7 @@ const CONTENT: SocialContent[] = [
 ];
 const METRICS = [metric('a', { impressions: 1200, reach: 900, clicks: 40, reactions: 55, comments: 4, shares: 2 }), metric('f', { impressions: 300, clicks: 5, reactions: 9 }), metric('e')];
 
-const rows = () => postRows(CONTENT, ACCOUNTS, CAMPAIGNS);
+const rows = () => postRows(CONTENT, ACCOUNTS);
 
 describe('the calendar', () => {
   it('lays a month out in whole weeks that start on Monday', () => {
@@ -66,19 +62,6 @@ describe('the calendar', () => {
     // A draft has no day: it was only made, not planned.
     expect([...days.values()].flat().some((r) => r.post.id === 'd')).toBe(false);
     expect(undated(rows()).map((r) => r.post.id)).toEqual(['d']);
-  });
-});
-
-describe('the campaigns table', () => {
-  it('counts each campaign\'s posts by how they went, with its results and the platforms it posts to', () => {
-    const list = campaignRows(CAMPAIGNS, CONTENT, METRICS, ACCOUNTS);
-    expect(list[0]).toMatchObject({
-      platforms: ['YouTube', 'TikTok'], posts: 3, posted: 2, failed: 1, waiting: 0, impressions: 1500, clicks: 45, reactions: 64,
-    });
-    expect(list[0].lastPosted).toEqual(new Date('2026-11-20T10:05:00'));
-    expect(list[1]).toMatchObject({ platforms: ['Instagram'], posts: 1, posted: 0, failed: 0, waiting: 1, impressions: 0, lastPosted: null });
-    // A campaign is about social media only: nothing of a project or a CRM record is on its row.
-    expect(Object.keys(list[0])).not.toContain('projectName');
   });
 });
 

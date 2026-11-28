@@ -126,6 +126,8 @@ export interface CrmClientAccount {
   serviceStart: string | null;
   serviceEnd: string | null;
   notes: string | null;
+  /** The currency its amounts are in ("USD"). Empty: the company's own currency. */
+  currency?: string | null;
   /** The day of the month a monthly fee is due (1 to 31). */
   dueDay?: number | null;
   /** The date a one-time fee is due (YYYY-MM-DD). */

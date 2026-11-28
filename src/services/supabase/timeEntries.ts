@@ -16,7 +16,7 @@ export interface TimeEntry {
   editedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
-  /** True when the shift was closed automatically after 9 hours. */
+  /** True when the shift was closed for the person (nobody clocked out for 24 hours). */
   autoClosed?: boolean;
 }
 
@@ -169,82 +169,6 @@ export const clockIn = async (
     throw error;
   }
   return mapEntry(data);
-};
-
-/**
- * Best-effort clock-out triggered by tab/window close. Runs synchronously
- * during `pagehide` / `beforeunload` where regular awaited promises won't
- * complete. Uses `fetch({ keepalive: true })` for Supabase and a synchronous
- * localStorage write for local orgs. No error handling — the page is dying.
- */
-export const clockOutKeepalive = (
-  organizationId: string,
-  entryId: string,
-): void => {
-  const now = new Date();
-  if (isLocalOrg(organizationId)) {
-    try {
-      const all = readLocal(organizationId);
-      const idx = all.findIndex((e) => e.entryId === entryId);
-      if (idx === -1) return;
-      const updated: TimeEntry = {
-        ...all[idx],
-        clockedOutAt: now,
-        updatedAt: now,
-      };
-      updated.durationSeconds = computeDuration(updated);
-      all[idx] = updated;
-      writeLocal(organizationId, all);
-    } catch {
-      /* page is unloading — silent */
-    }
-    return;
-  }
-
-  try {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (!supabaseUrl || !supabaseAnonKey) return;
-
-    // Grab the current access token synchronously from localStorage so we can
-    // authenticate the request during unload. supabase-js stores the session
-    // under a project-scoped key; we read it lazily without instantiating.
-    let accessToken: string | null = null;
-    try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith("sb-") && k.endsWith("-auth-token")) {
-          const raw = localStorage.getItem(k);
-          if (!raw) continue;
-          const parsed = JSON.parse(raw) as { access_token?: string };
-          if (parsed?.access_token) {
-            accessToken = parsed.access_token;
-            break;
-          }
-        }
-      }
-    } catch {
-      /* ignore — we'll send without bearer, RLS will reject and a future sweep will catch it */
-    }
-
-    const url = `${supabaseUrl}/rest/v1/time_entries?entry_id=eq.${encodeURIComponent(entryId)}`;
-    void fetch(url, {
-      method: "PATCH",
-      keepalive: true,
-      headers: {
-        apikey: supabaseAnonKey,
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        clocked_out_at: now.toISOString(),
-        auto_closed: true,
-      }),
-    }).catch(() => {});
-  } catch {
-    /* swallow — page is unloading */
-  }
 };
 
 export const clockOut = async (

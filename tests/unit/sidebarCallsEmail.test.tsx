@@ -166,3 +166,33 @@ describe('sidebar: Calls and Email', () => {
     expect(without).not.toContain('Email');
   });
 });
+
+// Finding new people (Apollo) is its own place in the menu, before the CRM:
+// it is where leads come from, not a button inside the Leads page.
+describe('sidebar: Find leads', () => {
+  it('has its own entry for an owner or admin, right before the CRM', () => {
+    const all = labels();
+    const names = all.map((l) => l.text);
+    expect(all.find((l) => l.text === 'Find leads')?.href).toBe('/find-leads');
+    expect(names.indexOf('Find leads')).toBe(names.indexOf('CRM') - 1);
+  });
+
+  it('is never shown to a member, also one who was given the CRM: it spends credits', () => {
+    state.organization = member({ crm: 'manage', calls: 'use', email: 'use' });
+    expect(hrefOf('Find leads')).toBeNull();
+    cleanup();
+    expect(hrefOf('CRM')).toBe('/crm');
+  });
+
+  it('goes with the CRM: not on a plan without it, and not in a workspace menu without it', () => {
+    state.features = new Set(['email_campaigns']);
+    expect(hrefOf('Find leads')).toBeNull();
+    cleanup();
+    state.features = new Set(['crm']);
+    state.scope = { ...state.scope, menuPages: ['my_tasks', 'calendar'] };
+    expect(hrefOf('Find leads')).toBeNull();
+    cleanup();
+    state.scope = { ...state.scope, menuPages: ['my_tasks', 'crm'] };
+    expect(hrefOf('Find leads')).toBe('/find-leads');
+  });
+});

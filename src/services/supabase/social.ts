@@ -48,10 +48,6 @@ export const saveSocialAccountToken = async (accountId: string, accessToken: str
   const response = await fetch('/api/social/account-secret', { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, accessToken, ...(refreshToken ? { refreshToken } : {}) }) });
   if (!response.ok) { const body = await response.json().catch(() => ({})) as { error?: string }; throw new Error(body.error ?? 'Could not connect social account'); }
 };
-export const createSocialCampaign = async (input: { organizationId: string; workspaceId: string; name: string; objective?: string; projectId?: string; taskId?: string; crmContactId?: string; crmCompanyId?: string; userId?: string }) => {
-  const { error } = await supabase.from('social_campaigns').insert({ organization_id: input.organizationId, workspace_id: input.workspaceId, name: input.name, objective: input.objective || null, project_id: input.projectId || null, task_id: input.taskId || null, crm_contact_id: input.crmContactId || null, crm_company_id: input.crmCompanyId || null, created_by: input.userId ?? null });
-  if (error) throw error;
-};
 export const createSocialContent = async (input: { organizationId: string; workspaceId: string; title: string; body: string; mediaUrls?: string[]; campaignId?: string; accountId?: string; projectId?: string; taskId?: string; crmContactId?: string; crmCompanyId?: string; scheduledAt?: string; userId?: string }) => {
   const scheduled = Boolean(input.scheduledAt);
   const { error } = await supabase.from('social_content').insert({ organization_id: input.organizationId, workspace_id: input.workspaceId, title: input.title, body: input.body, media_urls: input.mediaUrls ?? [], campaign_id: input.campaignId || null, account_id: input.accountId || null, project_id: input.projectId || null, task_id: input.taskId || null, crm_contact_id: input.crmContactId || null, crm_company_id: input.crmCompanyId || null, scheduled_at: input.scheduledAt || null, status: scheduled ? 'in_review' : 'draft', created_by: input.userId ?? null });
@@ -65,22 +61,10 @@ export const updateSocialContentStatus = async (id: string, status: SocialConten
   if (error) throw error;
 };
 
-/** Puts posts in a campaign, or (null) takes them out of theirs. */
-export const setSocialContentCampaign = async (ids: string[], campaignId: string | null): Promise<void> => {
-  if (ids.length === 0) return;
-  const { error } = await supabase.from('social_content').update({ campaign_id: campaignId }).in('id', ids);
-  if (error) throw error;
-};
-
 /** Removes posts from the list for good. A post already on a platform stays there. */
 export const deleteSocialContent = async (ids: string[]): Promise<void> => {
   if (ids.length === 0) return;
   const { error } = await supabase.from('social_content').delete().in('id', ids);
-  if (error) throw error;
-};
-
-export const updateSocialCampaignStatus = async (id: string, status: SocialCampaign['status']) => {
-  const { error } = await supabase.from('social_campaigns').update({ status }).eq('id', id);
   if (error) throw error;
 };
 

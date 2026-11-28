@@ -5,7 +5,7 @@ import { forEachLead, nextSort, sortLeadIds, type LeadSort, type LeadSortKey } f
 import { DuplicateLeadsDialog } from '@/components/crmHub/DuplicateLeadsDialog';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Loader2, Download, Upload, MoreHorizontal, FileInput, UserSearch, Pencil } from 'lucide-react';
+import { Plus, Search, Loader2, Download, Upload, MoreHorizontal, FileInput, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -64,7 +64,7 @@ const CONVERTIBLE: LeadStep[] = ['new', 'contacted', 'qualified'];
 
 export const CrmContactsPage: React.FC = () => {
   const { user } = useAuth();
-  const { organization, isAdmin } = useOrganization();
+  const { organization } = useOrganization();
   const { items: contacts, loading, refresh } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const { items: stages } = useCrmDealStages();
@@ -406,12 +406,6 @@ export const CrmContactsPage: React.FC = () => {
               {duplicateCount > 0 && (
                 <Button variant="outline" onClick={() => setShowDuplicates(true)}>
                   {duplicateCount} duplicate{duplicateCount === 1 ? '' : 's'}
-                </Button>
-              )}
-              {/* Search Apollo for people and add them as leads. It spends credits, so owner and admins only. */}
-              {isAdmin && (
-                <Button asChild variant="outline">
-                  <Link to="/crm/find-leads"><UserSearch /> Find leads</Link>
                 </Button>
               )}
               {/* A form on your website, so leads come in by themselves. */}

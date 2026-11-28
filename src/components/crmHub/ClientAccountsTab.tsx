@@ -7,7 +7,8 @@ import { CreditCard, FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-reac
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
-import type { Project } from '@/types';
+import { CurrencySelect } from '@/components/ui/currency-select';
+import { accountCurrency, formatByCurrency, formatCurrency } from '@/lib/crmCurrency';
 import type { ClientBillingType, CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 import {
   MONTH_NAMES, daysInMonth, paymentInPeriod, periodLabel, summarizeAccountPeriod, summarizeClientAccount,
@@ -54,7 +55,8 @@ const inPeriodWords = (period: AccountPeriod): string => `${period.day === null 
 interface ServiceForm {
   id: string | null;
   serviceName: string;
-  projectId: string;
+  /** The currency the amounts are in ("GBP"). */
+  currency: string;
   billingType: ClientBillingType;
   agreedAmount: string;
   openingPaid: string;
@@ -89,14 +91,16 @@ interface Props {
   organizationId: string;
   workspaceId: string;
   contactId: string;
-  projects: Project[];
   /** The lead's company. An invoice for a service is made out to it. */
   companyId?: string | null;
 }
 
-export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId, contactId, projects, companyId }) => {
+export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId, contactId, companyId }) => {
   const { user } = useAuth();
-  const { format: money } = useCrmCurrency();
+  // The company's currency. A service may be in another one: its own amounts are
+  // then written in that, and two currencies are never added together.
+  const { code: companyCurrency } = useCrmCurrency();
+  const currencyOf = useCallback((account: CrmClientAccount) => accountCurrency(account, companyCurrency), [companyCurrency]);
   const [period, setPeriod] = useState<AccountPeriod>(() => ({ year: new Date().getFullYear(), month: null, day: null }));
   const [accounts, setAccounts] = useState<CrmClientAccount[]>([]);
   const [payments, setPayments] = useState<CrmAccountPayment[]>([]);
@@ -121,8 +125,8 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
     const month = period.month === null ? monthKey(new Date()) : `${period.year}-${String(period.month + 1).padStart(2, '0')}`;
     const owed = collectionRow(account, payments, month);
     setInvoicing(account.billingType === 'monthly'
-      ? { accountId: account.id, name: account.serviceName, amount: account.agreedAmount, billingMonth: month, monthly: true }
-      : { accountId: account.id, name: account.serviceName, amount: owed.collect > 0 ? owed.collect : account.agreedAmount, billingMonth: null, monthly: false });
+      ? { accountId: account.id, name: account.serviceName, amount: account.agreedAmount, billingMonth: month, monthly: true, currency: currencyOf(account) }
+      : { accountId: account.id, name: account.serviceName, amount: owed.collect > 0 ? owed.collect : account.agreedAmount, billingMonth: null, monthly: false, currency: currencyOf(account) });
   };
 
   const load = useCallback(async () => {
@@ -142,46 +146,57 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
 
   useEffect(() => { void load(); }, [load]);
 
-  /** This lead's services added together, for the time chosen. */
+  /** This lead's services added together, for the time chosen. Each currency has its own sum. */
   const totals = useMemo(() => {
-    let due = 0;
-    let paid = 0;
-    let outstanding = 0;
+    const due: { amount: number; currency: string }[] = [];
+    const paid: { amount: number; currency: string }[] = [];
+    const outstanding: { amount: number; currency: string }[] = [];
     for (const account of accounts) {
       const one = summarizeAccountPeriod(account, payments, period);
-      due += one.due ?? 0;
-      paid += one.paid;
-      outstanding += one.outstanding ?? 0;
+      const currency = currencyOf(account);
+      due.push({ amount: one.due ?? 0, currency });
+      paid.push({ amount: one.paid, currency });
+      outstanding.push({ amount: one.outstanding ?? 0, currency });
     }
     const count = payments.filter((payment) => paymentInPeriod(payment.paidOn, period)).length;
-    return { due, paid, outstanding, count };
-  }, [accounts, payments, period]);
+    const text = (parts: { amount: number; currency: string }[]) => formatByCurrency(parts, companyCurrency);
+    return {
+      due: text(due), paid: text(paid), outstanding: text(outstanding), count,
+      owes: outstanding.some((part) => part.amount > 0),
+    };
+  }, [accounts, payments, period, currencyOf, companyCurrency]);
 
   const when = periodLabel(period);
   const stats: StatItem[] = period.day !== null
     ? [
-        { label: 'Paid', value: money(totals.paid), note: `This lead · ${when}` },
+        { label: 'Paid', value: totals.paid, note: `This lead · ${when}` },
         { label: 'Payments', value: totals.count, note: `Recorded on ${when}` },
       ]
     : [
-        { label: period.month === null ? 'Agreed' : 'Due', value: money(totals.due), note: `This lead · ${when}` },
-        { label: 'Paid', value: money(totals.paid), note: `This lead · ${when}` },
+        { label: period.month === null ? 'Agreed' : 'Due', value: totals.due, note: `This lead · ${when}` },
+        { label: 'Paid', value: totals.paid, note: `This lead · ${when}` },
         {
           label: 'Outstanding',
-          value: money(totals.outstanding),
-          tone: totals.outstanding > 0 ? 'danger' : 'default',
+          value: totals.outstanding,
+          tone: totals.owes ? 'danger' : 'default',
           note: `This lead · ${when}`,
         },
       ];
 
+  /** The currency of the service a payment was made on. */
+  const paymentCurrency = (payment: CrmAccountPayment): string => {
+    const account = accounts.find((item) => item.id === payment.accountId);
+    return account ? currencyOf(account) : companyCurrency;
+  };
+
   const pickMonth = (month: number | null) => setPeriod((old) => ({ year: old.year, month, day: null }));
 
   const newService = (): ServiceForm => ({
-    id: null, serviceName: '', projectId: '', billingType: 'monthly', agreedAmount: '', openingPaid: '0',
+    id: null, serviceName: '', currency: companyCurrency, billingType: 'monthly', agreedAmount: '', openingPaid: '0',
     serviceStart: `${period.year}-01-01`, serviceEnd: '', notes: '', dueDay: '', dueDate: '',
   });
   const editService = (account: CrmClientAccount): ServiceForm => ({
-    id: account.id, serviceName: account.serviceName, projectId: account.projectId ?? '', billingType: account.billingType,
+    id: account.id, serviceName: account.serviceName, currency: currencyOf(account), billingType: account.billingType,
     agreedAmount: String(account.agreedAmount), openingPaid: String(account.openingPaid),
     serviceStart: account.serviceStart ?? '', serviceEnd: account.serviceEnd ?? '', notes: account.notes ?? '',
     dueDay: account.dueDay ? String(account.dueDay) : '', dueDate: account.dueDate ?? '',
@@ -206,12 +221,18 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
   const saveService = () => {
     if (!service || !serviceReady) return;
     const before = accounts.find((account) => account.id === service.id);
+    // A service that has no currency of its own is in the company's. Choosing that same one changes nothing.
+    const chosen = service.currency.trim().toUpperCase();
+    const had = before?.currency ?? null;
+    const currency = chosen && (had !== null || chosen !== companyCurrency) ? chosen : null;
     const fields = {
-      projectId: service.projectId || null, serviceName: service.serviceName.trim(), billingType: service.billingType,
+      // The window does not ask for a project. A service that was tied to one keeps it.
+      projectId: before?.projectId ?? null, serviceName: service.serviceName.trim(), billingType: service.billingType,
       agreedAmount: Number(service.agreedAmount), openingPaid: Number(service.openingPaid || 0),
       serviceStart: service.serviceStart || null, serviceEnd: service.serviceEnd || null, notes: service.notes.trim() || null,
       ...changed('dueDay', service.billingType === 'monthly' && service.dueDay ? Math.min(31, Math.max(1, Math.round(Number(service.dueDay)))) : null, before?.dueDay ?? null),
       ...changed('dueDate', service.billingType === 'one_time' && service.dueDate ? service.dueDate : null, before?.dueDate ?? null),
+      ...(currency === had ? {} : { currency }),
     };
     void (service.id
       ? run(() => updateClientAccount(service.id as string, fields), 'Service saved', 'Could not save the service', () => setService(null))
@@ -319,7 +340,9 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
         <div className="flex flex-col gap-3">
           {accounts.map((account) => {
             const year = summarizeClientAccount(account, payments, period.year);
-            const project = projects.find((item) => item.projectId === account.projectId);
+            const code = currencyOf(account);
+            // Everything in this box is this one service's money, in its own currency.
+            const money = (amount: number) => formatCurrency(amount, code);
             const shown = paymentsOf(account)
               .filter((payment) => paymentInPeriod(payment.paidOn, period))
               .sort((a, b) => b.paidOn.localeCompare(a.paidOn));
@@ -328,7 +351,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2.5">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">{account.serviceName}</p>
-                    <p className="truncate text-xs text-muted-foreground">{project?.name ?? 'No linked project'}</p>
+                    {code !== companyCurrency && <p className="truncate text-xs text-muted-foreground">Amounts in {code}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <StatusPill tone="neutral" dot={false} className="tabular-nums">
@@ -453,21 +476,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
               <Field label="Service">
                 {(id) => <Input id={id} value={service.serviceName} onChange={(e) => setService({ ...service, serviceName: e.target.value })} />}
               </Field>
-              <Field label="Linked project">
-                {(id) => (
-                  <Select
-                    value={service.projectId || '__none__'}
-                    onValueChange={(v) => setService({ ...service, projectId: v === '__none__' ? '' : v })}
-                  >
-                    <SelectTrigger id={id}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">No project</SelectItem>
-                      {projects.map((p) => <SelectItem key={p.projectId} value={p.projectId}>{p.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                )}
-              </Field>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <Field label="Billing">
                   {(id) => (
                     <Select value={service.billingType} onValueChange={(v) => setService({ ...service, billingType: v as ClientBillingType })}>
@@ -486,6 +495,9 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                       onChange={(e) => setService({ ...service, agreedAmount: e.target.value })}
                     />
                   )}
+                </Field>
+                <Field label="Currency">
+                  {(id) => <CurrencySelect id={id} value={service.currency} onValueChange={(currency) => setService({ ...service, currency })} />}
                 </Field>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -600,7 +612,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                   : 'The service is removed from this lead’s accounts. This cannot be undone.';
               })()}
               {removing?.kind === 'payment'
-                && `${money(removing.payment.amount)} paid on ${dayLabel(removing.payment.paidOn)} is removed from this lead’s accounts. This cannot be undone.`}
+                && `${formatCurrency(removing.payment.amount, paymentCurrency(removing.payment))} paid on ${dayLabel(removing.payment.paidOn)} is removed from this lead’s accounts. This cannot be undone.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

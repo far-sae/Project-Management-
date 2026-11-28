@@ -77,7 +77,6 @@ export const PostPreview: React.FC<{ row: PostRow | null; onOpenChange: (open: b
                 {post.body
                   ? <p className="whitespace-pre-wrap break-words text-sm text-foreground">{post.body}</p>
                   : <p className="text-sm text-muted-foreground">No text.</p>}
-                {row.campaignName && <p className="text-sm text-muted-foreground">Campaign: <span className="text-foreground">{row.campaignName}</span></p>}
                 {row.link && (
                   <Button asChild variant="outline" size="sm" className="self-start">
                     <a href={row.link} target="_blank" rel="noopener noreferrer"><ExternalLink aria-hidden />View on {row.platformName}</a>

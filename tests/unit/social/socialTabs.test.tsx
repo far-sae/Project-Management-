@@ -1,18 +1,14 @@
-// The Calendar, Campaigns and Analytics tabs of the Social page, as a person
+// The Calendar and Analytics tabs of the Social page, as a person
 // uses them.
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
+import type { SocialAccount, SocialContent, SocialMetric } from '@/types/social';
 import { SocialCalendar } from '@/components/social/SocialCalendar';
-import { CampaignsTable } from '@/components/social/CampaignsTable';
 import { SocialAnalytics } from '@/components/social/SocialAnalytics';
 
 const account = (id: string, provider: SocialAccount['provider'], displayName: string): SocialAccount => ({
   id, organizationId: 'org', workspaceId: 'ws', provider, displayName, externalAccountId: 'ext', status: 'connected', lastError: null, createdAt: new Date('2026-11-01'),
-});
-const campaign = (id: string, name: string, over: Partial<SocialCampaign> = {}): SocialCampaign => ({
-  id, organizationId: 'org', workspaceId: 'ws', name, objective: null, crmContactId: null, crmCompanyId: null, projectId: null, taskId: null, status: 'active', createdAt: new Date('2026-11-01'), ...over,
 });
 const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => ({
   id, organizationId: 'org', workspaceId: 'ws', campaignId: null, accountId: 'yt', crmContactId: null, crmCompanyId: null, projectId: null, taskId: null,
@@ -22,7 +18,6 @@ const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => (
 
 const NOW = new Date('2026-11-23T15:30:00');
 const ACCOUNTS = [account('yt', 'youtube', 'Northwind channel'), account('tt', 'tiktok', '@northwind'), account('ig', 'instagram', '@northwind.studio')];
-const CAMPAIGNS = [campaign('c1', 'Winter offer', { projectId: 'p1', objective: 'More bookings in December' }), campaign('c2', 'Open day', { status: 'paused' }), campaign('c3', 'Spring plan', { status: 'draft' })];
 const CONTENT: SocialContent[] = [
   post('a', { title: 'Five tips', accountId: 'yt', campaignId: 'c1', publishedAt: new Date('2026-11-20T10:05:00') }),
   post('b', { title: 'Five tips', accountId: 'tt', campaignId: 'c1', status: 'failed', scheduledAt: new Date('2026-11-20T10:00:00') }),
@@ -41,7 +36,7 @@ afterEach(cleanup);
 
 describe('the calendar', () => {
   const fns = { onNewPost: vi.fn(), onSeeDrafts: vi.fn() };
-  const show = () => render(<SocialCalendar content={CONTENT} accounts={ACCOUNTS} campaigns={CAMPAIGNS} now={() => NOW} {...fns} />);
+  const show = () => render(<SocialCalendar content={CONTENT} accounts={ACCOUNTS} now={() => NOW} {...fns} />);
   const day = (name: RegExp) => screen.getByRole('button', { name });
   beforeEach(() => { fns.onNewPost.mockClear(); fns.onSeeDrafts.mockClear(); });
 
@@ -97,66 +92,8 @@ describe('the calendar', () => {
   });
 });
 
-describe('the campaigns table', () => {
-  const fns = { onNew: vi.fn(), onSetStatus: vi.fn(), onSeePosts: vi.fn() };
-  const show = (campaigns = CAMPAIGNS) =>
-    render(<CampaignsTable campaigns={campaigns} content={CONTENT} metrics={METRICS} accounts={ACCOUNTS} {...fns} />);
-  const row = (name: string) => screen.getByRole('row', { name });
-  const cells = (name: string) => within(row(name)).getAllByRole('cell').map((c) => c.textContent);
-  beforeEach(() => { for (const fn of Object.values(fns)) fn.mockClear(); });
-
-  it('shows each campaign with its posts counted by how they went, and what they brought', () => {
-    show();
-    const c = cells('Winter offer');
-    expect(c[0]).toContain('More bookings in December');
-    expect(c.slice(1, 10)).toEqual(['Running', 'YouTube, TikTok', '3', '2', '1', '0', '1,500', '45', '64']);
-    expect(cells('Open day').slice(1, 7)).toEqual(['Paused', 'Instagram', '1', '0', '0', '1']);
-    // Social media only: no project column.
-    expect(screen.queryByRole('columnheader', { name: 'Project' })).toBeNull();
-    expect(screen.getByRole('columnheader', { name: 'Platforms' })).toBeTruthy();
-  });
-
-  it('starts, pauses and finishes a campaign', () => {
-    show();
-    fireEvent.click(within(row('Winter offer')).getByRole('button', { name: 'Pause' }));
-    expect(fns.onSetStatus).toHaveBeenLastCalledWith(CAMPAIGNS[0], 'paused');
-    fireEvent.click(within(row('Open day')).getByRole('button', { name: 'Go on' }));
-    expect(fns.onSetStatus).toHaveBeenLastCalledWith(CAMPAIGNS[1], 'active');
-    fireEvent.click(within(row('Spring plan')).getByRole('button', { name: 'Start' }));
-    expect(fns.onSetStatus).toHaveBeenLastCalledWith(CAMPAIGNS[2], 'active');
-    fireEvent.click(within(row('Winter offer')).getByRole('button', { name: 'Finish' }));
-    expect(fns.onSetStatus).toHaveBeenLastCalledWith(CAMPAIGNS[0], 'finished');
-    // A campaign that has not started cannot be finished.
-    expect(within(row('Spring plan')).queryByRole('button', { name: 'Finish' })).toBeNull();
-  });
-
-  it('opens a campaign\'s posts, when it has any', () => {
-    show();
-    fireEvent.click(within(row('Winter offer')).getByRole('button', { name: 'See posts' }));
-    expect(fns.onSeePosts).toHaveBeenCalledWith('c1');
-    expect((within(row('Spring plan')).getByRole('button', { name: 'See posts' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('searches and filters by state', () => {
-    show();
-    fireEvent.change(screen.getByLabelText('Search campaigns'), { target: { value: 'bookings' } });
-    expect(screen.getAllByRole('row')).toHaveLength(2);
-    fireEvent.change(screen.getByLabelText('Search campaigns'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('State'), { target: { value: 'paused' } });
-    expect(screen.getByRole('row', { name: 'Open day' })).toBeTruthy();
-    expect(screen.queryByRole('row', { name: 'Winter offer' })).toBeNull();
-  });
-
-  it('starts empty with what a campaign is for', () => {
-    show([]);
-    expect(screen.getByText(/A campaign groups the social media posts of one goal/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'New campaign' }));
-    expect(fns.onNew).toHaveBeenCalled();
-  });
-});
-
 describe('analytics', () => {
-  const show = (metrics = METRICS) => render(<SocialAnalytics content={CONTENT} accounts={ACCOUNTS} campaigns={CAMPAIGNS} metrics={metrics} now={() => NOW} />);
+  const show = (metrics = METRICS) => render(<SocialAnalytics content={CONTENT} accounts={ACCOUNTS} metrics={metrics} now={() => NOW} />);
   const figure = (label: string) => screen.getByText(label, { selector: 'dt' }).parentElement?.querySelector('dd')?.textContent;
 
   it('opens on the last 30 days with the headline figures', () => {

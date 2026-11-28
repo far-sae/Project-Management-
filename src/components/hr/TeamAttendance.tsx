@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, Users } from 'lucide-react';
-import { format, isToday } from 'date-fns';
+import { format, isSameDay, isToday } from 'date-fns';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -13,13 +13,13 @@ import {
   subscribeToTimeEntries,
   type TimeEntry,
 } from '@/services/supabase/timeEntries';
-import { buildAttendance, summarizeAttendance, type AttendanceStatus } from '@/lib/attendance';
+import { STALE_SHIFT_HOURS, buildAttendance, summarizeAttendance, type AttendanceStatus } from '@/lib/attendance';
 import { LEAVE_TYPE_LABEL, leaveOnDate, todayYmd, type LeaveLike } from '@/lib/leave';
 
 const STATUS: Record<AttendanceStatus, { label: string; tone: StatusTone }> = {
   on_clock: { label: 'On the clock', tone: 'success' },
   out: { label: 'Clocked out', tone: 'neutral' },
-  auto_out: { label: 'Auto clocked out (9h)', tone: 'warning' },
+  auto_out: { label: 'Clocked out automatically', tone: 'warning' },
   absent: { label: 'Not clocked in', tone: 'muted' },
 };
 
@@ -28,7 +28,8 @@ const STEP_BUTTON =
   'flex w-11 shrink-0 items-center justify-center bg-background text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 md:w-8';
 
 const hours = (s: number) => (s > 0 ? formatDurationSeconds(s) : '—');
-const time = (d: Date | null) => (d ? format(d, 'HH:mm') : '—');
+/** A time of the day shown; a time on another day (a shift over midnight) says which day. */
+const time = (d: Date | null, day: Date) => (d ? format(d, isSameDay(d, day) ? 'HH:mm' : 'EEE HH:mm') : '—');
 
 /** Team clock-in / clock-out for one day, with this week's totals. */
 export const TeamAttendance: React.FC<{
@@ -93,7 +94,7 @@ export const TeamAttendance: React.FC<{
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Attendance"
-        description="When your team clocked in and out. Anyone still clocked in after 9 hours is clocked out automatically."
+        description={`When your team clocked in and out. The clock runs until the person clocks out, also over midnight. A shift nobody clocked out of is closed after ${STALE_SHIFT_HOURS} hours.`}
         actions={
           <>
             {!viewingToday && (
@@ -221,9 +222,9 @@ export const TeamAttendance: React.FC<{
                           </StatusPill>
                         )}
                       </td>
-                      <td className="px-4 tabular-nums">{time(r.firstIn)}</td>
+                      <td className="px-4 tabular-nums">{time(r.firstIn, day)}</td>
                       <td className="px-4 tabular-nums">
-                        {r.status === 'on_clock' ? <span className="text-muted-foreground">—</span> : time(r.lastOut)}
+                        {r.status === 'on_clock' ? <span className="text-muted-foreground">—</span> : time(r.lastOut, day)}
                         {r.sessions > 1 && (
                           <span className="ml-1.5 text-xs text-muted-foreground">({r.sessions} sessions)</span>
                         )}

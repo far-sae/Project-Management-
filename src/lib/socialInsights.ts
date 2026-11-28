@@ -1,8 +1,8 @@
-// What the Calendar, Campaigns and Analytics tabs of the Social page are
+// What the Calendar and Analytics tabs of the Social page are
 // worked out from. Plain logic over the rows of the posts table (socialPosts):
-// the days of a month, the posts of a day, a campaign's counts, and the
-// figures for a span of days.
-import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric } from '@/types/social';
+// the days of a month, the posts of a day, and the figures for a span of
+// days.
+import type { SocialMetric } from '@/types/social';
 import { tabOf, type PostRow } from '@/lib/socialPosts';
 import { PLATFORMS, PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
 
@@ -62,57 +62,6 @@ export function rowsByDay(rows: PostRow[]): Map<string, PostRow[]> {
 
 /** The posts that are on no day yet (drafts that were never given a time). */
 export const undated = (rows: PostRow[]): PostRow[] => rows.filter((row) => !dated(row));
-
-// ── Campaigns ────────────────────────────────────────────────────────────────
-
-export type CampaignRow = {
-  campaign: SocialCampaign;
-  /** The platforms its posts go to, in the order the app always shows them. */
-  platforms: string[];
-  posts: number;
-  posted: number;
-  failed: number;
-  /** Planned, going out, waiting for approval or still a draft. */
-  waiting: number;
-  impressions: number;
-  clicks: number;
-  reactions: number;
-  lastPosted: Date | null;
-};
-
-export function campaignRows(
-  campaigns: SocialCampaign[],
-  content: SocialContent[],
-  metrics: SocialMetric[],
-  accounts: SocialAccount[],
-): CampaignRow[] {
-  const metricOf = new Map(metrics.map((m) => [m.contentId, m]));
-  const providerOf = new Map(accounts.map((a) => [a.id, a.provider as string]));
-  return campaigns.map((campaign) => {
-    const row: CampaignRow = {
-      campaign, platforms: [],
-      posts: 0, posted: 0, failed: 0, waiting: 0, impressions: 0, clicks: 0, reactions: 0, lastPosted: null,
-    };
-    const used = new Set<string>();
-    for (const post of content) {
-      if (post.campaignId !== campaign.id) continue;
-      row.posts += 1;
-      const provider = post.accountId ? providerOf.get(post.accountId) : undefined;
-      if (provider && isPlatform(provider)) used.add(provider);
-      const tab = tabOf(post.status);
-      if (tab === 'posted') {
-        row.posted += 1;
-        const at = post.publishedAt ?? post.scheduledAt;
-        if (at && (!row.lastPosted || at > row.lastPosted)) row.lastPosted = at;
-      } else if (tab === 'failed') row.failed += 1;
-      else row.waiting += 1;
-      const m = metricOf.get(post.id);
-      if (m) { row.impressions += m.impressions; row.clicks += m.clicks; row.reactions += m.reactions; }
-    }
-    row.platforms = PLATFORMS.filter((platform) => used.has(platform)).map((platform) => PLATFORM_NAME[platform]);
-    return row;
-  });
-}
 
 // ── Analytics ────────────────────────────────────────────────────────────────
 

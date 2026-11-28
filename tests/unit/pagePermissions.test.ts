@@ -136,3 +136,10 @@ describe('pageKeyForPath', () => {
     expect(pageKeyForPath('/no-access')).toBeNull();
   });
 });
+
+describe('Find leads has its own address', () => {
+  it('is opened or closed with the CRM', async () => {
+    const { pageKeyForPath } = await import('@/lib/pageCatalog');
+    expect(pageKeyForPath('/find-leads')).toBe('crm');
+  });
+});

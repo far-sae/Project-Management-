@@ -27,6 +27,7 @@ import {
   Phone,
   Mail,
   Megaphone,
+  UserSearch,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isAppOwner } from '@/lib/app-owner';
@@ -64,6 +65,10 @@ const QUICK_ITEMS_FULL = [
   { icon: TrendingUp, label: 'Projects analytics', href: '/dashboard/projects', page: 'projects_analytics' as PageKey },
   { icon: CheckSquare, label: 'My Tasks', href: '/tasks', page: 'my_tasks' as PageKey },
   { icon: Inbox, label: 'Inbox', href: '/inbox', page: 'inbox' as PageKey },
+  // Searching for new people to reach (Apollo). Where leads come from, so it stands before the
+  // CRM and not inside it. It spends credits: the owner and admins only (it is not in
+  // AREA_OF_HREF, so no member is given it), where the CRM is shown.
+  { icon: UserSearch, label: 'Find leads', href: '/find-leads', feature: 'crm' as const, page: 'crm' as PageKey },
   { icon: Handshake, label: 'CRM', href: '/crm', feature: 'crm' as const, page: 'crm' as PageKey },
   // Calling and bulk email work on the CRM's leads; each has its own page here. Both go with
   // the CRM in a workspace's menu setting: where the CRM is shown, they are shown.
@@ -171,6 +176,7 @@ export const Sidebar: React.FC = () => {
           (i) =>
             (i.href !== '/team' || hasFeature('team_collaboration')) &&
             (i.href !== '/crm' || hasFeature('crm')) &&
+            (i.href !== '/find-leads' || hasFeature('crm')) &&
             (i.href !== '/calls' || hasFeature('crm')) &&
             (i.href !== '/email' || hasFeature('email_campaigns')) &&
             (i.href !== '/hr' || canSeeHr),

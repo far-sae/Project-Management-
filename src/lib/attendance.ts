@@ -23,6 +23,13 @@ export interface AttendanceRow extends AttendancePerson {
 
 const DAY_MS = 86_400_000;
 
+/**
+ * A shift nobody clocked out of is closed for them after this many hours
+ * (the database job of migration 218 uses the same number). Until then the
+ * clock keeps running: closing the tab or the laptop does not stop it.
+ */
+export const STALE_SHIFT_HOURS = 24;
+
 function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
@@ -33,17 +40,36 @@ function startOfLocalWeek(d: Date): Date {
   return new Date(start.getFullYear(), start.getMonth(), start.getDate() - offset);
 }
 
-function seconds(e: TimeEntry, now: Date): number {
-  const end = e.clockedOutAt ?? now;
-  return Math.max(0, Math.round((end.getTime() - e.clockedInAt.getTime()) / 1000));
+/** When the shift ended, or now while it is still running. */
+const endOf = (e: TimeEntry, now: Date): number => (e.clockedOutAt ?? now).getTime();
+
+/** The seconds of a shift that fall between `from` and `to`. */
+function secondsWithin(e: TimeEntry, from: number, to: number, now: Date): number {
+  const start = Math.max(e.clockedInAt.getTime(), from);
+  const end = Math.min(endOf(e, now), to);
+  return Math.max(0, Math.round((end - start) / 1000));
+}
+
+/**
+ * True when the shift belongs to the time between `from` and `to`: it started
+ * there, or it started before and was still running after `from`. A shift
+ * that ended exactly at `from` (midnight) does not belong to the next day.
+ */
+function touches(e: TimeEntry, from: number, to: number, now: Date): boolean {
+  const start = e.clockedInAt.getTime();
+  if (start >= to) return false;
+  return start >= from || endOf(e, now) > from;
 }
 
 const ORDER: Record<AttendanceStatus, number> = { on_clock: 0, auto_out: 1, out: 1, absent: 2 };
 
 /**
  * One row per teammate for `day` (local time): status, first clock-in, last
- * clock-out, hours that day and hours that week. A shift belongs to the day
- * it started on.
+ * clock-out, hours that day and hours that week.
+ *
+ * A shift may go over midnight (a night shift, or one nobody clocked out of).
+ * It is listed on every day it touches, and each day and each week gets only
+ * its own part of the hours, so nobody on the clock at 02:00 shows as absent.
  */
 export function buildAttendance(
   entries: TimeEntry[],
@@ -59,11 +85,8 @@ export function buildAttendance(
   const byUser = new Map<string, AttendancePerson>();
   for (const p of people) byUser.set(p.userId, p);
   for (const e of entries) {
-    if (!byUser.has(e.userId)) {
-      const t = e.clockedInAt.getTime();
-      if (t >= weekStart && t < weekEnd) {
-        byUser.set(e.userId, { userId: e.userId, name: e.userName?.trim() || 'Unknown member' });
-      }
+    if (!byUser.has(e.userId) && touches(e, weekStart, weekEnd, now)) {
+      byUser.set(e.userId, { userId: e.userId, name: e.userName?.trim() || 'Unknown member' });
     }
   }
 
@@ -71,15 +94,9 @@ export function buildAttendance(
   for (const person of byUser.values()) {
     const mine = entries.filter((e) => e.userId === person.userId);
     const today = mine
-      .filter((e) => {
-        const t = e.clockedInAt.getTime();
-        return t >= dayStart && t < dayEnd;
-      })
+      .filter((e) => touches(e, dayStart, dayEnd, now))
       .sort((a, b) => a.clockedInAt.getTime() - b.clockedInAt.getTime());
-    const week = mine.filter((e) => {
-      const t = e.clockedInAt.getTime();
-      return t >= weekStart && t < weekEnd;
-    });
+    const week = mine.filter((e) => touches(e, weekStart, weekEnd, now));
 
     const open = today.some((e) => !e.clockedOutAt);
     const lastOut = open
@@ -93,7 +110,8 @@ export function buildAttendance(
         ? 'absent'
         : open
           ? 'on_clock'
-          : today.some((e) => e.autoClosed)
+          : // Said on the day the shift was closed for them, not on the day it started.
+            today.some((e) => e.autoClosed && e.clockedOutAt !== null && e.clockedOutAt !== undefined && e.clockedOutAt.getTime() <= dayEnd)
             ? 'auto_out'
             : 'out';
 
@@ -102,8 +120,8 @@ export function buildAttendance(
       status,
       firstIn: today[0]?.clockedInAt ?? null,
       lastOut,
-      daySeconds: today.reduce((sum, e) => sum + seconds(e, now), 0),
-      weekSeconds: week.reduce((sum, e) => sum + seconds(e, now), 0),
+      daySeconds: today.reduce((sum, e) => sum + secondsWithin(e, dayStart, dayEnd, now), 0),
+      weekSeconds: week.reduce((sum, e) => sum + secondsWithin(e, weekStart, weekEnd, now), 0),
       sessions: today.length,
     });
   }

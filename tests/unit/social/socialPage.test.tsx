@@ -11,8 +11,6 @@ const h = vi.hoisted(() => ({
   updateSocialContentStatus: vi.fn(async () => {}),
   runSocialPublish: vi.fn(async () => {}),
   deleteSocialContent: vi.fn(async () => {}),
-  setSocialContentCampaign: vi.fn(async () => {}),
-  createSocialCampaign: vi.fn(async () => {}),
   syncSocialAccounts: vi.fn(async () => 1),
   foundSocialAccounts: vi.fn(async (): Promise<Array<{ serviceId: string; provider: string; name: string; added: boolean }>> => []),
   chooseSocialAccounts: vi.fn(async (_org: string, _ws: string, add: string[]) => add.length),
@@ -45,9 +43,7 @@ vi.mock('@/services/supabase/social', () => ({
   updateSocialContentStatus: h.updateSocialContentStatus,
   runSocialPublish: h.runSocialPublish,
   deleteSocialContent: h.deleteSocialContent,
-  setSocialContentCampaign: h.setSocialContentCampaign,
-  createSocialCampaign: h.createSocialCampaign,
-  createSocialAccount: vi.fn(), createSocialContent: vi.fn(), saveSocialAccountToken: vi.fn(), updateSocialCampaignStatus: vi.fn(),
+  createSocialAccount: vi.fn(), createSocialContent: vi.fn(), saveSocialAccountToken: vi.fn(),
   uploadSocialMedia: vi.fn(), removeSocialMedia: vi.fn(), createSocialPosts: vi.fn(),
 }));
 
@@ -365,15 +361,16 @@ describe('the other tabs', () => {
     expect(screen.getByRole('group', { name: 'Month or week' })).toBeTruthy();
   });
 
-  it('Campaigns is a table, and "See posts" opens the posts table on that campaign', async () => {
+  it('has no Campaigns: no tab, and nothing about campaigns in the posts table or in New post', async () => {
     await show();
-    open('Campaigns');
-    const row = await screen.findByRole('row', { name: 'Winter offer' });
-    expect(within(row).getAllByRole('cell')[2].textContent).toBe('YouTube');
-    fireEvent.click(within(row).getByRole('button', { name: 'See posts' }));
+    expect(screen.getAllByRole('tab').map((t) => t.textContent).slice(0, 5)).toEqual(['Posts', 'Calendar', 'Accounts', 'Analytics', 'Autopilot']);
+    expect(screen.queryByRole('tab', { name: 'Campaigns' })).toBeNull();
     const table = await screen.findByRole('table');
-    expect(within(table).getAllByRole('row')).toHaveLength(2);
-    expect((screen.getByLabelText('Campaign') as HTMLSelectElement).value).toBe('c1');
+    expect(within(table).queryByRole('columnheader', { name: 'Campaign' })).toBeNull();
+    expect(screen.queryByLabelText('Campaign')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Select Five tips for a brighter smile (TikTok)'));
+    expect(screen.queryByLabelText('Put the selected posts in a campaign')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/campaign/i);
   });
 
   it('Analytics shows the figures for the last 30 days', async () => {
@@ -384,32 +381,3 @@ describe('the other tabs', () => {
   });
 });
 
-describe('social media only', () => {
-  const open = (name: string) => {
-    const tab = screen.getByRole('tab', { name });
-    fireEvent.mouseDown(tab);
-    fireEvent.click(tab);
-  };
-  beforeEach(() => { window.localStorage.removeItem('social.postsView'); h.createSocialCampaign.mockClear(); h.setSocialContentCampaign.mockClear(); });
-
-  it('a new campaign asks for a name and what it is for, and nothing about projects or the CRM', async () => {
-    await show();
-    open('Campaigns');
-    fireEvent.click(await screen.findByRole('button', { name: 'New campaign' }));
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('New social media campaign')).toBeTruthy();
-    expect(within(dialog).queryByText(/project|CRM|contact|company|task/i)).toBeNull();
-    fireEvent.change(within(dialog).getByPlaceholderText('Winter offer'), { target: { value: 'Winter offer' } });
-    fireEvent.change(within(dialog).getByPlaceholderText('More bookings in December'), { target: { value: 'More bookings' } });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(h.createSocialCampaign).toHaveBeenCalledWith({ organizationId: 'org-1', workspaceId: 'ws-1', name: 'Winter offer', objective: 'More bookings', userId: 'u1' }));
-  });
-
-  it('puts picked posts in a campaign from the posts table', async () => {
-    h.data = { ...h.data, campaigns: [{ id: 'c1', organizationId: 'org-1', workspaceId: 'ws-1', name: 'Winter offer', objective: null, crmContactId: null, crmCompanyId: null, projectId: null, taskId: null, status: 'active', createdAt: new Date('2026-11-01') }] };
-    await show();
-    fireEvent.click(screen.getByLabelText('Select Five tips for a brighter smile (TikTok)'));
-    fireEvent.change(screen.getByLabelText('Put the selected posts in a campaign'), { target: { value: 'c1' } });
-    await waitFor(() => expect(h.setSocialContentCampaign).toHaveBeenCalledWith(['2'], 'c1'));
-  });
-});

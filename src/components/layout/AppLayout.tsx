@@ -37,7 +37,7 @@ const usePendingInviteRedirect = (): string | null => {
 // fallback is a small inline spinner inside <main>, not a full-viewport one.
 //
 // There is no clock-in gate: people clock in/out with the Clock button in the
-// sidebar or a project's header, and forgotten shifts auto-close after 9h.
+// sidebar or a project's header, and forgotten shifts auto-close after 24h.
 export const AppLayout: React.FC = () => {
   const inviteRedirect = usePendingInviteRedirect();
   if (inviteRedirect) {

@@ -161,7 +161,7 @@ const DesignPreview: React.FC = () => {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-6 lg:px-6">
         <PageHeader
           title="Attendance"
-          description="When your team clocked in and out. Anyone still clocked in after 9 hours is clocked out automatically."
+          description="When your team clocked in and out. The clock runs until the person clocks out, also over midnight. A shift nobody clocked out of is closed after 24 hours."
           actions={
             <>
               <Button variant="ghost">Today</Button>
@@ -255,7 +255,7 @@ const DesignPreview: React.FC = () => {
               On the clock
             </StatusPill>
             <StatusPill tone="neutral">Clocked out</StatusPill>
-            <StatusPill tone="warning">Auto clocked out (9h)</StatusPill>
+            <StatusPill tone="warning">Clocked out automatically</StatusPill>
             <StatusPill tone="danger">Overdue</StatusPill>
             <StatusPill tone="info">Finalized</StatusPill>
             <StatusPill tone="muted">Not clocked in</StatusPill>

@@ -5,12 +5,11 @@ import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
-import { createSocialAccount, createSocialCampaign, deleteSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, setSocialContentCampaign, updateSocialCampaignStatus, updateSocialContentStatus } from '@/services/supabase/social';
+import { createSocialAccount, deleteSocialContent, listSocialData, runSocialPublish, saveSocialAccountToken, updateSocialContentStatus } from '@/services/supabase/social';
 import { SocialComposer } from '@/components/social/SocialComposer';
 import { ConnectAccounts } from '@/components/social/ConnectAccounts';
 import { PostsTable } from '@/components/social/PostsTable';
 import { SocialCalendar } from '@/components/social/SocialCalendar';
-import { CampaignsTable } from '@/components/social/CampaignsTable';
 import { SocialAnalytics } from '@/components/social/SocialAnalytics';
 import { Autopilot } from '@/components/social/Autopilot';
 import type { PostFilters } from '@/lib/socialPosts';
@@ -20,7 +19,7 @@ import { ChooseAccounts, ConnectedAccounts } from '@/components/social/Connected
 import { StatusPill, type StatusTone } from '@/components/common/StatusPill';
 import { groupPosts, groupSummary, isOnItsWay, type PostGroup } from '@/lib/socialCompose';
 import { PLATFORM_NAME, isPlatform } from '../../api/_social/shared/platforms';
-import type { SocialAccount, SocialCampaign, SocialContent, SocialMetric, SocialProvider } from '@/types/social';
+import type { SocialAccount, SocialContent, SocialMetric, SocialProvider } from '@/types/social';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -29,9 +28,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 
-type CreateKind = 'account' | 'campaign' | null;
+type CreateKind = 'account' | null;
 
 type PostsView = 'table' | 'cards';
 const POSTS_VIEW_KEY = 'social.postsView';
@@ -47,13 +45,12 @@ export const SocialMedia: React.FC = () => {
   const canManage = areaLevel('social') === 'manage';
   const { selected, isAll, isUnassigned, select, workspaces, loading: workspaceLoading, preferredWorkspaceId } = useSelectedWorkspace();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
-  const [campaigns, setCampaigns] = useState<SocialCampaign[]>([]);
   const [content, setContent] = useState<SocialContent[]>([]);
   const [metrics, setMetrics] = useState<SocialMetric[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [createKind, setCreateKind] = useState<CreateKind>(null);
-  const [name, setName] = useState(''); const [description, setDescription] = useState('');
+  const [name, setName] = useState('');
   const [provider, setProvider] = useState<SocialProvider>('linkedin'); const [externalId, setExternalId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
@@ -96,7 +93,7 @@ export const SocialMedia: React.FC = () => {
   const load = useCallback(async (quiet = false) => {
     if (!workspaceId || !orgId) { setLoading(false); return; }
     if (!quiet) setLoading(true);
-    try { const data = await listSocialData(workspaceId); setAccounts(data.accounts); setCampaigns(data.campaigns); setContent(data.content); setMetrics(data.metrics); }
+    try { const data = await listSocialData(workspaceId); setAccounts(data.accounts); setContent(data.content); setMetrics(data.metrics); }
     catch (error) { toast.error(publicMessage(error, 'Could not load social marketing')); }
     finally { setLoading(false); }
   }, [orgId, workspaceId]);
@@ -159,7 +156,7 @@ export const SocialMedia: React.FC = () => {
   const groups = useMemo(() => groupPosts(content), [content]);
   const accountsById = useMemo(() => new Map(accounts.map((item) => [item.id, item])), [accounts]);
 
-  const reset = () => { setCreateKind(null); setName(''); setDescription(''); setExternalId(''); setAccessToken(''); setRefreshToken(''); };
+  const reset = () => { setCreateKind(null); setName(''); setExternalId(''); setAccessToken(''); setRefreshToken(''); };
   const save = async () => {
     if (!name.trim() || !orgId || !workspaceId) return;
     setBusy(true);
@@ -168,7 +165,6 @@ export const SocialMedia: React.FC = () => {
         const id = await createSocialAccount({ organizationId: orgId, workspaceId, provider, displayName: name.trim(), externalAccountId: externalId.trim(), userId: user?.userId });
         if (accessToken.trim()) await saveSocialAccountToken(id, accessToken.trim(), refreshToken.trim() || undefined);
       }
-      if (createKind === 'campaign') await createSocialCampaign({ organizationId: orgId, workspaceId, name: name.trim(), objective: description.trim(), userId: user?.userId });
       toast.success('Saved'); reset(); await load(true);
     } catch (error) { toast.error(publicMessage(error, 'Could not save')); }
     finally { setBusy(false); }
@@ -188,13 +184,6 @@ export const SocialMedia: React.FC = () => {
     } catch (error) { toast.error(publicMessage(error, 'Could not try the post again')); }
   };
   const retry = (item: SocialContent) => retryAll([item]);
-  const setPostsCampaign = async (items: SocialContent[], campaignId: string | null) => {
-    try {
-      await setSocialContentCampaign(items.map((item) => item.id), campaignId);
-      toast.success(campaignId ? (items.length === 1 ? 'Added to the campaign' : `${items.length} posts added to the campaign`) : 'Taken out of the campaign');
-      await load(true);
-    } catch (error) { toast.error(publicMessage(error, 'Could not change the campaign. Please try again.')); }
-  };
   const removePosts = async (items: SocialContent[]) => {
     try {
       await deleteSocialContent(items.map((item) => item.id));
@@ -207,7 +196,7 @@ export const SocialMedia: React.FC = () => {
 
   return <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 md:p-8">
     <div className="mb-6 flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-3xl font-bold">Social Media Marketing</h1><p className="text-muted-foreground">Plan, approve and measure content for <b>{selected.name}</b>.</p></div><Button onClick={() => setComposing(true)}><Plus className="mr-1 h-4 w-4" />New post</Button></div>
-    {loading ? <div className="py-20 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /></div> : <Tabs value={tab} onValueChange={setTab}><TabsList className="flex flex-wrap h-auto"><TabsTrigger value="library"><Library className="mr-1 h-4 w-4" />Posts</TabsTrigger><TabsTrigger value="calendar"><CalendarDays className="mr-1 h-4 w-4" />Calendar</TabsTrigger><TabsTrigger value="campaigns">Campaigns</TabsTrigger><TabsTrigger value="accounts"><Share2 className="mr-1 h-4 w-4" />Accounts</TabsTrigger><TabsTrigger value="analytics"><BarChart3 className="mr-1 h-4 w-4" />Analytics</TabsTrigger><TabsTrigger value="autopilot"><Sparkles className="mr-1 h-4 w-4" />Autopilot</TabsTrigger></TabsList>
+    {loading ? <div className="py-20 text-center"><Loader2 className="mx-auto h-8 w-8 animate-spin" /></div> : <Tabs value={tab} onValueChange={setTab}><TabsList className="flex flex-wrap h-auto"><TabsTrigger value="library"><Library className="mr-1 h-4 w-4" />Posts</TabsTrigger><TabsTrigger value="calendar"><CalendarDays className="mr-1 h-4 w-4" />Calendar</TabsTrigger><TabsTrigger value="accounts"><Share2 className="mr-1 h-4 w-4" />Accounts</TabsTrigger><TabsTrigger value="analytics"><BarChart3 className="mr-1 h-4 w-4" />Analytics</TabsTrigger><TabsTrigger value="autopilot"><Sparkles className="mr-1 h-4 w-4" />Autopilot</TabsTrigger></TabsList>
       <TabsContent value="library" className="space-y-3">
         <div className="flex justify-end pt-3">
           <div role="group" aria-label="How the posts are shown" className="inline-flex rounded-md border border-border p-0.5">
@@ -216,24 +205,13 @@ export const SocialMedia: React.FC = () => {
           </div>
         </div>
         {postsView === 'table'
-          ? <PostsTable content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onRetry={retryAll} onStatus={setStatus} onDelete={removePosts} onSetCampaign={setPostsCampaign} jump={jump} />
+          ? <PostsTable content={content} accounts={accounts} onNewPost={() => setComposing(true)} onRetry={retryAll} onStatus={setStatus} onDelete={removePosts} jump={jump} />
           : <><SectionHeader title="Posts" action="New post" onClick={() => setComposing(true)} />{groups.length === 0 ? <Empty text="No posts yet. Press New post to upload once and post everywhere." /> : groups.map((group) => (group.posts.length === 1 && !group.posts[0].postGroupId
             ? <ContentCard key={group.id} item={group.posts[0]} onStatus={setStatus} />
             : <GroupCard key={group.id} group={group} accountName={(id) => accountsById.get(id ?? '')} onRetry={retry} />))}</>}
       </TabsContent>
       <TabsContent value="calendar">
-        <SocialCalendar content={content} accounts={accounts} campaigns={campaigns} onNewPost={() => setComposing(true)} onSeeDrafts={() => openPosts({ tab: 'drafts' })} />
-      </TabsContent>
-      <TabsContent value="campaigns">
-        <CampaignsTable
-          campaigns={campaigns} content={content} metrics={metrics} accounts={accounts}
-          onNew={() => setCreateKind('campaign')}
-          onSetStatus={async (campaign, status) => {
-            try { await updateSocialCampaignStatus(campaign.id, status); await load(true); }
-            catch (error) { toast.error(publicMessage(error, 'Could not change the campaign. Please try again.')); }
-          }}
-          onSeePosts={(campaignId) => openPosts({ campaignId })}
-        />
+        <SocialCalendar content={content} accounts={accounts} onNewPost={() => setComposing(true)} onSeeDrafts={() => openPosts({ tab: 'drafts' })} />
       </TabsContent>
       <TabsContent value="accounts" className="space-y-3">
         <ConnectAccounts organizationId={orgId} workspaceId={workspaceId} canConnect={canManage} onChanged={() => void load(true)} onFound={offerFound} />
@@ -241,7 +219,7 @@ export const SocialMedia: React.FC = () => {
         <ConnectedAccounts organizationId={orgId} workspaceId={workspaceId} accounts={accounts} canManage={canManage} onChanged={() => void load(true)} />
       </TabsContent>
       <TabsContent value="analytics">
-        <SocialAnalytics content={content} accounts={accounts} campaigns={campaigns} metrics={metrics} />
+        <SocialAnalytics content={content} accounts={accounts} metrics={metrics} />
       </TabsContent>
       <TabsContent value="autopilot">
         <Autopilot
@@ -251,11 +229,10 @@ export const SocialMedia: React.FC = () => {
       </TabsContent>
     </Tabs>}
 
-    <Dialog open={Boolean(createKind)} onOpenChange={(open) => { if (!open) reset(); }}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{createKind === 'account' ? 'Add social account' : 'New social media campaign'}</DialogTitle></DialogHeader><div className="space-y-3">
-      <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder={createKind === 'campaign' ? 'Winter offer' : undefined} /></Field>
-      {createKind === 'account' ? <><Field label="Network"><Select value={provider} onValueChange={(v) => setProvider(v as SocialProvider)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROVIDERS.map((item) => <SelectItem key={item} value={item} className="capitalize">{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Provider account ID / author URN"><Input value={externalId} onChange={(e) => setExternalId(e.target.value)} /></Field><Field label="Provider access token"><Input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} /><p className="text-xs text-muted-foreground">Sent over TLS and encrypted server-side. It is never stored in the browser or readable through the app API.</p></Field>{(provider === 'youtube' || provider === 'tiktok' || provider === 'x') && <Field label="Refresh token"><Input type="password" autoComplete="off" value={refreshToken} onChange={(e) => setRefreshToken(e.target.value)} /><p className="text-xs text-muted-foreground">{PLATFORM_NAME[provider]} access tokens run out within hours. With the refresh token, a new one is fetched by itself each time.</p></Field>}</> : <>
-        <Field label="What is it for?"><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="More bookings in December" /><p className="text-xs text-muted-foreground">A campaign groups social media posts of one goal. Choose it in New post, or add posts to it from the posts table.</p></Field>
-      </>}</div><DialogFooter><Button variant="outline" onClick={reset}>Cancel</Button><Button disabled={busy || !name.trim()} onClick={save}>{busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Save</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={Boolean(createKind)} onOpenChange={(open) => { if (!open) reset(); }}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Add social account</DialogTitle></DialogHeader><div className="space-y-3">
+      <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Network"><Select value={provider} onValueChange={(v) => setProvider(v as SocialProvider)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PROVIDERS.map((item) => <SelectItem key={item} value={item} className="capitalize">{item}</SelectItem>)}</SelectContent></Select></Field><Field label="Provider account ID / author URN"><Input value={externalId} onChange={(e) => setExternalId(e.target.value)} /></Field><Field label="Provider access token"><Input type="password" autoComplete="off" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} /><p className="text-xs text-muted-foreground">Sent over TLS and encrypted server-side. It is never stored in the browser or readable through the app API.</p></Field>{(provider === 'youtube' || provider === 'tiktok' || provider === 'x') && <Field label="Refresh token"><Input type="password" autoComplete="off" value={refreshToken} onChange={(e) => setRefreshToken(e.target.value)} /><p className="text-xs text-muted-foreground">{PLATFORM_NAME[provider]} access tokens run out within hours. With the refresh token, a new one is fetched by itself each time.</p></Field>}
+      </div><DialogFooter><Button variant="outline" onClick={reset}>Cancel</Button><Button disabled={busy || !name.trim()} onClick={save}>{busy && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Save</Button></DialogFooter></DialogContent></Dialog>
     <ChooseAccounts
       organizationId={orgId} workspaceId={workspaceId} found={choosing}
       onOpenChange={(open) => { if (!open) setChoosing(null); }}
@@ -272,7 +249,6 @@ export const SocialMedia: React.FC = () => {
       workspaceId={workspaceId}
       userId={user?.userId}
       accounts={accounts}
-      campaigns={campaigns}
       onPosted={() => void load(true)}
       onAddAccount={() => { setTab('accounts'); setCreateKind('account'); }}
     />

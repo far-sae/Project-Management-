@@ -1,6 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Loader2, Search, UserPlus, Users } from 'lucide-react';
+import { Loader2, Search, UserPlus, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useOrganization } from '@/context/OrganizationContext';
@@ -253,17 +252,9 @@ export const CrmFindLeadsPage: React.FC<{
     }
   };
 
-  const back = (
-    <div>
-      <Button asChild variant="ghost" size="sm" className="-ml-2">
-        <Link to="/crm/contacts"><ArrowLeft aria-hidden /> Leads</Link>
-      </Button>
-    </div>
-  );
   const shell = (children: React.ReactNode) => (
     <main className="min-w-0 flex-1 overflow-y-auto bg-background">
       <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
-        {back}
         <PageHeader
           title="Find leads"
           description="Search Apollo for the people you want to reach, then add them as leads. Searching is free. Adding a person uses 1 Apollo credit."

@@ -4,7 +4,7 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { SocialAccount, SocialCampaign, SocialContent } from '@/types/social';
+import type { SocialAccount, SocialContent } from '@/types/social';
 
 const h = vi.hoisted(() => ({ saveTextFile: vi.fn() }));
 vi.mock('@/lib/signroom/billingCsv', async (actual) => ({ ...(await actual<typeof import('@/lib/signroom/billingCsv')>()), saveTextFile: h.saveTextFile }));
@@ -22,7 +22,6 @@ const post = (id: string, over: Partial<SocialContent> = {}): SocialContent => (
 });
 
 const ACCOUNTS = [account('yt', 'youtube', 'Northwind channel'), account('tt', 'tiktok', '@northwind'), account('ig', 'instagram', '@northwind.studio')];
-const CAMPAIGNS: SocialCampaign[] = [{ id: 'c1', organizationId: 'org', workspaceId: 'ws', name: 'Winter offer', objective: null, crmContactId: null, crmCompanyId: null, projectId: null, taskId: null, status: 'active', createdAt: new Date('2026-11-01') }];
 const CONTENT: SocialContent[] = [
   post('a', { title: 'Five tips for a brighter smile', body: 'Our dentist explains.', accountId: 'yt', campaignId: 'c1', publishedAt: new Date('2026-11-20T10:05:00'), externalPostId: 'https://youtu.be/abc' }),
   post('b', { title: 'Five tips for a brighter smile', status: 'failed', accountId: 'tt', scheduledAt: new Date('2026-11-20T10:00:00'), lastError: 'TikTok did not accept the post: Video is too long.' }),
@@ -35,7 +34,7 @@ const CONTENT: SocialContent[] = [
 const NOW = new Date('2026-11-23T15:30:00');
 const fns = { onNewPost: vi.fn(), onRetry: vi.fn(), onStatus: vi.fn(), onDelete: vi.fn(async () => {}) };
 const show = (content: SocialContent[] = CONTENT) =>
-  render(<PostsTable content={content} accounts={ACCOUNTS} campaigns={CAMPAIGNS} now={() => NOW} {...fns} />);
+  render(<PostsTable content={content} accounts={ACCOUNTS} now={() => NOW} {...fns} />);
 
 const titles = () => within(screen.getByRole('table')).getAllByRole('row').slice(1).map((row) => row.getAttribute('aria-label'));
 const tab = (name: RegExp) => screen.getByRole('tab', { name });
@@ -53,7 +52,6 @@ describe('the posts table', () => {
     const posted = rowOf('Five tips for a brighter smile, YouTube');
     expect(within(posted).getByText('Posted', { selector: '[data-tone]' })).toBeTruthy();
     expect(within(posted).getByText('Northwind channel')).toBeTruthy();
-    expect(within(posted).getByText('Winter offer')).toBeTruthy();
     expect(posted.querySelector('time')?.getAttribute('datetime')).toBe(new Date('2026-11-20T10:05:00').toISOString());
     expect(within(posted).getByRole('link', { name: 'View post' }).getAttribute('href')).toBe('https://youtu.be/abc');
     expect(screen.getByText('1–6 of 6')).toBeTruthy();
@@ -86,15 +84,14 @@ describe('the posts table', () => {
     expect(tab(/^All/).textContent).toBe('All2');
   });
 
-  it('filters by platform, account and campaign', () => {
+  it('filters by platform and account, and has no campaign filter', () => {
     show();
     fireEvent.change(screen.getByLabelText('Platform'), { target: { value: 'instagram' } });
     expect(titles()).toEqual(['Price list, Instagram', 'Open day, Instagram']);
     // Only that platform's accounts are offered next.
     expect(within(screen.getByLabelText('Account')).getAllByRole('option').map((o) => o.textContent)).toEqual(['All accounts', '@northwind.studio']);
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    fireEvent.change(screen.getByLabelText('Campaign'), { target: { value: 'c1' } });
-    expect(titles()).toEqual(['Five tips for a brighter smile, YouTube']);
+    expect(screen.queryByLabelText('Campaign')).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: 'Campaign' })).toBeNull();
   });
 
   it('filters by date and time, from and to', () => {
@@ -246,19 +243,6 @@ describe('what was posted', () => {
   });
 });
 
-describe('posts and campaigns', () => {
-  it('puts the picked posts in a campaign, or takes them out', () => {
-    const onSetCampaign = vi.fn();
-    render(<PostsTable content={CONTENT} accounts={ACCOUNTS} campaigns={CAMPAIGNS} now={() => NOW} {...fns} onSetCampaign={onSetCampaign} />);
-    fireEvent.click(screen.getByLabelText('Select Open day (Instagram)'));
-    fireEvent.click(screen.getByLabelText('Select Team photo (No account)'));
-    fireEvent.change(screen.getByLabelText('Put the selected posts in a campaign'), { target: { value: 'c1' } });
-    expect(onSetCampaign).toHaveBeenLastCalledWith([CONTENT[2], CONTENT[3]], 'c1');
-    fireEvent.change(screen.getByLabelText('Put the selected posts in a campaign'), { target: { value: '__none__' } });
-    expect(onSetCampaign).toHaveBeenLastCalledWith([CONTENT[2], CONTENT[3]], null);
-  });
-});
-
 describe('several posts at once', () => {
   it('tries the failed ones among the picked posts again', () => {
     show();
@@ -277,7 +261,7 @@ describe('several posts at once', () => {
     expect(within(ask).getByText('Delete 2 posts?')).toBeTruthy();
     fireEvent.click(within(ask).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(fns.onDelete).toHaveBeenCalledWith([CONTENT[2], CONTENT[3]]));
-    view.rerender(<PostsTable content={CONTENT.filter((p) => !['c', 'd'].includes(p.id))} accounts={ACCOUNTS} campaigns={CAMPAIGNS} now={() => NOW} {...fns} />);
+    view.rerender(<PostsTable content={CONTENT.filter((p) => !['c', 'd'].includes(p.id))} accounts={ACCOUNTS} now={() => NOW} {...fns} />);
     await waitFor(() => expect(screen.queryByText(/selected/)).toBeNull());
   });
 

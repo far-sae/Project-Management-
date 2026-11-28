@@ -102,6 +102,27 @@ describe('New invoice dialog', () => {
     ]);
   });
 
+  it('bills a service in the service’s own currency', async () => {
+    const service = { accountId: 'acc-1', name: 'Paid ads', amount: 500, billingMonth: '2026-11', monthly: true, currency: 'USD' };
+    inRouter(<NewInvoiceDialog open onOpenChange={() => {}} companyId="co1" service={service} />);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create invoice' }));
+    await waitFor(() => expect(calls('billing/new1/save')).toHaveLength(1));
+    expect(calls('billing/new1/save')[0]![1]).toMatchObject({ currency: 'USD', lines: [{ description: 'Paid ads, November 2026', rate: '500.00' }] });
+  });
+
+  it('leaves the price out, and says so, when invoices cannot be in the service’s currency', async () => {
+    const service = { accountId: 'acc-1', name: 'Tokyo ads', amount: 90000, billingMonth: null, monthly: false, currency: 'JPY' };
+    inRouter(<NewInvoiceDialog open onOpenChange={() => {}} companyId="co1" service={service} />);
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText(/without a price, because invoices can.t be in JPY/)).toBeTruthy();
+    fireEvent.click(dialog.getByRole('button', { name: 'Create invoice' }));
+    await waitFor(() => expect(calls('billing/new1/save')).toHaveLength(1));
+    const sent = calls('billing/new1/save')[0]![1] as { currency: string; lines: { description: string; rate: string }[] };
+    // 90,000 yen is never written as 90,000 pounds.
+    expect(sent.lines[0]).toMatchObject({ description: 'Tokyo ads', rate: '0.00' });
+    expect(sent.currency).not.toBe('JPY');
+  });
+
   it('writes the first line of a service in plain words', () => {
     expect(serviceLine({ accountId: 'a', name: ' Website ', amount: 4000, billingMonth: null, monthly: false })).toEqual({ description: 'Website', rate: '4000.00', billingType: 'One-off' });
     expect(serviceLine({ accountId: 'a', name: 'Retainer', amount: 99.999, billingMonth: '2027-02', monthly: true })).toEqual({ description: 'Retainer, February 2027', rate: '100.00', billingType: 'Monthly' });

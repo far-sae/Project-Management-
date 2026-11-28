@@ -1,5 +1,5 @@
 // Every post of the workspace in one table: a row for each platform a post
-// went to, tabs by state, a search, filters (platform, account, campaign, and a
+// went to, tabs by state, a search, filters (platform, account, and a
 // span of date and time), sorting, pages, an export, and what can be done with
 // a post right in its row.
 import React, { useEffect, useId, useMemo, useState } from 'react';
@@ -20,13 +20,12 @@ import {
   type PostFilters, type PostRow, type PostSort, type QuickRange,
 } from '@/lib/socialPosts';
 import { cn } from '@/lib/utils';
-import type { SocialAccount, SocialCampaign, SocialContent, SocialContentStatus } from '@/types/social';
+import type { SocialAccount, SocialContent, SocialContentStatus } from '@/types/social';
 import { PLATFORMS, PLATFORM_NAME } from '../../../api/_social/shared/platforms';
 
 interface Props {
   content: SocialContent[];
   accounts: SocialAccount[];
-  campaigns: SocialCampaign[];
   onNewPost: () => void;
   /** Send failed posts again now. */
   onRetry: (items: SocialContent[]) => void | Promise<void>;
@@ -34,9 +33,7 @@ interface Props {
   onStatus: (item: SocialContent, status: SocialContentStatus) => void | Promise<void>;
   /** Remove posts from the list for good. */
   onDelete: (items: SocialContent[]) => Promise<void>;
-  /** Put posts in a campaign, or (null) take them out of theirs. */
-  onSetCampaign?: (items: SocialContent[], campaignId: string | null) => void | Promise<void>;
-  /** Opens the table on these filters (a campaign's posts, the drafts). `at` changes each time it is asked. */
+  /** Opens the table on these filters (the drafts). `at` changes each time it is asked. */
   jump?: { filters: Partial<PostFilters>; at: number } | null;
   /** The time "now", for the ready-made date spans. */
   now?: () => Date;
@@ -52,7 +49,7 @@ const ROW = 'border-b border-border/60 align-top transition-colors last:border-0
 
 const whenText = (d: Date): string => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNewPost, onRetry, onStatus, onDelete, onSetCampaign, jump = null, now = () => new Date() }) => {
+export const PostsTable: React.FC<Props> = ({ content, accounts, onNewPost, onRetry, onStatus, onDelete, jump = null, now = () => new Date() }) => {
   const id = useId();
   const [filters, setFilters] = useState<PostFilters>(() => ({ ...NO_FILTERS, ...(jump?.filters ?? {}) }));
   const [sort, setSort] = useState<PostSort>(FIRST_SORT);
@@ -63,7 +60,7 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
   /** The post whose preview is open. Kept by id, so the preview follows the post as its state changes. */
   const [previewId, setPreviewId] = useState<string | null>(null);
 
-  const rows = useMemo(() => postRows(content, accounts, campaigns), [content, accounts, campaigns]);
+  const rows = useMemo(() => postRows(content, accounts), [content, accounts]);
   const counts = useMemo(() => tabCounts(rows, filters), [rows, filters]);
   const shown = useMemo(() => sortRows(filterRows(rows, filters), sort), [rows, filters, sort]);
   const view = pageOf(shown, page);
@@ -74,7 +71,7 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
     setPage(1);
   };
 
-  // Asked from another tab ("See posts" of a campaign): start from exactly those filters.
+  // Asked from another tab ("See the drafts" on the calendar): start from exactly those filters.
   const jumpAt = jump?.at;
   useEffect(() => {
     if (!jump) return;
@@ -186,12 +183,6 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
           <option value="">All accounts</option>
           {accountChoices.map((a) => <option key={a.id} value={a.id}>{a.displayName}</option>)}
         </select>
-        {campaigns.length > 0 && (
-          <select aria-label="Campaign" className={cn(BOX, 'max-w-[14rem]')} value={filters.campaignId} onChange={(e) => change({ campaignId: e.target.value })}>
-            <option value="">All campaigns</option>
-            {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        )}
         <select
           aria-label="When" className={BOX} value={span}
           onChange={(e) => { if (e.target.value !== 'custom') change(quickRange(e.target.value as QuickRange, now())); }}
@@ -217,16 +208,6 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
           <span className="font-medium">{picked.size} selected</span>
           {pickedFailed.length > 0 && (
             <Button size="sm" variant="outline" onClick={() => void onRetry(pickedFailed)}><RotateCcw aria-hidden />Try {pickedFailed.length === 1 ? 'it' : `${pickedFailed.length}`} again</Button>
-          )}
-          {onSetCampaign && campaigns.length > 0 && (
-            <select
-              aria-label="Put the selected posts in a campaign" className={cn(BOX, 'max-w-[14rem]')} value=""
-              onChange={(e) => { if (e.target.value) void onSetCampaign(pickedPosts, e.target.value === '__none__' ? null : e.target.value); }}
-            >
-              <option value="">Add to a campaign…</option>
-              {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              <option value="__none__">No campaign</option>
-            </select>
           )}
           <Button size="sm" variant="outline" onClick={() => setToDelete(pickedPosts)}><Trash2 aria-hidden />Delete</Button>
           <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>Clear</Button>
@@ -255,7 +236,6 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
                   {head('platform', 'Platform')}
                   {head('status', 'State')}
                   {head('when', 'Date and time')}
-                  <th scope="col" className="px-3 font-medium">Campaign</th>
                   <th scope="col" className="px-3 text-right font-medium"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -287,9 +267,6 @@ export const PostsTable: React.FC<Props> = ({ content, accounts, campaigns, onNe
                       <td className="whitespace-nowrap px-3 py-3 tabular-nums">
                         <time dateTime={row.when.toISOString()}>{whenText(row.when)}</time>
                         <p className="text-xs text-muted-foreground">{row.whenLabel}</p>
-                      </td>
-                      <td className="max-w-[12rem] px-3 py-3">
-                        {row.campaignName ? <span className="block truncate" title={row.campaignName}>{row.campaignName}</span> : <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-right">
                         <div className="inline-flex items-center gap-1">

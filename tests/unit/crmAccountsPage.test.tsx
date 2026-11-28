@@ -199,14 +199,14 @@ describe('making an invoice from a row', () => {
     await show();
     fireEvent.click(screen.getByRole('button', { name: 'Create an invoice for Elena Rossi, Digital marketing' }));
     expect(JSON.parse(screen.getByTestId('new-invoice').textContent ?? '{}')).toEqual({
-      companyId: 'co-1', service: { accountId: 'a1', name: 'Digital marketing', amount: 500, billingMonth: '2026-11', monthly: true },
+      companyId: 'co-1', service: { accountId: 'a1', name: 'Digital marketing', amount: 500, billingMonth: '2026-11', monthly: true, currency: 'USD' },
     });
   });
 
   it('bills a one-time fee for what is still owed, with no month', async () => {
     await show();
     fireEvent.click(screen.getByRole('button', { name: 'Create an invoice for Elena Rossi, Website' }));
-    expect(JSON.parse(screen.getByTestId('new-invoice').textContent ?? '{}').service).toEqual({ accountId: 'a2', name: 'Website', amount: 4000, billingMonth: null, monthly: false });
+    expect(JSON.parse(screen.getByTestId('new-invoice').textContent ?? '{}').service).toEqual({ accountId: 'a2', name: 'Website', amount: 4000, billingMonth: null, monthly: false, currency: 'USD' });
   });
 
   it('asks for a company first when the lead has none: an invoice is made out to a company', async () => {
@@ -223,5 +223,22 @@ describe('with nothing to show', () => {
     render(<MemoryRouter><CrmAccountsPage /></MemoryRouter>);
     expect(await screen.findByText(/No client has a service yet/)).toBeTruthy();
     expect(h.listAccountPayments).not.toHaveBeenCalled();
+  });
+});
+
+describe('services in more than one currency', () => {
+  it('writes each service in its own currency, and never adds two currencies together', async () => {
+    h.listClientAccounts.mockResolvedValue([
+      account('a1', 'lead-1', 'Website'),
+      account('a9', 'lead-2', 'Paid ads', { agreedAmount: 200, currency: 'GBP' }),
+    ]);
+    h.listAccountPayments.mockResolvedValue([]);
+    await show();
+    const row = rowOf('Tom Okafor, Paid ads');
+    expect(row.textContent).toContain('£200 a month');
+    expect(rowOf('Elena Rossi, Website').textContent).toContain('$500 a month');
+    expect(screen.getByText('Monthly fees').parentElement?.textContent).toContain('$500 + £200');
+    // The foot of the table as well.
+    expect(screen.getByText('Total of what is shown').closest('tr')?.textContent).toContain('$500 + £200');
   });
 });

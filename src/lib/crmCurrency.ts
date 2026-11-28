@@ -76,3 +76,31 @@ export function formatCurrency(amount: number, code: string = DEFAULT_CURRENCY, 
     return `${def.symbol}${Math.round(amount).toLocaleString()}`;
   }
 }
+
+/**
+ * The currency a service's amounts are in: its own when it was given one,
+ * otherwise the company's.
+ */
+export function accountCurrency(account: { currency?: string | null }, companyCurrency: string): string {
+  return (account.currency ?? '').trim().toUpperCase() || companyCurrency;
+}
+
+/**
+ * Amounts that may be in more than one currency, as one text: "£1,200 + $500".
+ * Two currencies are never added together. The company's own currency comes
+ * first, a currency with nothing in it is left out, and nothing at all is
+ * zero in the company's currency.
+ */
+export function formatByCurrency(
+  parts: { amount: number; currency: string }[],
+  companyCurrency: string,
+  opts: { maximumFractionDigits?: number } = {},
+): string {
+  const sums = new Map<string, number>();
+  for (const part of parts) sums.set(part.currency, (sums.get(part.currency) ?? 0) + part.amount);
+  const codes = [...sums.keys()]
+    .filter((code) => Math.abs(sums.get(code) ?? 0) > 0.004)
+    .sort((a, b) => (a === companyCurrency ? -1 : b === companyCurrency ? 1 : a.localeCompare(b)));
+  if (codes.length === 0) return formatCurrency(0, companyCurrency, opts);
+  return codes.map((code) => formatCurrency(sums.get(code) ?? 0, code, opts)).join(' + ');
+}

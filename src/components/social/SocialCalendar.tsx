@@ -7,13 +7,12 @@ import { Button } from '@/components/ui/button';
 import { WEEKDAYS, dayKey, monthGrid, monthTitle, rowsByDay, undated, weekDays, weekTitle } from '@/lib/socialInsights';
 import { STATE_LABEL, postRows, type PostRow } from '@/lib/socialPosts';
 import { cn } from '@/lib/utils';
-import type { SocialAccount, SocialCampaign, SocialContent, SocialContentStatus } from '@/types/social';
+import type { SocialAccount, SocialContent, SocialContentStatus } from '@/types/social';
 import { PLATFORMS, PLATFORM_NAME } from '../../../api/_social/shared/platforms';
 
 interface Props {
   content: SocialContent[];
   accounts: SocialAccount[];
-  campaigns: SocialCampaign[];
   onNewPost: () => void;
   /** Opens the posts that are on no day yet. */
   onSeeDrafts?: () => void;
@@ -41,14 +40,14 @@ const Chip: React.FC<{ row: PostRow }> = ({ row }) => (
   </span>
 );
 
-export const SocialCalendar: React.FC<Props> = ({ content, accounts, campaigns, onNewPost, onSeeDrafts, now = () => new Date() }) => {
+export const SocialCalendar: React.FC<Props> = ({ content, accounts, onNewPost, onSeeDrafts, now = () => new Date() }) => {
   const today = now();
   const [view, setView] = useState<'month' | 'week'>('month');
   const [cursor, setCursor] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12));
   const [platform, setPlatform] = useState('');
   const [chosen, setChosen] = useState<string>(dayKey(today));
 
-  const rows = useMemo(() => postRows(content, accounts, campaigns), [content, accounts, campaigns]);
+  const rows = useMemo(() => postRows(content, accounts), [content, accounts]);
   const shownRows = useMemo(() => (platform ? rows.filter((r) => r.platform === platform) : rows), [rows, platform]);
   const days = useMemo(() => rowsByDay(shownRows), [shownRows]);
   const noDay = useMemo(() => undated(rows), [rows]);

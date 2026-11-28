@@ -23,6 +23,7 @@ import {
   type CollectionRow, type CollectionStatus,
 } from '@/lib/crmCollections';
 import { leadName } from '@/lib/crmFlow';
+import { accountCurrency, formatByCurrency, formatCurrency } from '@/lib/crmCurrency';
 import { publicMessage } from '@/lib/publicError';
 import { addAccountPayment, listAccountPayments, listClientAccounts } from '@/services/supabase/crmHub/accounts';
 import { PAYMENT_METHODS } from '@/components/crmHub/ClientAccountsTab';
@@ -50,7 +51,18 @@ export const CrmAccountsPage: React.FC = () => {
   const { user } = useAuth();
   const { organization } = useOrganization();
   const { selected } = useSelectedWorkspace();
-  const { format: money } = useCrmCurrency();
+  // The company's currency. A service may be in another one: its row is then
+  // written in that, and a total never adds two currencies together.
+  const { code: companyCurrency } = useCrmCurrency();
+  const moneyOf = useCallback(
+    (account: CrmClientAccount) => (amount: number) => formatCurrency(amount, accountCurrency(account, companyCurrency)),
+    [companyCurrency],
+  );
+  const sumOf = useCallback(
+    (list: CollectionRow[], pick: (row: CollectionRow) => number) =>
+      formatByCurrency(list.map((row) => ({ amount: pick(row), currency: accountCurrency(row.account, companyCurrency) })), companyCurrency),
+    [companyCurrency],
+  );
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
   const workspaceId = selected?.workspaceId ?? '';
@@ -105,8 +117,8 @@ export const CrmAccountsPage: React.FC = () => {
     setInvoicing({
       companyId,
       service: account.billingType === 'monthly'
-        ? { accountId: account.id, name: account.serviceName, amount: account.agreedAmount, billingMonth: month, monthly: true }
-        : { accountId: account.id, name: account.serviceName, amount: row.collect > 0 ? row.collect : account.agreedAmount, billingMonth: null, monthly: false },
+        ? { accountId: account.id, name: account.serviceName, amount: account.agreedAmount, billingMonth: month, monthly: true, currency: accountCurrency(account, companyCurrency) }
+        : { accountId: account.id, name: account.serviceName, amount: row.collect > 0 ? row.collect : account.agreedAmount, billingMonth: null, monthly: false, currency: accountCurrency(account, companyCurrency) },
     });
   };
 
@@ -128,19 +140,19 @@ export const CrmAccountsPage: React.FC = () => {
   const yearRows = useMemo(() => shown.map((row) => yearRow(row.account, payments, year, month)), [shown, payments, year, month]);
 
   const stats: StatItem[] = [
-    { label: 'Monthly fees', value: money(totals.monthlyFees), note: 'Running this month' },
-    { label: `Charges in ${monthLabel(month, true)}`, value: money(totals.charges) },
-    { label: 'Paid for this month', value: money(totals.paid), tone: totals.paid > 0 ? 'success' : 'default' },
-    { label: 'Unpaid this month', value: money(totals.monthUnpaid), tone: totals.monthUnpaid > 0 ? 'danger' : 'default' },
-    { label: 'Unpaid from before', value: money(totals.earlierUnpaid), tone: totals.earlierUnpaid > 0 ? 'danger' : 'default' },
-    { label: 'To collect', value: money(totals.collect), tone: totals.collect > 0 ? 'danger' : 'success' },
+    { label: 'Monthly fees', value: sumOf(rows, (row) => (row.account.billingType === 'monthly' ? row.charges : 0)), note: 'Running this month' },
+    { label: `Charges in ${monthLabel(month, true)}`, value: sumOf(rows, (row) => row.charges) },
+    { label: 'Paid for this month', value: sumOf(rows, (row) => row.paid), tone: totals.paid > 0 ? 'success' : 'default' },
+    { label: 'Unpaid this month', value: sumOf(rows, (row) => row.monthUnpaid), tone: totals.monthUnpaid > 0 ? 'danger' : 'default' },
+    { label: 'Unpaid from before', value: sumOf(rows, (row) => row.earlierUnpaid), tone: totals.earlierUnpaid > 0 ? 'danger' : 'default' },
+    { label: 'To collect', value: sumOf(rows, (row) => row.collect), tone: totals.collect > 0 ? 'danger' : 'success' },
   ];
 
   const exportCsv = () => {
-    const header = ['Client', 'Company', 'Service', 'Type', 'Due', 'Charges', 'Paid for the month', 'Month unpaid', 'Earlier unpaid', 'To collect', 'Credit', 'Status'];
+    const header = ['Client', 'Company', 'Service', 'Type', 'Currency', 'Due', 'Charges', 'Paid for the month', 'Month unpaid', 'Earlier unpaid', 'To collect', 'Credit', 'Status'];
     const lines = shown.map((row) => {
       const client = clientOf(row.account);
-      return [client.name, client.company, row.account.serviceName, row.account.billingType === 'monthly' ? 'Monthly' : 'One-time', row.dueOn ?? '',
+      return [client.name, client.company, row.account.serviceName, row.account.billingType === 'monthly' ? 'Monthly' : 'One-time', accountCurrency(row.account, companyCurrency), row.dueOn ?? '',
         row.charges, row.paid, row.monthUnpaid, row.earlierUnpaid, row.collect, row.credit, row.setup ?? COLLECTION_STATUS_LABEL[row.status]].map(cell).join(',');
     });
     const blob = new Blob([[header.map(cell).join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -220,6 +232,7 @@ export const CrmAccountsPage: React.FC = () => {
               <tbody className="divide-y divide-border">
                 {shown.map((row) => {
                   const client = clientOf(row.account);
+                  const money = moneyOf(row.account);
                   return (
                     <tr key={row.account.id} aria-label={`${client.name}, ${row.account.serviceName}`}>
                       <td className="px-4 py-2">
@@ -260,11 +273,11 @@ export const CrmAccountsPage: React.FC = () => {
               <tfoot>
                 <tr className="border-t border-border bg-surface-2 text-sm font-medium">
                   <td className="px-4 py-2" colSpan={3}>Total of what is shown</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(shown.reduce((sum, row) => sum + row.charges, 0))}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(shown.reduce((sum, row) => sum + row.paid, 0))}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(shown.reduce((sum, row) => sum + row.monthUnpaid, 0))}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(shown.reduce((sum, row) => sum + row.earlierUnpaid, 0))}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(shown.reduce((sum, row) => sum + row.collect, 0))}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{sumOf(shown, (row) => row.charges)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{sumOf(shown, (row) => row.paid)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{sumOf(shown, (row) => row.monthUnpaid)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{sumOf(shown, (row) => row.earlierUnpaid)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{sumOf(shown, (row) => row.collect)}</td>
                   <td colSpan={2} />
                 </tr>
               </tfoot>
@@ -285,6 +298,7 @@ export const CrmAccountsPage: React.FC = () => {
               <tbody className="divide-y divide-border">
                 {yearRows.map((row) => {
                   const client = clientOf(row.account);
+                  const money = moneyOf(row.account);
                   return (
                     <tr key={row.account.id} aria-label={`${client.name}, ${row.account.serviceName}`}>
                       <td className="px-4 py-2">
@@ -311,7 +325,7 @@ export const CrmAccountsPage: React.FC = () => {
       )}
 
       <RecordPayment
-        row={paying} month={month} clientName={paying ? clientOf(paying.account).name : ''} money={money}
+        row={paying} month={month} clientName={paying ? clientOf(paying.account).name : ''} money={paying ? moneyOf(paying.account) : (amount: number) => formatCurrency(amount, companyCurrency)}
         onOpenChange={(open) => { if (!open) setPaying(null); }}
         onSave={async (input) => {
           if (!paying) return;

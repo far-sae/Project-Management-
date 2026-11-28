@@ -60,7 +60,7 @@ describe('buildAttendance', () => {
     expect(row('ben').daySeconds).toBe(5 * 3600);
   });
 
-  it('flags shifts that were auto clocked out after 9 hours', () => {
+  it('flags shifts that were clocked out automatically', () => {
     expect(row('cara').status).toBe('auto_out');
     expect(row('cara').daySeconds).toBe(9 * 3600);
   });
@@ -88,5 +88,62 @@ describe('summarizeAttendance', () => {
     expect(s.clockedIn).toBe(4);
     expect(s.teamSize).toBe(5);
     expect(s.totalSeconds).toBe((4 + 5 + 9 + 1) * 3600);
+  });
+});
+
+// The clock runs round the clock: a shift may start in the evening and end
+// the next morning, and it may be longer than a working day.
+describe('a shift that goes over midnight', () => {
+  const night = [{ userId: 'elena', name: 'Elena' }];
+  const row = (rows: ReturnType<typeof buildAttendance>) => rows.find((r) => r.userId === 'elena')!;
+
+  it('shows the person on the clock the next day, not as absent', () => {
+    const open = [entry('elena', local(22, 0, 10), null)];
+    const at2am = new Date(2026, 10, 11, 2, 0, 0);
+    const r = row(buildAttendance(open, night, at2am, at2am));
+    expect(r.status).toBe('on_clock');
+    expect(r.firstIn?.toISOString()).toBe(local(22, 0, 10));
+    expect(r.lastOut).toBeNull();
+    // Only the two hours after midnight belong to this day.
+    expect(r.daySeconds).toBe(2 * 3600);
+    // Tuesday and Wednesday are in the same week: four hours so far.
+    expect(r.weekSeconds).toBe(4 * 3600);
+  });
+
+  it('gives each day its own part of the hours', () => {
+    const done = [entry('elena', local(22, 0, 10), local(6, 0, 11))];
+    const later = new Date(2026, 10, 11, 15, 0, 0);
+    const first = row(buildAttendance(done, night, new Date(2026, 10, 10, 12), later));
+    const second = row(buildAttendance(done, night, new Date(2026, 10, 11, 12), later));
+    expect(first.status).toBe('out');
+    expect(first.daySeconds).toBe(2 * 3600);
+    expect(first.lastOut?.toISOString()).toBe(local(6, 0, 11));
+    expect(second.status).toBe('out');
+    expect(second.daySeconds).toBe(6 * 3600);
+    expect(second.firstIn?.toISOString()).toBe(local(22, 0, 10));
+    expect(second.weekSeconds).toBe(8 * 3600);
+  });
+
+  it('does not count a shift that ended at midnight on the next day', () => {
+    const done = [entry('elena', local(20, 0, 10), new Date(2026, 10, 11, 0, 0, 0).toISOString())];
+    const r = row(buildAttendance(done, night, new Date(2026, 10, 11, 12), new Date(2026, 10, 11, 15)));
+    expect(r.status).toBe('absent');
+    expect(r.daySeconds).toBe(0);
+    expect(r.weekSeconds).toBe(4 * 3600);
+  });
+
+  it('counts only the part of a shift that is inside the week', () => {
+    // Sunday 8 Nov 22:00 to Monday 9 Nov 03:00: three hours belong to this week.
+    const done = [entry('elena', local(22, 0, 8), local(3, 0, 9))];
+    const r = row(buildAttendance(done, night, new Date(2026, 10, 11, 12), new Date(2026, 10, 11, 15)));
+    expect(r.weekSeconds).toBe(3 * 3600);
+  });
+
+  it('marks the automatic clock-out on the day it happened', () => {
+    // Forgotten at 10:00 on Tuesday, closed for them 24 hours later.
+    const forgotten = [entry('elena', local(10, 0, 10), local(10, 0, 11), true)];
+    const later = new Date(2026, 10, 11, 15, 0, 0);
+    expect(row(buildAttendance(forgotten, night, new Date(2026, 10, 10, 12), later)).status).toBe('out');
+    expect(row(buildAttendance(forgotten, night, new Date(2026, 10, 11, 12), later)).status).toBe('auto_out');
   });
 });

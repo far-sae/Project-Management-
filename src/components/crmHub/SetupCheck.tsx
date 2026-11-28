@@ -152,7 +152,7 @@ export const SetupCheck: React.FC = () => {
                 Add two settings in Vercel, then deploy again: <code className={CODE}>APOLLO_API_KEY</code> with the API key
                 from your Apollo account, and <code className={CODE}>APOLLO_ALLOWED_ORGS</code> with this
                 value: <code className={`break-all ${CODE}`}>{organization.organizationId}</code>.
-                The Find leads page (on the Leads page) says whether it is ready.
+                The Find leads page (in the menu) says whether it is ready.
               </p>
             </div>
           </li>

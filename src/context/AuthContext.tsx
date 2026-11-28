@@ -13,7 +13,6 @@ import {
 } from '@/services/supabase/auth';
 import {
   clockOut as clockOutService,
-  clockOutKeepalive,
   getOpenEntryForUser,
 } from '@/services/supabase/timeEntries';
 import {
@@ -521,45 +520,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode; }> = ({ childre
     };
   }, [user?.userId]);
 
-  // Auto clock-out on tab/window close. If the user forgets to stop their
-  // timer before closing the browser, fire a best-effort `keepalive` PATCH so
-  // the entry isn't left open across days. A server-side sweep (migration
-  // 055) is the backstop for crashes / abrupt shutdowns where pagehide
-  // doesn't run.
-  useEffect(() => {
-    if (!user) return;
-    const orgId = user.organizationId || `local-${user.userId}`;
-    let openEntryId: string | null = null;
-    let cancelled = false;
-
-    const refresh = async () => {
-      try {
-        const open = await getOpenEntryForUser(orgId, user.userId);
-        if (cancelled) return;
-        openEntryId = open?.entryId ?? null;
-      } catch {
-        /* ignore — listener still fires if a later refresh succeeds */
-      }
-    };
-    void refresh();
-    // Cheap re-poll so a clock-in/out from another tab is reflected here.
-    const interval = setInterval(refresh, 60_000);
-
-    const onPageHide = () => {
-      if (!openEntryId) return;
-      clockOutKeepalive(orgId, openEntryId);
-    };
-    // `pagehide` fires for closes + mobile background tabs; `beforeunload`
-    // gives a second chance on desktop browsers that fire it earlier.
-    window.addEventListener('pagehide', onPageHide);
-    window.addEventListener('beforeunload', onPageHide);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      window.removeEventListener('pagehide', onPageHide);
-      window.removeEventListener('beforeunload', onPageHide);
-    };
-  }, [user]);
+  // Closing the tab, refreshing the page or a sleeping laptop does NOT clock a
+  // person out: the clock runs until they clock out (or sign out). A shift
+  // nobody clocked out of is closed by the database after 24 hours
+  // (migration 218).
 
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {
     setError(null);

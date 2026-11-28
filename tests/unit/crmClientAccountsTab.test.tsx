@@ -52,7 +52,7 @@ const state = {
 };
 
 const show = async () => {
-  render(<ClientAccountsTab organizationId="org-1" workspaceId="ws-1" contactId="lead-1" projects={[]} />);
+  render(<ClientAccountsTab organizationId="org-1" workspaceId="ws-1" contactId="lead-1" />);
   await waitFor(() => expect(screen.queryByLabelText('Loading accounts')).toBeNull());
 };
 /** The amount under one label of the totals at the top. */
@@ -217,5 +217,79 @@ describe('changing and removing', () => {
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete payment' }));
     await waitFor(() => expect(h.toast.error).toHaveBeenCalled());
     expect(String(h.toast.error.mock.calls[0][0])).not.toMatch(/row-level|crm_account/);
+  });
+});
+
+describe('the service window', () => {
+  const openNew = async () => {
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'Add service' }));
+    return screen.getByRole('dialog', { name: 'Add service' });
+  };
+  const fill = (dialog: HTMLElement) => {
+    fireEvent.change(within(dialog).getByLabelText('Service'), { target: { value: 'Paid ads' } });
+    fireEvent.change(within(dialog).getByLabelText('Monthly amount'), { target: { value: '300' } });
+  };
+
+  it('does not ask for a project', async () => {
+    const dialog = await openNew();
+    expect(within(dialog).queryByLabelText('Linked project')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/linked project/i);
+  });
+
+  it('starts in the company’s currency, and saves nothing about it when that is kept', async () => {
+    const dialog = await openNew();
+    expect(within(dialog).getByRole('combobox', { name: 'Currency' }).textContent).toContain('GBP');
+    fill(dialog);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.createClientAccount).toHaveBeenCalledTimes(1));
+    const sent = h.createClientAccount.mock.calls[0][0] as Record<string, unknown>;
+    expect(sent).toMatchObject({ serviceName: 'Paid ads', agreedAmount: 300, projectId: null });
+    expect(Object.keys(sent)).not.toContain('currency');
+  });
+
+  it('keeps another currency when one is chosen', async () => {
+    const dialog = await openNew();
+    fill(dialog);
+    await choose('Currency', 'USD');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.createClientAccount).toHaveBeenCalledWith(expect.objectContaining({ serviceName: 'Paid ads', currency: 'USD' })));
+  });
+
+  it('opens a service on its own currency, and leaves the project it had alone', async () => {
+    state.accounts = [account({ currency: 'USD', projectId: 'p1' })];
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Website care' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit service' });
+    expect(within(dialog).getByRole('combobox', { name: 'Currency' }).textContent).toContain('USD');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.updateClientAccount).toHaveBeenCalledTimes(1));
+    const sent = h.updateClientAccount.mock.calls[0][1] as Record<string, unknown>;
+    expect(sent.projectId).toBe('p1');
+    // Unchanged, so it is not sent again.
+    expect(Object.keys(sent)).not.toContain('currency');
+  });
+});
+
+describe('a service in another currency', () => {
+  beforeEach(() => {
+    state.accounts = [account(), account({ id: 'a2', serviceName: 'Paid ads', currency: 'USD', agreedAmount: 200 })];
+    state.payments = [payment('p1', '2026-03-10', 100), payment('p9', '2026-04-01', 50, { accountId: 'a2' })];
+  });
+
+  it('writes its own amounts in its own currency', async () => {
+    await show();
+    const list = screen.getByRole('list', { name: /Payments for Paid ads/ });
+    expect(list.textContent).toContain('$50');
+    expect(screen.getByText('$200/month')).toBeTruthy();
+    expect(screen.getByText('£100/month')).toBeTruthy();
+  });
+
+  it('never adds two currencies together in the totals', async () => {
+    await show();
+    // Website care: 12 × £100, £100 paid. Paid ads: 12 × $200, $50 paid.
+    expect(total('Agreed')).toContain('£1,200 + $2,400');
+    expect(total('Paid')).toContain('£100 + $50');
+    expect(total('Outstanding')).toContain('£1,100 + $2,350');
   });
 });

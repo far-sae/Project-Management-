@@ -9,7 +9,7 @@ import { useCrmCompanies, useCrmDeals } from '@/hooks/useCrmHub';
 import { useSignroom } from '@/hooks/useSignroom';
 import { formatCurrency } from '@/lib/crmCurrency';
 import { dealCurrency } from '@/lib/crmDealMoney';
-import { dealFirstLine, defaultInvoiceCurrency, emptyLine, errorSentence } from '@/lib/signroom/billing';
+import { INVOICE_CURRENCIES, dealFirstLine, defaultInvoiceCurrency, emptyLine, errorSentence } from '@/lib/signroom/billing';
 import { clientForCompany } from '@/services/signroom/clients';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -48,6 +48,8 @@ export interface InvoiceService {
   /** The month it bills ("2026-09"), or null for a one-time fee. */
   billingMonth: string | null;
   monthly: boolean;
+  /** The currency the amount is in. Left out: the company's own. */
+  currency?: string | null;
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -62,6 +64,16 @@ export function serviceLine(service: InvoiceService): { description: string; rat
     rate: amount.toFixed(2),
     billingType: service.monthly ? 'Monthly' : 'One-off',
   };
+}
+
+/**
+ * The currency a service is billed in, when it has one of its own that an
+ * invoice cannot be in (invoices know fewer currencies than services). Its
+ * amount is then left out: a number is never moved to another currency.
+ */
+export function unusableServiceCurrency(service: InvoiceService | undefined): string | null {
+  const code = (service?.currency ?? '').trim().toUpperCase();
+  return code && !INVOICE_CURRENCIES.includes(code) ? code : null;
 }
 
 /**
@@ -109,6 +121,9 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
   const dealMoney = (d: { value: number; currency: string | null }) =>
     formatCurrency(d.value, dealCurrency(d, companyCurrency), { maximumFractionDigits: 2 });
 
+  /** Set when the service's amount is in a currency an invoice cannot be in. */
+  const noPriceIn = unusableServiceCurrency(service);
+
   const chooseCompany = (next: string) => {
     setCompany(next);
     if (chosenDeal && chosenDeal.companyId !== next) setDeal('');
@@ -128,8 +143,9 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
         try {
           invoice = await client.call<Invoice>(`billing/${invoice.id}/save`, {
             revision: invoice.revision,
-            lines: [{ ...emptyLine(), ...serviceLine(service) }],
-            currency: defaultInvoiceCurrency(customer.account?.currency, companyCurrency, invoice.currency),
+            lines: [{ ...emptyLine(), ...serviceLine(service), ...(noPriceIn ? { rate: '0.00' } : {}) }],
+            // The amount is in the service's currency, so the invoice is too.
+            currency: defaultInvoiceCurrency((noPriceIn ? null : service.currency) || customer.account?.currency, companyCurrency, invoice.currency),
             issueDate: invoice.issueDate,
             dueDate: invoice.dueDate,
             taxPercent: '0',
@@ -212,6 +228,12 @@ export const NewInvoiceDialog: React.FC<NewInvoiceDialogProps> = ({ open, onOpen
                 <p className="text-xs text-muted-foreground">This company has no deals yet.</p>
               )}
             </div>
+
+            {service && noPriceIn && (
+              <p className="rounded-md border border-border p-3 text-xs text-muted-foreground">
+                Adds “{service.name}” without a price, because invoices can&apos;t be in {noPriceIn}. You set the price and currency next.
+              </p>
+            )}
 
             {chosenDeal && dealStart && (
               <div className="flex flex-col gap-1.5 rounded-md border border-border p-3">

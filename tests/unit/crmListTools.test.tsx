@@ -194,14 +194,12 @@ describe('Leads page: list tools', () => {
     }
   });
 
-  it('offers "Find leads" to the owner and admins only: it spends credits', () => {
-    show();
-    expect(screen.queryByRole('link', { name: 'Find leads' })).toBeNull();
-    cleanup();
+  it('has no "Find leads" inside the CRM: that is its own page in the menu', () => {
     h.isAdmin = true;
     try {
       show();
-      expect(screen.getByRole('link', { name: 'Find leads' }).getAttribute('href')).toBe('/crm/find-leads');
+      expect(screen.queryByRole('link', { name: 'Find leads' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Find leads' })).toBeNull();
     } finally {
       h.isAdmin = false;
     }

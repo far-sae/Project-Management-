@@ -39,6 +39,8 @@
 --   215_claude_connector.sql
 --   216_email_mailboxes_take_turns.sql
 --   217_email_reply_texts.sql
+--   218_clock_runs_24_hours.sql
+--   219_service_currency.sql
 -- ============================================================================
 
 -- ▼▼▼ 188_crm_calls.sql ▼▼▼
@@ -3669,3 +3671,108 @@ grant execute on function public.save_reply_text(uuid, text, text, text) to serv
 notify pgrst, 'reload schema';
 
 -- ▲▲▲ 217_email_reply_texts.sql ▲▲▲
+
+-- ▼▼▼ 218_clock_runs_24_hours.sql ▼▼▼
+
+-- 218_clock_runs_24_hours.sql
+-- The clock runs until the person clocks out.
+--
+-- Before this, a shift was closed for the person after 9 hours (migrations
+-- 087 and 177), so nobody could be on the clock for a long day or a night
+-- shift, and the app also clocked people out when they closed the tab (that
+-- part is removed in the app itself).
+--
+-- Now a shift is closed for the person only when nobody clocked out for a
+-- whole day (24 hours): that is a forgotten clock, not a shift. The job still
+-- runs every 5 minutes.
+--
+-- Safe to run more than once.
+
+create or replace function public.close_stale_time_entries(
+  p_cutoff_hours int default 24
+)
+returns table (entry_id uuid, organization_id uuid, user_id uuid, hours_open numeric)
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+begin
+  return query
+  update public.time_entries t
+     set clocked_out_at = t.clocked_in_at + make_interval(hours => p_cutoff_hours),
+         auto_closed    = true,
+         updated_at     = now()
+   where t.clocked_out_at is null
+     and t.clocked_in_at < now() - make_interval(hours => p_cutoff_hours)
+   returning
+     t.entry_id,
+     t.organization_id,
+     t.user_id,
+     round(extract(epoch from (now() - t.clocked_in_at)) / 3600.0, 2) as hours_open;
+end;
+$$;
+
+comment on function public.close_stale_time_entries(int) is
+  'Closes a time entry nobody clocked out of for the cutoff (default 24 hours): clocked_out_at becomes clocked_in_at + cutoff and auto_closed = true. Runs every 5 minutes.';
+
+grant execute on function public.close_stale_time_entries(int) to authenticated;
+
+-- The job that runs it: same name and rhythm as before, now with 24 hours.
+-- Without pg_cron there is no job to change, and nothing closes a shift.
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid)
+      from cron.job
+      where jobname in ('close_stale_time_entries_hourly', 'close-stale-time-entries');
+
+    perform cron.schedule(
+      'close-stale-time-entries',
+      '*/5 * * * *',
+      $cron$ select public.close_stale_time_entries(24); $cron$
+    );
+  end if;
+end $$;
+
+-- ▲▲▲ 218_clock_runs_24_hours.sql ▲▲▲
+
+-- ▼▼▼ 219_service_currency.sql ▼▼▼
+
+-- 219_service_currency.sql
+-- A client service can be in its own currency.
+--
+-- Until now every service of a lead (CRM → a lead → Accounts → Add service)
+-- was in the company's one currency. A client who pays in dollars while the
+-- company works in pounds could not be written down correctly.
+--
+-- `currency` is the three-letter code the service's amounts are in ("USD").
+-- Empty means the company's own currency, so every service that exists today
+-- stays exactly as it is. Payments on a service are in the service's
+-- currency: nothing is converted, and the app never adds two currencies
+-- together.
+--
+-- Safe to run more than once.
+
+alter table public.crm_client_accounts
+  add column if not exists currency text;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'crm_client_accounts_currency_code'
+      and conrelid = 'public.crm_client_accounts'::regclass
+  ) then
+    alter table public.crm_client_accounts
+      add constraint crm_client_accounts_currency_code
+      check (currency is null or currency ~ '^[A-Z]{3}$');
+  end if;
+end $$;
+
+comment on column public.crm_client_accounts.currency is
+  'The currency the amounts of this service are in (ISO code, "USD"). Null: the organisation''s own currency.';
+
+-- The API learns the new column at once (otherwise a save says the column is unknown for a minute).
+notify pgrst, 'reload schema';
+
+-- ▲▲▲ 219_service_currency.sql ▲▲▲

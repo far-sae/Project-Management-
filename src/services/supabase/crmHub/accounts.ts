@@ -6,7 +6,7 @@ type AccountRow = {
   project_id: string | null; service_name: string; billing_type: ClientBillingType;
   agreed_amount: number | string; opening_paid: number | string; service_start: string | null;
   service_end: string | null; notes: string | null; created_at: string; updated_at: string;
-  due_day?: number | null; due_date?: string | null;
+  due_day?: number | null; due_date?: string | null; currency?: string | null;
 };
 type PaymentRow = {
   id: string; account_id: string; organization_id: string; workspace_id: string;
@@ -19,7 +19,7 @@ const mapAccount = (row: AccountRow): CrmClientAccount => ({
   contactId: row.contact_id, projectId: row.project_id, serviceName: row.service_name,
   billingType: row.billing_type, agreedAmount: Number(row.agreed_amount), openingPaid: Number(row.opening_paid),
   serviceStart: row.service_start, serviceEnd: row.service_end, notes: row.notes,
-  dueDay: row.due_day ?? null, dueDate: row.due_date ?? null,
+  dueDay: row.due_day ?? null, dueDate: row.due_date ?? null, currency: row.currency ?? null,
   createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at),
 });
 const mapPayment = (row: PaymentRow): CrmAccountPayment => ({
@@ -67,6 +67,8 @@ export interface SaveClientAccountInput {
   serviceName: string; billingType: ClientBillingType; agreedAmount: number; openingPaid: number;
   serviceStart?: string | null; serviceEnd?: string | null; notes?: string | null; createdBy?: string | null;
   dueDay?: number | null; dueDate?: string | null;
+  /** Another currency than the company's. Left out: the company's own. */
+  currency?: string | null;
 }
 
 export const createClientAccount = async (input: SaveClientAccountInput) => {
@@ -75,7 +77,7 @@ export const createClientAccount = async (input: SaveClientAccountInput) => {
     project_id: input.projectId ?? null, service_name: input.serviceName, billing_type: input.billingType,
     agreed_amount: input.agreedAmount, opening_paid: input.openingPaid, service_start: input.serviceStart ?? null,
     service_end: input.serviceEnd ?? null, notes: input.notes ?? null, created_by: input.createdBy ?? null,
-    ...given({ due_day: input.dueDay, due_date: input.dueDate }),
+    ...given({ due_day: input.dueDay, due_date: input.dueDate, currency: input.currency }),
   }).select('*').single();
   if (error) fail(error);
   return mapAccount(data as AccountRow);
@@ -107,6 +109,7 @@ export const updateClientAccount = async (
     // Sent only when the form knows them: an older form (or database) leaves them alone.
     ...(input.dueDay !== undefined ? { due_day: input.dueDay } : {}),
     ...(input.dueDate !== undefined ? { due_date: input.dueDate } : {}),
+    ...(input.currency !== undefined ? { currency: input.currency } : {}),
   }).eq('id', id).select('*').single();
   if (error) fail(error);
   return mapAccount(data as AccountRow);

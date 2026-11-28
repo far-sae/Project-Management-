@@ -365,7 +365,8 @@ const router = createBrowserRouter(
                 { path: 'dashboard',    element: lazyAppRoute(<CrmDashboardPage />) },
                 { path: 'reports',      element: lazyAppRoute(<CrmReportsPage />) },
                 { path: 'contacts',     element: lazyAppRoute(<CrmContactsPage />) },
-                { path: 'find-leads',   element: lazyAppRoute(<CrmFindLeadsPage />) },
+                // Find leads moved out of the CRM to its own place in the menu. An old link still arrives.
+                { path: 'find-leads',   element: <Navigate to="/find-leads" replace /> },
                 { path: 'contacts/:id', element: lazyAppRoute(<CrmContactDetailPage />) },
                 { path: 'companies',    element: lazyAppRoute(<CrmCompaniesPage />) },
                 { path: 'companies/:id', element: lazyAppRoute(<CrmCompanyDetailPage />) },
@@ -392,6 +393,16 @@ const router = createBrowserRouter(
                 { path: 'calendar',     element: <Navigate to="/calendar" replace /> },
                 { path: 'settings',     element: lazyAppRoute(<CrmSettingsPage />) },
               ],
+            },
+            {
+              // Searching for new people to reach: its own page in the sidebar, before the CRM.
+              // The page itself is for the owner and admins (it spends credits) and says so.
+              path: '/find-leads',
+              element: (
+                <ProtectedRoute requireSubscription requireFeature="crm" requirePage="crm">
+                  {lazyAppRoute(<CrmFindLeadsPage />)}
+                </ProtectedRoute>
+              ),
             },
             {
               // Calls placed from the CRM: its own page in the sidebar, under the CRM's permission.
