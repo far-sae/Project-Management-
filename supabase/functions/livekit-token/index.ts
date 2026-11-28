@@ -20,6 +20,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
+import { workspaceIdFromCrmRoom } from "../_shared/callInvite.ts";
 import {
   guestsToEvict,
   isDmMember,
@@ -162,6 +163,7 @@ async function evictLeftoverGuests(
  * Validate the requested room name against a fixed allowlist of shapes:
  *   project:<uuid-ish>
  *   dm:<sortedUserA>__<sortedUserB>
+ *   crm:<workspaceId>:<meetingId>   (a meeting with a lead or a client)
  *
  * Anything else is rejected — we don't want a compromised client to mint a
  * token for an attacker-controlled room and grief other tenants.
@@ -178,6 +180,8 @@ function isValidRoomName(name: string): boolean {
     const id = name.slice("dm:".length);
     return /^[A-Za-z0-9_:-]+__[A-Za-z0-9_:-]+$/.test(id);
   }
+  // A meeting with a lead: crm:<workspaceId>:<meetingId>.
+  if (name.startsWith("crm:")) return workspaceIdFromCrmRoom(name) !== null;
   return false;
 }
 
@@ -272,6 +276,24 @@ serve(async (req) => {
     }
     if (canAccess !== true) {
       return json({ error: "You don't have access to this project's calls" }, 403);
+    }
+  } else if (roomName.startsWith("crm:")) {
+    // A meeting with a lead: the people of that workspace.
+    const workspaceId = workspaceIdFromCrmRoom(roomName);
+    if (!workspaceId) return json({ error: "Invalid roomName" }, 400);
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: inWorkspace, error: workspaceError } = await userClient.rpc(
+      "can_access_workspace",
+      { p_workspace: workspaceId },
+    );
+    if (workspaceError) {
+      console.error("livekit-token: workspace check failed", workspaceError);
+      return json({ error: "Could not check access to this meeting" }, 500);
+    }
+    if (inWorkspace !== true) {
+      return json({ error: "You don't have access to this meeting" }, 403);
     }
   } else if (!isDmMember(roomName, user.id)) {
     return json({ error: "You're not part of this call" }, 403);

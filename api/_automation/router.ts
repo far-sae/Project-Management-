@@ -8,6 +8,7 @@ import { ask } from "./assistant.js";
 import { createAutomation, getAutomation, listAutomations, patchAutomation, setStatus, testAgent, testAutomation, testDraft } from "./automations.js";
 import type { SignedInUser } from "./context.js";
 import type { AutoDeps } from "./deps.js";
+import { sendMeetingInvite } from "./meetings.js";
 import { FAILED_MESSAGE, NOT_FOUND_MESSAGE, setupSentence, TABLES_MISSING_MESSAGE } from "./messages.js";
 import { getOverview, setUp } from "./overview.js";
 import { getRules, listPeople, listWorkspaces, saveRules } from "./rules.js";
@@ -86,6 +87,12 @@ async function userRoute(deps: AutoDeps, r: RouteRequest, user: SignedInUser): P
     if (n === 2 && get) return ok(await getRun(deps, user, second));
     if (n === 3 && post && third === "stop") return ok(await stop(deps, user, second));
     if (n === 3 && post && third === "replied") return ok(await replied(deps, user, second, body));
+    return notFound();
+  }
+
+  // The link of a meeting with a lead, emailed to that lead.
+  if (head === "meetings") {
+    if (n === 3 && post && third === "invite") return ok(await sendMeetingInvite(deps, user, second, body));
     return notFound();
   }
 

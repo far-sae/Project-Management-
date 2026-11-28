@@ -243,6 +243,23 @@ export type NewDeal = { id: string; ownerId: string | null; stageId: string; com
 
 export type DealPatch = { stageId?: string; status?: "open" | "won" | "lost"; probability?: number; closedAt?: string | null; lostReason?: string | null; projectId?: string };
 
+/** A meeting with a lead (crm_meetings, migration 221): what the invite email needs of it. */
+export type StoredMeeting = {
+  id: string;
+  workspaceId: string;
+  organizationId: string;
+  contactId: string | null;
+  title: string;
+  /** ISO time. */
+  startsAt: string;
+  durationMinutes: number;
+  /** The link a guest opens. Made by the call server. */
+  joinUrl: string;
+  invitedEmail: string | null;
+  invitedAt: string | null;
+  cancelledAt: string | null;
+};
+
 export type NewActivity = { type: string; description: string; contactId: string | null; companyId: string | null; dealId: string | null; metadata: Record<string, unknown>; /** The person who logged it; none for an agent. */ userId?: string | null };
 
 export type NewFollowUp = { ownerId: string | null; contactId: string; companyId: string | null; dealId: string | null; title: string; description: string; dueDate: string };
@@ -416,6 +433,10 @@ export interface AutoStore {
   addNote(lead: Lead, body: string): Promise<void>;
   /** One crm_activities row. The caller sets metadata.automation. */
   logActivity(lead: Lead, a: NewActivity): Promise<void>;
+  /** A meeting of this workspace, or null. */
+  getMeeting(workspaceId: string, id: string): Promise<StoredMeeting | null>;
+  /** Writes down that the invite went out, and to which address. */
+  markMeetingInvited(workspaceId: string, id: string, email: string, at: string): Promise<void>;
   /** Changes the lead. A status change is marked as the server's own first. */
   updateLead(lead: Lead, patch: LeadPatch): Promise<void>;
   /** A follow-up (crm_tasks) for a person, as the app writes one without a project. */

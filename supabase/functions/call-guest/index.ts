@@ -23,11 +23,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import { create, getNumericDate } from "https://deno.land/x/djwt@v3.0.2/mod.ts";
 import {
+  crmMeetingRoomName,
   INVITE_TTL_SECONDS,
   isValidRoomName,
+  meetingInviteExpiry,
+  meetingLabel,
   normalizeGuestName,
   signInvite,
   verifyInvite,
+  workspaceIdFromCrmRoom,
 } from "../_shared/callInvite.ts";
 import {
   canManageGuests,
@@ -192,7 +196,7 @@ serve(async (req) => {
     }
   }
 
-  if (action !== "create-invite" && action !== "admit" && action !== "deny") {
+  if (action !== "create-invite" && action !== "create-meeting-invite" && action !== "admit" && action !== "deny") {
     return json({ error: "Unknown action" }, 400);
   }
 
@@ -210,7 +214,19 @@ serve(async (req) => {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const roomName = typeof body.roomName === "string" ? body.roomName.trim() : "";
+  // A meeting with a lead is not asked for by room: the room is made here, for
+  // the workspace, so a caller can never name a room that already exists.
+  let meetingExp: number | null = null;
+  let roomName = typeof body.roomName === "string" ? body.roomName.trim() : "";
+  if (action === "create-meeting-invite") {
+    const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId.trim() : "";
+    const startsAt = typeof body.startsAt === "string" ? Date.parse(body.startsAt) : Number.NaN;
+    meetingExp = meetingInviteExpiry(startsAt, Date.now());
+    if (meetingExp === null) {
+      return json({ error: "Choose a time for the meeting that has not passed", code: "BAD_TIME" }, 400);
+    }
+    roomName = crmMeetingRoomName(workspaceId, crypto.randomUUID());
+  }
   if (!roomName || !isValidRoomName(roomName)) {
     return json({ error: "Invalid roomName" }, 400);
   }
@@ -246,6 +262,38 @@ serve(async (req) => {
       return isDmMember(roomName, userId)
         ? { ok: true, label: `Call with ${inviterName}` }
         : forbidden;
+    }
+    // A meeting with a lead: the people of that workspace, never a viewer.
+    if (roomName.startsWith("crm:")) {
+      const workspaceId = workspaceIdFromCrmRoom(roomName);
+      if (!workspaceId) {
+        return { ok: false, status: 400, body: { error: "Invalid roomName" } };
+      }
+      const failedCheck: AccessResult = { ok: false, status: 500, body: { error: "Access check failed" } };
+      const inWorkspace = await userClient.rpc("can_access_workspace", { p_workspace: workspaceId });
+      if (inWorkspace.error) {
+        console.error("call-guest can_access_workspace error:", inWorkspace.error.message);
+        return failedCheck;
+      }
+      if (inWorkspace.data !== true) return forbidden;
+      const workspace = await userClient
+        .from("workspaces")
+        .select("organization_id")
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+      if (workspace.error) {
+        console.error("call-guest workspaces lookup error:", workspace.error.message);
+        return failedCheck;
+      }
+      const orgId = (workspace.data as { organization_id: string | null } | null)?.organization_id;
+      if (!orgId) return forbidden;
+      const viewer = await userClient.rpc("is_org_viewer", { p_org: orgId });
+      if (viewer.error) {
+        console.error("call-guest is_org_viewer error:", viewer.error.message);
+        return failedCheck;
+      }
+      if (viewer.data === true) return forbidden;
+      return { ok: true, label: "Meeting" };
     }
     const projectId = projectIdFromRoom(roomName);
     if (!projectId) {
@@ -306,6 +354,26 @@ serve(async (req) => {
   const access = await checkAccess();
   if (!access.ok) {
     return json(access.body, access.status);
+  }
+
+  // A meeting with a lead: the link works until a day after the meeting
+  // starts, however far ahead it is sent. The room's name goes back too, so
+  // the host can join the same room when the time comes.
+  if (action === "create-meeting-invite" && meetingExp !== null) {
+    try {
+      const token = await signInvite(
+        { room: roomName, exp: meetingExp, label: meetingLabel(body.label), inviterName },
+        inviteSecret,
+      );
+      return json({
+        url: JOIN_URL_BASE + token,
+        expiresAt: new Date(meetingExp * 1000).toISOString(),
+        roomName,
+      });
+    } catch (err) {
+      console.error("call-guest create-meeting-invite sign error:", err);
+      return json({ error: "Could not create invite" }, 500);
+    }
   }
 
   if (action === "create-invite") {

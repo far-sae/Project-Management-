@@ -5,6 +5,11 @@ import {
   isValidRoomName,
   normalizeGuestName,
   INVITE_TTL_SECONDS,
+  MEETING_AHEAD_DAYS,
+  crmMeetingRoomName,
+  meetingInviteExpiry,
+  meetingLabel,
+  workspaceIdFromCrmRoom,
   type InvitePayload,
 } from '@/supabase-functions/_shared/callInvite.ts';
 
@@ -80,5 +85,60 @@ describe('callInvite', () => {
     expect(normalizeGuestName('   ')).toBeNull();
     expect(normalizeGuestName(42)).toBeNull();
     expect(normalizeGuestName('x'.repeat(200))!.length).toBe(60);
+  });
+});
+
+// A meeting with a lead or a client: its own room, and a link that still
+// works on the day of the meeting, however far ahead it was sent.
+describe('a meeting with a lead', () => {
+  const WS = '0a000000-0000-4000-8000-000000000001';
+  const MEETING = '0b000000-0000-4000-8000-000000000002';
+  const NOW = Date.UTC(2026, 10, 28, 12, 0, 0);
+  const HOUR = 3600_000;
+
+  it('has a room of its own, named after the workspace and the meeting', () => {
+    const room = crmMeetingRoomName(WS, MEETING);
+    expect(room).toBe(`crm:${WS}:${MEETING}`);
+    expect(isValidRoomName(room)).toBe(true);
+    expect(workspaceIdFromCrmRoom(room)).toBe(WS);
+  });
+
+  it('takes nothing but two ids as a room name', () => {
+    for (const bad of [`crm:${WS}`, `crm:${WS}:`, `crm::${MEETING}`, `crm:${WS}:${MEETING}:more`, `crm:not an id:${MEETING}`, `crm:${WS}:../../x`, 'crm:']) {
+      expect(isValidRoomName(bad), bad).toBe(false);
+      expect(workspaceIdFromCrmRoom(bad), bad).toBeNull();
+    }
+    expect(workspaceIdFromCrmRoom('project:abc')).toBeNull();
+    expect(workspaceIdFromCrmRoom(`dm:a__b`)).toBeNull();
+  });
+
+  it('keeps the link working until a day after the meeting starts', () => {
+    const inAWeek = NOW + 7 * 24 * HOUR;
+    expect(meetingInviteExpiry(inAWeek, NOW)).toBe(Math.floor((inAWeek + 24 * HOUR) / 1000));
+    // A meeting that starts right now, or started a few minutes ago.
+    expect(meetingInviteExpiry(NOW, NOW)).toBe(Math.floor((NOW + 24 * HOUR) / 1000));
+    expect(meetingInviteExpiry(NOW - 10 * 60_000, NOW)).toBe(Math.floor((NOW - 10 * 60_000 + 24 * HOUR) / 1000));
+  });
+
+  it('makes no link for a time that is long past, too far ahead, or not a time', () => {
+    expect(meetingInviteExpiry(NOW - 2 * HOUR, NOW)).toBeNull();
+    expect(meetingInviteExpiry(NOW + (MEETING_AHEAD_DAYS + 1) * 24 * HOUR, NOW)).toBeNull();
+    expect(meetingInviteExpiry(Number.NaN, NOW)).toBeNull();
+    expect(meetingInviteExpiry(NOW + MEETING_AHEAD_DAYS * 24 * HOUR, NOW)).not.toBeNull();
+  });
+
+  it('a link for a meeting next month verifies on the day, and not after it has run out', async () => {
+    const start = NOW + 30 * 24 * HOUR;
+    const exp = meetingInviteExpiry(start, NOW) as number;
+    const token = await signInvite({ room: crmMeetingRoomName(WS, MEETING), exp, label: 'Meeting with Northwind Studio', inviterName: 'Sam' }, SECRET);
+    expect((await verifyInvite(token, SECRET, Math.floor(start / 1000)))?.room).toBe(`crm:${WS}:${MEETING}`);
+    expect(await verifyInvite(token, SECRET, exp + 1)).toBeNull();
+  });
+
+  it('names the meeting in one short line', () => {
+    expect(meetingLabel('  Meeting with\nNorthwind   Studio ')).toBe('Meeting with Northwind Studio');
+    expect(meetingLabel('x'.repeat(300))).toHaveLength(120);
+    expect(meetingLabel('')).toBe('Meeting');
+    expect(meetingLabel(42)).toBe('Meeting');
   });
 });

@@ -770,6 +770,22 @@ export function supabaseStore(sb: SupabaseClient): AutoStore {
       if (r.error) throw new StoreError(r.error.message);
     },
 
+    async getMeeting(workspaceId, id) {
+      const row = must(await sb.from("crm_meetings").select("*").eq("workspace_id", workspaceId).eq("id", id).maybeSingle()) as Row | null;
+      if (!row) return null;
+      return {
+        id: String(row.id), workspaceId: String(row.workspace_id), organizationId: String(row.organization_id),
+        contactId: row.contact_id ? String(row.contact_id) : null, title: String(row.title ?? ""), startsAt: new Date(String(row.starts_at)).toISOString(),
+        durationMinutes: Number(row.duration_minutes) || 30, joinUrl: String(row.join_url ?? ""),
+        invitedEmail: row.invited_email ? String(row.invited_email) : null, invitedAt: row.invited_at ? String(row.invited_at) : null,
+        cancelledAt: row.cancelled_at ? String(row.cancelled_at) : null,
+      };
+    },
+
+    async markMeetingInvited(workspaceId, id, email, at) {
+      must(await sb.from("crm_meetings").update({ invited_email: email, invited_at: at }).eq("workspace_id", workspaceId).eq("id", id));
+    },
+
     async logActivity(lead, a) {
       const r = await sb.from("crm_activities").insert({
         organization_id: lead.organizationId,

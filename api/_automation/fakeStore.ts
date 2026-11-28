@@ -18,6 +18,7 @@ import type {
   Stage,
   StoredAgent,
   StoredApproval,
+  StoredMeeting,
   StoredEvent,
   StoredRules,
   StoredRun,
@@ -55,6 +56,10 @@ export type FakeAutoStore = AutoStore & {
   seedFollowUp(f: Partial<SeededFollowUp> & { title: string }): SeededFollowUp;
   /** A lead put in with no event, as if it had been there before automation was switched on. */
   seedLead(l: Partial<Lead> & { workspaceId: string }): Lead;
+  /** A meeting with a lead, as the browser saves one. */
+  seedMeeting(m: { workspaceId: string; contactId: string | null; title: string; startsAt: string; durationMinutes: number; joinUrl: string }): StoredMeeting;
+  cancelMeeting(id: string): void;
+  meetings(): StoredMeeting[];
   /** A person (the app, an import) adds a lead: the contact trigger fires. */
   /** The address unsubscribes from the organisation's email. */
   leadUnsubscribes(organizationId: string, address: string): void;
@@ -103,6 +108,7 @@ export function fakeStore(): FakeAutoStore {
   const approvals = new Map<string, StoredApproval>();
   /** "organisation|address" of everyone who unsubscribed. */
   const suppressed = new Set<string>();
+  const meetings = new Map<string, StoredMeeting>();
   const events: EventRow[] = [];
   const usage: Array<NewUsage & { created: string }> = [];
   const leads = new Map<string, Lead>();
@@ -217,6 +223,20 @@ export function fakeStore(): FakeAutoStore {
       return company;
     },
     seedLead: (l) => clone(makeLead(l)),
+    seedMeeting(m) {
+      const workspace = tcWorkspaces.get(m.workspaceId);
+      const meeting: StoredMeeting = {
+        id: randomUUID(), workspaceId: m.workspaceId, organizationId: workspace?.organizationId ?? "", contactId: m.contactId, title: m.title,
+        startsAt: m.startsAt, durationMinutes: m.durationMinutes, joinUrl: m.joinUrl, invitedEmail: null, invitedAt: null, cancelledAt: null,
+      };
+      meetings.set(meeting.id, meeting);
+      return clone(meeting);
+    },
+    cancelMeeting(id) {
+      const meeting = meetings.get(id);
+      if (meeting) meeting.cancelledAt = now();
+    },
+    meetings: () => [...meetings.values()].map(clone),
     leadUnsubscribes(organizationId, address) {
       suppressed.add(`${organizationId}|${address.trim().toLowerCase()}`);
     },
@@ -669,6 +689,14 @@ export function fakeStore(): FakeAutoStore {
     async addNote(lead, body) {
       fail("addNote");
       notes.push({ workspaceId: lead.workspaceId, contactId: lead.id, body, userId: null, at: now() });
+    },
+    async getMeeting(workspaceId, id) {
+      const meeting = meetings.get(id);
+      return meeting && meeting.workspaceId === workspaceId ? clone(meeting) : null;
+    },
+    async markMeetingInvited(workspaceId, id, email, at) {
+      const meeting = meetings.get(id);
+      if (meeting && meeting.workspaceId === workspaceId) { meeting.invitedEmail = email; meeting.invitedAt = at; }
     },
     async logActivity(lead, a) {
       activities.push({ ...clone(a), workspaceId: lead.workspaceId, organizationId: lead.organizationId, userId: a.userId ?? null, at: now() });
