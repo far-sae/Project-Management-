@@ -220,6 +220,31 @@ describe("api/signroom entry", () => {
     expect(seen[0].raw.name).toBe("my letterhead.pdf");
   });
 
+  it("a photo of a receipt reaches the router as raw bytes too, and a body that is not a file gets the receipt's own sentence", async () => {
+    const seen: any[] = [];
+    const body = Buffer.alloc(2 * 1024 * 1024, 1);
+    const r = res();
+    await signroomHandler(deps({ status: 200, json: { found: true } }, seen))(
+      req({
+        method: "POST",
+        query: { path: "income/read-receipt" },
+        body,
+        headers: { origin: "https://app.example.com", "content-type": "application/octet-stream", "content-length": String(body.length), "x-file-name": "receipt.jpg" },
+      }),
+      r as never,
+    );
+    expect(r.statusCode).toBe(200);
+    expect(seen[0].raw.bytes.length).toBe(2 * 1024 * 1024);
+
+    const refused = res();
+    await signroomHandler(deps({ status: 200, json: {} }, []))(
+      req({ method: "POST", query: { path: "income/read-receipt" }, body: { a: 1 }, headers: { origin: "https://app.example.com" } }),
+      refused as never,
+    );
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).toEqual({ error: "Use a photo or PDF of the receipt, up to 4 MB." });
+  });
+
   it("a missing or bad X-File-Name becomes letterhead.pdf", async () => {
     for (const name of [undefined, "%E0%A4%A"]) {
       const seen: any[] = [];

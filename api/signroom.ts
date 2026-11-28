@@ -11,6 +11,7 @@ import { systemLookup } from "./_signroom/mailbox/ssrf.js";
 import { nodemailerTransport } from "./_signroom/mailbox/transport.js";
 import { FAILED_MESSAGE, OAUTH_FAILED_PATH, route as realRoute, type RouteDeps, type RouteRequest, type RouteResult } from "./_signroom/router.js";
 import { TEMPLATE_MAX_BYTES, TEMPLATE_SIZE_MESSAGE } from "./_signroom/templates.js";
+import { RECEIPT_SIZE_MESSAGE } from "./_signroom/receiptReader.js";
 import { claudeClient } from "./_signroom/aiDraft.js";
 import { readEvidenceKey } from "./_signroom/evidence.js";
 import { readJobKey } from "./_signroom/jobs.js";
@@ -253,9 +254,13 @@ export function signroomHandler(d: SignroomDeps) {
       res.status(503).json({ error: problem });
       return;
     }
-    const isUpload = req.method === "POST" && path.length === 2 && path[0] === "workspaces" && path[1] === "branding-template";
+    // Two routes take a file as raw bytes: the letterhead, and a receipt to read. Both are capped at the same size.
+    const isUpload = req.method === "POST" && path.length === 2
+      && ((path[0] === "workspaces" && path[1] === "branding-template") || (path[0] === "income" && path[1] === "read-receipt"));
+    // What a refused file is told: each of the two routes has its own sentence.
+    const uploadMessage = path[0] === "income" ? RECEIPT_SIZE_MESSAGE : TEMPLATE_SIZE_MESSAGE;
     if (isUpload) {
-      if (refuseOversize(req, res, TEMPLATE_MAX_BYTES, TEMPLATE_SIZE_MESSAGE)) return;
+      if (refuseOversize(req, res, TEMPLATE_MAX_BYTES, uploadMessage)) return;
     } else if (refuseOversize(req, res, MAX_BODY_BYTES, BODY_TOO_LARGE_MESSAGE)) return;
 
     const query: Record<string, string> = {};
@@ -274,7 +279,7 @@ export function signroomHandler(d: SignroomDeps) {
 
     if (isUpload) {
       if (!Buffer.isBuffer(req.body) || req.body.length > TEMPLATE_MAX_BYTES) {
-        res.status(400).json({ error: TEMPLATE_SIZE_MESSAGE });
+        res.status(400).json({ error: uploadMessage });
         return;
       }
       raw = { bytes: new Uint8Array(req.body), name: fileNameOf(req) };

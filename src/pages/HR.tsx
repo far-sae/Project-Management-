@@ -37,6 +37,7 @@ import { HrWorkspacePeopleContext, useHrWorkspacePeople } from '@/hooks/useHrWor
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import { Payroll } from '@/pages/Payroll';
 import { Expenses } from '@/pages/Expenses';
+import { Income } from '@/pages/Income';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -678,6 +679,9 @@ export const HR: React.FC = () => {
 
           <TabsContent value="expenses" className={TAB_PANEL}>
             {tabBody(<Expenses embedded />)}
+          </TabsContent>
+          <TabsContent value="income" className={TAB_PANEL}>
+            {tabBody(<Income embedded />)}
           </TabsContent>
         </Tabs>
       </main>

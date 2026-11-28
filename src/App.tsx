@@ -32,6 +32,7 @@ const Inbox = React.lazy(() => import('@/pages/Inbox').then((m) => ({ default: m
 const Workload = React.lazy(() => import('@/pages/Workload').then((m) => ({ default: m.Workload })));
 const TimeTracking = React.lazy(() => import('@/pages/TimeTracking').then((m) => ({ default: m.TimeTracking })));
 const ExpensesPage = React.lazy(() => import('@/pages/Expenses').then((m) => ({ default: m.Expenses })));
+const IncomePage = React.lazy(() => import('@/pages/Income').then((m) => ({ default: m.Income })));
 const HRPage = React.lazy(() => import('@/pages/HR').then((m) => ({ default: m.HR })));
 const PayrollPage = React.lazy(() => import('@/pages/Payroll').then((m) => ({ default: m.Payroll })));
 const GoogleCallback = React.lazy(() => import('@/pages/auth/GoogleCallback').then((m) => ({ default: m.GoogleCallback })));
@@ -325,6 +326,15 @@ const router = createBrowserRouter(
               element: (
                 <ProtectedRoute requireSubscription requirePage="hr">
                   {lazyAppRoute(<ExpensesPage />)}
+                </ProtectedRoute>
+              ),
+            },
+            {
+              // Money in, next to money out: what was received and what is still to come.
+              path: '/income',
+              element: (
+                <ProtectedRoute requireSubscription requirePage="hr">
+                  {lazyAppRoute(<IncomePage />)}
                 </ProtectedRoute>
               ),
             },

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "../../../../api/_signroom/errors";
 import * as guest from "../../../../api/_signroom/guest";
 import * as templates from "../../../../api/_signroom/templates";
+import * as receiptReader from "../../../../api/_signroom/receiptReader";
 import * as agreements from "../../../../api/_signroom/agreements";
 import * as agreementDocument from "../../../../api/_signroom/agreementDocument";
 import * as agreementSend from "../../../../api/_signroom/agreementSend";
@@ -245,6 +246,23 @@ describe("signroom router", () => {
   it("billing-guest/artifact without a session is its 401", async () => {
     const r = await route(deps(), req("GET", "billing-guest/artifact", { user: null }));
     expect(r.status).toBe(401);
+  });
+});
+
+describe("signroom router: reading a receipt", () => {
+  it("POST income/read-receipt hands the raw file to the reader and returns its suggestion", async () => {
+    const reading = { found: true, amount: "12.00", currency: "GBP", receivedOn: "2026-11-20", payer: "", reference: "", method: "", title: "" };
+    const read = vi.spyOn(receiptReader, "readReceipt").mockResolvedValue(reading);
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff]);
+    const r = await route(deps(), req("POST", "income/read-receipt", { raw: { bytes, name: "r.jpg" } }));
+    expect(r).toEqual({ status: 200, json: reading });
+    expect(read).toHaveBeenCalledWith(expect.anything(), expect.anything(), user, { bytes, name: "r.jpg" });
+    read.mockRestore();
+  });
+
+  it("without a file it is the receipt's size sentence, and only POST is taken", async () => {
+    expect(await route(deps(), req("POST", "income/read-receipt"))).toEqual({ status: 400, json: { error: "Use a photo or PDF of the receipt, up to 4 MB." } });
+    expect((await route(deps(), req("GET", "income/read-receipt"))).status).toBe(405);
   });
 });
 

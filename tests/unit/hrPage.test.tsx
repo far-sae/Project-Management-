@@ -90,6 +90,7 @@ vi.mock('@/hooks/useFormatMoney', () => ({ useFormatMoney: () => (n: number) => 
 vi.mock('@/pages/TimeTracking', () => ({ TimeTracking: () => <p>time-tracking-screen</p> }));
 vi.mock('@/pages/Payroll', () => ({ Payroll: () => <p>payroll-screen</p> }));
 vi.mock('@/pages/Expenses', () => ({ Expenses: () => <p>expenses-screen</p> }));
+vi.mock('@/pages/Income', () => ({ Income: () => <p>income-screen</p> }));
 vi.mock('@/services/supabase/timeEntries', async (orig) => {
   const actual = await orig<typeof import('@/services/supabase/timeEntries')>();
   return {
@@ -116,7 +117,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('HR page', () => {
-  it('has the eight HR tabs and opens on Overview', () => {
+  it('has the nine HR tabs (income next to expenses) and opens on Overview', () => {
     renderAt('/hr');
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
       'Overview',
@@ -126,6 +127,7 @@ describe('HR page', () => {
       'Time tracking',
       'Payroll',
       'Expenses',
+      'Income',
       'Documents',
     ]);
     expect(screen.getByRole('tab', { name: 'Overview' }).getAttribute('aria-selected')).toBe('true');

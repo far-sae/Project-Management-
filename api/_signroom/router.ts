@@ -4,6 +4,7 @@ import { agreementAction, agreementArtifactUrl, createAgreement, getAgreement, l
 import { finishUpload, prepareAgreement, uploadUrl } from "./agreementDocument.js";
 import { deleteTemplate, getTemplate, renameTemplate } from "./agreementTemplates.js";
 import { draftAgreement, type DraftDeps } from "./aiDraft.js";
+import { readReceipt, RECEIPT_SIZE_MESSAGE } from "./receiptReader.js";
 import { cancelAgreement, releaseFirst, resendInvitations, sendAgreement, signFirst } from "./agreementSend.js";
 import { billingAction, billingArtifact, billingDelivery, billingPreview, billingSend, deleteInvoice } from "./billing.js";
 import { clientAction, clientFromCompany } from "./clients.js";
@@ -139,6 +140,13 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
   }
 
   if (head === "client-accounts" && n === 2) return ok(await clientAccount(store, user, second, method, body, r.query.from ?? "", r.query.to ?? ""));
+
+  // A photo or PDF of a receipt, read into a suggestion for an income entry. Nothing is stored.
+  if (head === "income" && second === "read-receipt" && n === 2) {
+    if (method !== "POST") throw new AppError("Method not allowed.", 405);
+    if (!r.raw) throw new AppError(RECEIPT_SIZE_MESSAGE);
+    return ok(await readReceipt(deps.mail, deps.draft ?? { claude: null }, user, r.raw));
+  }
 
   if (head === "workspaces" && second === "branding-template" && n === 2) {
     if (method === "POST") {

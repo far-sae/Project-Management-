@@ -20,6 +20,7 @@ export const HR_TABS = [
   { value: 'time-tracking', label: 'Time tracking' },
   { value: 'payroll', label: 'Payroll' },
   { value: 'expenses', label: 'Expenses' },
+  { value: 'income', label: 'Income' },
   { value: 'documents', label: 'Documents' },
 ] as const;
 

@@ -50,7 +50,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { key: 'email',              label: 'Email',              group: 'CRM',            routes: ['/email'], feature: 'email_campaigns' },
   { key: 'social',             label: 'Social media',       group: 'Marketing',      routes: ['/social'] },
   { key: 'team',               label: 'Team',               group: 'People & ops',  routes: ['/team'], feature: 'team_collaboration' },
-  { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses'] },
+  { key: 'hr',                 label: 'HR & people ops',    group: 'People & ops',  routes: ['/hr', '/time', '/payroll', '/expenses', '/income'] },
   { key: 'contracts',          label: 'Contracts',          group: 'People & ops',  routes: ['/contracts'], feature: 'contracts' },
   { key: 'comments',           label: 'Comments',           group: 'Workspace',     routes: ['/comments'] },
   { key: 'files',              label: 'Files',              group: 'Workspace',     routes: ['/files'] },
