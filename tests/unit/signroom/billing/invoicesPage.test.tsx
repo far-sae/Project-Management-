@@ -3,7 +3,7 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { crmCompany, crmCurrency, crmDeal, crmList, customer, invoice, issued, payment, stubBrowser } from './fixtures';
+import { crmCompany, crmCurrency, crmDeal, crmList, customer, designLine, invoice, issued, payment, stubBrowser } from './fixtures';
 
 const sr = vi.hoisted(() => {
   const call = vi.fn();
@@ -52,7 +52,15 @@ function serve(invoices = all) {
     throw new Error(`unexpected ${path}`);
   });
 }
-const open = () => render(<MemoryRouter><InvoicesPage /></MemoryRouter>);
+const Where: React.FC = () => { const at = useLocation(); return <p data-testid="where">{at.pathname}</p>; };
+const open = () => render(
+  <MemoryRouter initialEntries={['/crm/invoices']}>
+    <Routes>
+      <Route path="/crm/invoices" element={<InvoicesPage />} />
+      <Route path="*" element={<Where />} />
+    </Routes>
+  </MemoryRouter>,
+);
 const row = (number: string) => screen.getByRole('link', { name: number }).closest('tr') as HTMLElement;
 const stat = (label: string) => screen.getByText(label, { selector: 'dt' }).parentElement as HTMLElement;
 
@@ -268,5 +276,98 @@ describe('making a receipt from the list', () => {
     fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for INV-0002' }), { key: 'Enter' });
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Create a receipt' }));
     await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/crm/invoices/b?payment=new'));
+  });
+});
+
+describe('the PDF of an invoice, straight from its row', () => {
+  it('downloads an issued invoice with one press, no menu', async () => {
+    serve();
+    sr.pdf.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    open();
+    await waitFor(() => row('INV-0002'));
+    fireEvent.click(within(row('INV-0002')).getByRole('button', { name: 'Download the PDF of INV-0002' }));
+    await waitFor(() => expect(sr.pdf).toHaveBeenCalledWith('billing/b/artifact'));
+  });
+
+  it('has nothing to download for a draft without lines, and says why', async () => {
+    serve();
+    open();
+    await waitFor(() => row('INV-0001'));
+    const button = within(row('INV-0001')).getByRole('button', { name: 'Download the PDF of INV-0001' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toMatch(/Add a line/);
+  });
+
+  it('downloads a draft that has lines as a draft', async () => {
+    serve([invoice({ id: 'a', number: 'INV-0001', revision: 3, lines: [designLine] })]);
+    sr.pdf.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    open();
+    await waitFor(() => row('INV-0001'));
+    fireEvent.click(within(row('INV-0001')).getByRole('button', { name: 'Download the PDF of INV-0001' }));
+    await waitFor(() => expect(sr.pdf).toHaveBeenCalledWith('billing/a/preview?v=3'));
+  });
+
+  it('says it in plain words when the PDF cannot be made', async () => {
+    serve();
+    sr.pdf.mockRejectedValue(new Error('This PDF is not ready.'));
+    open();
+    await waitFor(() => row('INV-0002'));
+    fireEvent.click(within(row('INV-0002')).getByRole('button', { name: 'Download the PDF of INV-0002' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  });
+});
+
+describe('a new invoice from an existing one', () => {
+  it('makes a draft with the same customer and lines, and opens it', async () => {
+    const source = issued({ id: 'b', number: 'INV-0002', dueDate: '2026-11-10', lines: [{ ...designLine, description: 'Design work' }] });
+    sr.call.mockImplementation(async (path: string, body?: Record<string, unknown>) => {
+      if (path === 'billing' && body) return invoice({ id: 'new1', number: 'INV-0009' });
+      if (path === 'billing') return [source];
+      if (path === 'clients') return [northwind, harbour];
+      if (path === 'billing/new1/save') return invoice({ id: 'new1', number: 'INV-0009', revision: 2 });
+      throw new Error(`unexpected ${path}`);
+    });
+    open();
+    await waitFor(() => row('INV-0002'));
+    fireEvent.keyDown(screen.getByRole('button', { name: 'More actions for INV-0002' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'New invoice from this one' }));
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('/crm/invoices/new1'));
+    expect(sr.call).toHaveBeenCalledWith('billing', { clientId: source.clientId });
+    const saved = sr.call.mock.calls.find((c) => c[0] === 'billing/new1/save')![1] as { lines: { description: string }[] };
+    expect(saved.lines.map((l) => l.description)).toEqual(['Design work']);
+    expect(toast.success).toHaveBeenCalledWith('INV-0009 made from INV-0002. Check it, then issue it.');
+  });
+});
+
+describe('the company logo', () => {
+  const withSession = (logo: string) => {
+    sr.call.mockImplementation(async (path: string) => {
+      if (path === 'billing') return all;
+      if (path === 'clients') return [northwind, harbour];
+      if (path === 'session') return { workspace: { id: 'w', name: 'Northwind Studio', logo, branding: { logo } }, role: 'Owner' };
+      throw new Error(`unexpected ${path}`);
+    });
+  };
+
+  it('says where to add it while there is none', async () => {
+    withSession('');
+    open();
+    const hint = await screen.findByText(/have no company logo yet/);
+    expect(within(hint.closest('p') as HTMLElement).getByRole('link', { name: 'Add your logo' }).getAttribute('href')).toBe('/crm/document-settings');
+  });
+
+  it('says nothing once there is one, and nothing when it cannot be known', async () => {
+    withSession('data:image/png;base64,AAAA');
+    open();
+    await waitFor(() => row('INV-0002'));
+    await waitFor(() => expect(sr.call).toHaveBeenCalledWith('session'));
+    expect(screen.queryByText(/have no company logo yet/)).toBeNull();
+    cleanup();
+    serve();
+    open();
+    await waitFor(() => row('INV-0002'));
+    expect(screen.queryByText(/have no company logo yet/)).toBeNull();
+    // A header link to the settings is always there.
+    expect(screen.getByRole('link', { name: 'Logo and look' }).getAttribute('href')).toBe('/crm/document-settings');
   });
 });

@@ -1,7 +1,7 @@
 // An issued invoice: read-only, with its payments, receipts, emails and history.
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Ban, Download, Eye, EyeOff, Loader2, MoreHorizontal, Send, Wallet } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Ban, Copy, Download, Eye, EyeOff, Loader2, MoreHorizontal, Send, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import { balance } from '../../../../api/_signroom/shared/invoiceMath';
 import type { Invoice, Payment, ProjectList } from '../../../../api/_signroom/shared/types';
@@ -19,6 +19,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { DeliveryLog } from '../DeliveryLog';
+import { copyInvoice } from './copyInvoice';
 import { PdfDialog, PdfFrame } from './PdfFrame';
 import { RecordPaymentDialog, type PaymentInput } from './RecordPaymentDialog';
 import { Card, HEAD_ROW, ROW, TD, TD_DATE, TD_MONEY, TH, TH_RIGHT, savePdf } from './shared';
@@ -39,8 +40,10 @@ const isStale = (error: unknown): boolean => (error as { status?: number } | nul
 
 export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPayment, companyHref, onChange, onReload }) => {
   const { client } = useSignroom();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [showPdf, setShowPdf] = useState(false);
+  const [copying, setCopying] = useState(false);
   const [paying, setPaying] = useState(false);
   const [confirmVoid, setConfirmVoid] = useState(false);
   const [receipt, setReceipt] = useState<Payment | null>(null);
@@ -96,6 +99,20 @@ export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPay
       toast.error(errorSentence(error, 'The PDF could not be downloaded.'));
     }
   };
+  /** A new draft with the same customer and lines, then straight to it. */
+  const copy = async () => {
+    setCopying(true);
+    try {
+      const made = await copyInvoice(client, invoice);
+      if (made.filled) toast.success(`${made.invoice.number} made from ${invoice.number}. Check it, then issue it.`);
+      else toast.error(`${made.invoice.number} was made, but the lines of ${invoice.number} could not be added. Add them on the draft.`);
+      navigate(`/crm/invoices/${made.invoice.id}`);
+    } catch (error) {
+      toast.error(errorSentence(error, 'The invoice could not be made.'));
+    } finally {
+      setCopying(false);
+    }
+  };
   const receiptPath = (payment: Payment) => `billing/${invoice.id}/artifact?payment=${payment.id}`;
 
   return (
@@ -136,6 +153,11 @@ export const InvoiceRecord: React.FC<Props> = ({ invoice, delivery, startWithPay
           <Button variant="outline" onClick={() => void download(`billing/${invoice.id}/artifact`, `${invoice.number}.pdf`)}>
             <Download aria-hidden /> Download PDF
           </Button>
+          {invoice.lines.length > 0 && (
+            <Button variant="outline" onClick={() => void copy()} disabled={busy || copying}>
+              {copying ? <Loader2 className="animate-spin" aria-hidden /> : <Copy aria-hidden />} New invoice from this one
+            </Button>
+          )}
           {canVoid && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

@@ -1,10 +1,10 @@
 // Invoices: every invoice in the workspace, what is owed, and the receipts for what was paid.
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarRange, Download, FileText, Loader2, MoreHorizontal, Plus, Receipt, Search } from 'lucide-react';
+import { CalendarRange, Download, FileText, Loader2, MoreHorizontal, Palette, Plus, Receipt, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { balance } from '../../../api/_signroom/shared/invoiceMath';
-import type { Invoice } from '../../../api/_signroom/shared/types';
+import type { Invoice, Workspace } from '../../../api/_signroom/shared/types';
 import { useSignroom } from '@/hooks/useSignroom';
 import {
   STATUS_FILTERS, anyAbove, billingToday, errorSentence, filterInvoices, filterReceipts, formatMinor, formatSums,
@@ -21,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { copyInvoice } from '@/components/signroom/billing/copyInvoice';
 import { NewInvoiceDialog } from '@/components/signroom/billing/NewInvoiceDialog';
 import { NewReceiptDialog } from '@/components/signroom/billing/NewReceiptDialog';
 import { PdfDialog } from '@/components/signroom/billing/PdfFrame';
@@ -50,6 +51,22 @@ export const InvoicesPage: React.FC = () => {
   const [receipting, setReceipting] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [sending, setSending] = useState<string | null>(null);
+  /** The invoice whose PDF is being fetched, and the one being copied. */
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [copying, setCopying] = useState<string | null>(null);
+  /** True, false, or null while it is not known (then nothing is said about it). */
+  const [hasLogo, setHasLogo] = useState<boolean | null>(null);
+
+  // The logo is on every invoice PDF. It is uploaded on another page, so this one says so while there is none.
+  useEffect(() => {
+    let alive = true;
+    setHasLogo(null);
+    if (!workspaceId) return;
+    client.call<{ workspace: Workspace }>('session')
+      .then((view) => { if (alive) setHasLogo(Boolean(view?.workspace?.logo || view?.workspace?.branding?.logo)); })
+      .catch(() => { /* not known: say nothing */ });
+    return () => { alive = false; };
+  }, [client, workspaceId]);
 
   const today = billingToday();
   const nameOf = (invoice: Invoice) => customerName(invoice, clientsById);
@@ -108,6 +125,34 @@ export const InvoicesPage: React.FC = () => {
     }
   };
 
+  /** The PDF of one invoice, from its row. A draft has no stored PDF yet: it is made as it stands now. */
+  const downloadInvoice = async (i: Invoice) => {
+    setDownloading(i.id);
+    try {
+      const pdf = invoicePdf(i);
+      savePdf(await client.pdf(pdf.path), pdf.filename);
+    } catch (err) {
+      toast.error(errorSentence(err, 'The PDF could not be downloaded.'));
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  /** A new draft with the same customer and lines, then straight to it. */
+  const copy = async (source: Invoice) => {
+    setCopying(source.id);
+    try {
+      const made = await copyInvoice(client, source);
+      if (made.filled) toast.success(`${made.invoice.number} made from ${source.number}. Check it, then issue it.`);
+      else toast.error(`${made.invoice.number} was made, but the lines of ${source.number} could not be added. Add them on the draft.`);
+      navigate(`/crm/invoices/${made.invoice.id}`);
+    } catch (err) {
+      toast.error(errorSentence(err, 'The invoice could not be made.'));
+    } finally {
+      setCopying(null);
+    }
+  };
+
   const exportCsv = () => {
     if (tab === 'receipts') {
       if (!receipts.length) { toast.error('Nothing to export'); return; }
@@ -154,6 +199,9 @@ export const InvoicesPage: React.FC = () => {
               <Button asChild variant="outline">
                 <Link to="/crm/accounts-overview"><CalendarRange aria-hidden /> Accounts overview</Link>
               </Button>
+              <Button asChild variant="outline">
+                <Link to="/crm/document-settings"><Palette aria-hidden /> Logo and look</Link>
+              </Button>
               <Button variant="outline" onClick={exportCsv} disabled={!workspaceId}>
                 <Download aria-hidden /> Export
               </Button>
@@ -171,6 +219,13 @@ export const InvoicesPage: React.FC = () => {
           <PickWorkspace />
         ) : (
           <>
+            {hasLogo === false && (
+              <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-muted-foreground">
+                Your invoices and receipts have no company logo yet.{' '}
+                <Link to="/crm/document-settings" className="font-medium text-foreground underline underline-offset-4">Add your logo</Link>
+                {' '}once, and it is on every PDF you issue from then on.
+              </p>
+            )}
             <StatStrip
               items={[
                 {
@@ -292,11 +347,21 @@ export const InvoicesPage: React.FC = () => {
                                   : formatMinor(balance(i), i.currency)}
                               </td>
                               <td className={TD_DATE}>{i.sentAt ? shortDate(i.sentAt) : 'Not sent'}</td>
-                              <td className="px-3 py-1.5 text-right">
+                              <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                                {/* The PDF with one press. A draft without lines has nothing to print yet. */}
+                                <Button
+                                  size="sm" variant="outline" className="mr-1"
+                                  aria-label={`Download the PDF of ${i.number}`}
+                                  title={i.status === 'Draft' && i.lines.length === 0 ? 'Add a line to this draft first' : i.status === 'Draft' ? 'Download this draft as a PDF' : 'Download the PDF'}
+                                  disabled={downloading === i.id || (i.status === 'Draft' && i.lines.length === 0)}
+                                  onClick={() => void downloadInvoice(i)}
+                                >
+                                  {downloading === i.id ? <Loader2 className="animate-spin" aria-hidden /> : <Download aria-hidden />} PDF
+                                </Button>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button size="icon" variant="ghost" aria-label={`More actions for ${i.number}`}>
-                                      {sending === i.id ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
+                                      {sending === i.id || copying === i.id ? <Loader2 className="animate-spin" /> : <MoreHorizontal />}
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
@@ -306,9 +371,9 @@ export const InvoicesPage: React.FC = () => {
                                     {(i.status !== 'Draft' || i.lines.length > 0) && (
                                       <DropdownMenuItem onClick={() => setPreview(invoicePdf(i))}>Preview PDF</DropdownMenuItem>
                                     )}
-                                    {i.status !== 'Draft' && (
-                                      <DropdownMenuItem onClick={() => void download(`billing/${i.id}/artifact`, `${i.number}.pdf`)}>
-                                        Download PDF
+                                    {i.lines.length > 0 && (
+                                      <DropdownMenuItem disabled={copying !== null} onClick={() => void copy(i)}>
+                                        New invoice from this one
                                       </DropdownMenuItem>
                                     )}
                                     {issued && (

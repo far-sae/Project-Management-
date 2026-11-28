@@ -87,6 +87,64 @@ export function linesForServer(lines: LineDraft[], mode: TaxMode): Array<Omit<Li
   return lines.map(({ taxPercent: _unused, ...rest }) => rest);
 }
 
+// ---------------------------------------------------------------- a copy of an invoice
+
+const MONTH_WORDS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/** "2026-12" → "2027-01". Null for anything that is not a month. */
+export function monthAfter(month: string | null | undefined): string | null {
+  const m = MONTH_KEY.exec(month ?? '');
+  if (!m) return null;
+  const year = Number(m[1]);
+  const index = Number(m[2]);
+  return index === 12 ? `${year + 1}-01` : `${year}-${String(index + 1).padStart(2, '0')}`;
+}
+
+/** "2026-11" → "November 2026". */
+const monthWords = (month: string): string => `${MONTH_WORDS[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
+
+/** What a new invoice made from an existing one starts from. */
+export interface InvoiceCopy {
+  /** What the draft is created with: the customer, and the deal or service the first invoice was for. */
+  create: { clientId: string; dealId?: string; accountId?: string; billingMonth?: string };
+  lines: LineDraft[];
+  taxMode: TaxMode;
+  taxPercent: string;
+  currency: string;
+  notes: string;
+  project: string;
+}
+
+/**
+ * The parts of an invoice a copy carries over: who it is for, what it bills,
+ * in which currency, with which tax and notes. Never its number, its dates,
+ * its payments or a receipt: those belong to the first invoice alone.
+ *
+ * An invoice for one month of a monthly service is copied for the month
+ * after, and a line that names the month ("Digital marketing, November 2026")
+ * names the new one.
+ */
+export function invoiceCopy(source: Invoice): InvoiceCopy {
+  const nextMonth = source.accountId ? monthAfter(source.billingMonth) : null;
+  const from = nextMonth && source.billingMonth ? monthWords(source.billingMonth) : '';
+  const to = nextMonth ? monthWords(nextMonth) : '';
+  return {
+    create: {
+      clientId: source.clientId,
+      ...(source.dealId ? { dealId: source.dealId } : {}),
+      ...(source.accountId ? { accountId: source.accountId } : {}),
+      ...(nextMonth ? { billingMonth: nextMonth } : {}),
+    },
+    lines: lineDrafts(source).map((line) => (from ? { ...line, description: line.description.split(from).join(to) } : line)),
+    taxMode: taxModeOf(source),
+    taxPercent: String(source.taxBps / 100),
+    currency: source.currency,
+    notes: source.notes ?? '',
+    project: source.project ?? '',
+  };
+}
+
 /**
  * The totals for what is typed, from the shared maths. While something is not
  * valid yet, `totals` is null and `problem` is the server's sentence for it.

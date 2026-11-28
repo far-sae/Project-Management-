@@ -9,6 +9,7 @@ import type { CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 
 const h = vi.hoisted(() => ({
   listClientAccounts: vi.fn(), listAccountPayments: vi.fn(), addAccountPayment: vi.fn(),
+  createClientAccount: vi.fn(), updateClientAccount: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
@@ -26,6 +27,7 @@ vi.mock('@/hooks/useCrmHub', () => ({
 }));
 vi.mock('@/services/supabase/crmHub/accounts', () => ({
   listClientAccounts: h.listClientAccounts, listAccountPayments: h.listAccountPayments, addAccountPayment: h.addAccountPayment,
+  createClientAccount: h.createClientAccount, updateClientAccount: h.updateClientAccount,
 }));
 // The lead's own tab is not what is tested here; only its list of methods is shared.
 vi.mock('@/components/crmHub/ClientAccountsTab', () => ({ PAYMENT_METHODS: ['Bank transfer', 'Card', 'Cash'] }));
@@ -64,7 +66,9 @@ async function show() {
 const rowOf = (name: string) => screen.getByRole('row', { name });
 
 beforeEach(() => {
-  for (const f of [h.listClientAccounts, h.listAccountPayments, h.addAccountPayment, h.toast.success, h.toast.error]) f.mockReset();
+  for (const f of [h.listClientAccounts, h.listAccountPayments, h.addAccountPayment, h.createClientAccount, h.updateClientAccount, h.toast.success, h.toast.error]) f.mockReset();
+  h.createClientAccount.mockResolvedValue({});
+  h.updateClientAccount.mockResolvedValue({});
   h.listClientAccounts.mockResolvedValue(ACCOUNTS);
   h.listAccountPayments.mockResolvedValue(PAYMENTS);
   h.addAccountPayment.mockResolvedValue({});
@@ -138,14 +142,90 @@ describe('the filters', () => {
   });
 });
 
-describe('the year', () => {
-  it('shows one column for each month, the total paid and what is due', async () => {
+describe('the year, laid out like a payments sheet', () => {
+  const sheet = async () => {
     await show();
     fireEvent.click(screen.getByRole('button', { name: 'The year 2026' }));
-    const table = screen.getByRole('table', { name: 'Payments in 2026' });
-    const cells = within(within(table).getByRole('row', { name: 'Elena Rossi, Digital marketing' })).getAllByRole('cell').map((c) => c.textContent);
-    // Client, service, twelve months, total paid, amount due.
-    expect(cells.slice(2)).toEqual(['–', '–', '–', '–', '–', '–', '$500', '$500', '$500', '–', '–', '–', '$1,500', '$1,000']);
+    return screen.getByRole('table', { name: 'Payments in 2026' });
+  };
+  const cellsOf = (table: HTMLElement, name: string) => within(within(table).getByRole('row', { name })).getAllByRole('cell').map((c) => c.textContent);
+
+  it('has the columns of the sheet, in its order', async () => {
+    const table = await sheet();
+    expect(within(table).getAllByRole('columnheader').map((c) => c.textContent)).toEqual([
+      'Project', 'Client', 'Type', 'Fee', 'Total cost', 'Opening paid', 'Start', 'End',
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Total paid', 'Amount due', 'Notes', 'Actions',
+    ]);
+  });
+
+  it('shows a monthly service: its fee, when it runs, each month paid, the total paid and what is due', async () => {
+    const cells = cellsOf(await sheet(), 'Elena Rossi, Digital marketing');
+    expect(cells.slice(0, 8)).toEqual(['Digital marketing', 'Elena RossiHarbour Dental', 'Monthly', '$500', 'Ongoing', '$0', 'Jul 2026', '–']);
+    expect(cells.slice(8, 22)).toEqual(['–', '–', '–', '–', '–', '–', '$500', '$500', '$500', '–', '–', '–', '$1,500', '$1,000']);
+  });
+
+  it('shows a one-time service with its whole cost and what was paid at the start', async () => {
+    const cells = cellsOf(await sheet(), 'Elena Rossi, Website');
+    expect(cells.slice(2, 8)).toEqual(['One-time', '$8,000', '$8,000', '$4,000', '–', '–']);
+  });
+
+  it('works out the whole cost of a monthly service that has an end, and shows its notes', async () => {
+    h.listClientAccounts.mockResolvedValue([account('a1', 'lead-1', 'Digital marketing', { serviceEnd: '2026-12-31', notes: 'Pays by card' })]);
+    const cells = cellsOf(await sheet(), 'Elena Rossi, Digital marketing');
+    expect(cells[4]).toBe('$3,000');
+    expect(cells[7]).toBe('Dec 2026');
+    expect(cells[22]).toBe('Pays by card');
+  });
+
+  it('records a payment for a month by pressing that month', async () => {
+    const table = await sheet();
+    fireEvent.click(within(table).getByRole('button', { name: 'Record a payment for Elena Rossi, Digital marketing, October 2026' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Record a payment' });
+    expect((within(dialog).getByLabelText('Pays for the month') as HTMLInputElement).value).toBe('2026-10');
+    expect((within(dialog).getByLabelText('Amount') as HTMLInputElement).value).toBe('500');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save payment' }));
+    await waitFor(() => expect(h.addAccountPayment).toHaveBeenCalledWith(expect.objectContaining({ accountId: 'a1', amount: 500, billingMonth: '2026-10' })));
+  });
+
+  it('makes an invoice from a row of the sheet', async () => {
+    const table = await sheet();
+    fireEvent.click(within(table).getByRole('button', { name: 'Create an invoice for Elena Rossi, Digital marketing' }));
+    expect(JSON.parse(screen.getByTestId('new-invoice').textContent ?? '{}')).toMatchObject({ companyId: 'co-1', service: { accountId: 'a1', monthly: true } });
+  });
+
+  it('changes a service from its row', async () => {
+    const table = await sheet();
+    fireEvent.click(within(table).getByRole('button', { name: 'Edit Digital marketing of Elena Rossi' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit service' });
+    fireEvent.change(within(dialog).getByLabelText('Monthly amount'), { target: { value: '650' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.updateClientAccount).toHaveBeenCalledWith('a1', expect.objectContaining({ agreedAmount: 650, serviceName: 'Digital marketing' })));
+    await waitFor(() => expect(h.listClientAccounts).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('adding a service on this page', () => {
+  it('asks which client it is for, and saves it for that lead', async () => {
+    await show();
+    fireEvent.click(screen.getByRole('button', { name: 'Add service' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add service' });
+    expect((within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(within(dialog).getByRole('combobox', { name: 'Client' }), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Tom Okafor' }), { key: 'Enter' });
+    fireEvent.change(within(dialog).getByLabelText('Service'), { target: { value: 'SEO' } });
+    fireEvent.change(within(dialog).getByLabelText('Monthly amount'), { target: { value: '250' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(h.createClientAccount).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org-1', workspaceId: 'ws-1', contactId: 'lead-2', serviceName: 'SEO', agreedAmount: 250, billingType: 'monthly',
+    })));
+    expect(h.toast.success).toHaveBeenCalledWith('Service added');
+  });
+
+  it('is offered when there is no service at all yet', async () => {
+    h.listClientAccounts.mockResolvedValue([]);
+    render(<MemoryRouter><CrmAccountsPage /></MemoryRouter>);
+    await screen.findByText(/No client has a service yet/);
+    expect(screen.getAllByRole('button', { name: 'Add service' }).length).toBeGreaterThan(0);
   });
 });
 

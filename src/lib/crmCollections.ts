@@ -146,8 +146,22 @@ export function collectionsTotals(rows: CollectionRow[]): CollectionsTotals {
   };
 }
 
+/**
+ * What a whole service costs. A one-time fee is the cost. A monthly fee is
+ * charged for every month from its start to its end, both counted. Null while
+ * that cannot be said: a monthly service with no end is still running, and one
+ * with no start has no first month.
+ */
+export function totalCost(account: CrmClientAccount): number | null {
+  if (account.billingType === 'one_time') return round(account.agreedAmount);
+  if (!account.serviceStart || !account.serviceEnd) return null;
+  return round(account.agreedAmount * monthsBetween(account.serviceStart.slice(0, 7), account.serviceEnd.slice(0, 7)));
+}
+
 export interface YearRow {
   account: CrmClientAccount;
+  /** What the whole service costs, or null while it is still running (see `totalCost`). */
+  totalCost: number | null;
   /** What was paid for each month of the year, January first. */
   months: number[];
   /** Everything paid for this year, with what was paid before the records began when the service started this year. */
@@ -167,7 +181,43 @@ export function yearRow(account: CrmClientAccount, payments: CrmAccountPayment[]
   const startedThisYear = account.serviceStart ? Number(account.serviceStart.slice(0, 4)) === year : false;
   const opening = account.billingType === 'one_time' || startedThisYear || !account.serviceStart ? account.openingPaid : 0;
   return {
-    account, months: months.map(round), totalPaid: round(months.reduce((a, b) => a + b, 0) + opening),
+    account, totalCost: totalCost(account), months: months.map(round), totalPaid: round(months.reduce((a, b) => a + b, 0) + opening),
     amountDue: collectionRow(account, payments, through).collect,
   };
+}
+
+/** A cell of the sheet file. Words a person typed can never start a formula in a spreadsheet. */
+const sheetCell = (value: string | number | null): string => {
+  if (value === null) return '""';
+  if (typeof value === 'number') return `"${value}"`;
+  const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
+/**
+ * The year sheet as a file for a spreadsheet: one row for each service, with
+ * the columns of a payments sheet. Amounts are plain numbers (no currency
+ * sign), so they can be added up; the currency has its own column.
+ */
+export function sheetCsv(
+  rows: YearRow[],
+  year: number,
+  clientOf: (account: CrmClientAccount) => { name: string; company: string },
+  currencyOf: (account: CrmClientAccount) => string,
+): string {
+  const header = [
+    'Project', 'Client', 'Company', 'Type', 'Currency', 'Fee', 'Total cost', 'Opening paid', 'Start', 'End',
+    ...SHORT_MONTHS.map((name) => `${name} ${year}`), 'Total paid', 'Amount due', 'Notes',
+  ];
+  const lines = rows.map((row) => {
+    const { account } = row;
+    const client = clientOf(account);
+    return [
+      account.serviceName, client.name, client.company, account.billingType === 'monthly' ? 'Monthly' : 'One-time', currencyOf(account),
+      account.agreedAmount, row.totalCost, account.openingPaid,
+      account.serviceStart ? account.serviceStart.slice(0, 7) : '', account.serviceEnd ? account.serviceEnd.slice(0, 7) : '',
+      ...row.months, row.totalPaid, row.amountDue, account.notes ?? '',
+    ].map(sheetCell).join(',');
+  });
+  return [header.map(sheetCell).join(','), ...lines].join('\n');
 }

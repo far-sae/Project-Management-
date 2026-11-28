@@ -7,19 +7,19 @@ import { CreditCard, FileText, Loader2, Pencil, Plus, Trash2 } from 'lucide-reac
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
 import { useCrmCurrency } from '@/context/CrmCurrencyContext';
-import { CurrencySelect } from '@/components/ui/currency-select';
 import { accountCurrency, formatByCurrency, formatCurrency } from '@/lib/crmCurrency';
-import type { ClientBillingType, CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
+import type { CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 import {
   MONTH_NAMES, daysInMonth, paymentInPeriod, periodLabel, summarizeAccountPeriod, summarizeClientAccount,
   type AccountPeriod,
 } from '@/lib/crmAccounts';
 import {
-  addAccountPayment, createClientAccount, deleteAccountPayment, deleteClientAccount, listAccountPayments,
-  listClientAccounts, updateAccountPayment, updateClientAccount,
+  addAccountPayment, deleteAccountPayment, deleteClientAccount, listAccountPayments,
+  listClientAccounts, updateAccountPayment,
 } from '@/services/supabase/crmHub/accounts';
 import { collectionRow, monthKey, monthLabel } from '@/lib/crmCollections';
 import { NewInvoiceDialog, type InvoiceService } from '@/components/signroom/billing/NewInvoiceDialog';
+import { ServiceDialog } from './ServiceDialog';
 import { StatStrip, type StatItem } from '@/components/common/StatStrip';
 import { StatusPill } from '@/components/common/StatusPill';
 import { Button } from '@/components/ui/button';
@@ -50,24 +50,6 @@ const dayLabel = (iso: string): string =>
   `${Number(iso.slice(8, 10))} ${MONTH_NAMES[Number(iso.slice(5, 7)) - 1]?.slice(0, 3) ?? ''} ${iso.slice(0, 4)}`;
 /** "in 2026", "in March 2026", "on 10 March 2026". */
 const inPeriodWords = (period: AccountPeriod): string => `${period.day === null ? 'in' : 'on'} ${periodLabel(period)}`;
-
-/** The service window: adding one, or changing the one whose id it carries. */
-interface ServiceForm {
-  id: string | null;
-  serviceName: string;
-  /** The currency the amounts are in ("GBP"). */
-  currency: string;
-  billingType: ClientBillingType;
-  agreedAmount: string;
-  openingPaid: string;
-  serviceStart: string;
-  serviceEnd: string;
-  notes: string;
-  /** The day of the month a monthly fee is due. */
-  dueDay: string;
-  /** The date a one-time fee is due. */
-  dueDate: string;
-}
 
 /** The payment window: adding one to a service, or changing the one whose id it carries. */
 interface PaymentForm {
@@ -106,7 +88,8 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
   const [payments, setPayments] = useState<CrmAccountPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [service, setService] = useState<ServiceForm | null>(null);
+  /** The service window: open for a new service (null inside) or for the one being changed. */
+  const [service, setService] = useState<{ account: CrmClientAccount | null } | null>(null);
   const [paying, setPaying] = useState<PaymentForm | null>(null);
   const [removing, setRemoving] = useState<Removing | null>(null);
   /** The service an invoice is being made for. */
@@ -191,17 +174,6 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
 
   const pickMonth = (month: number | null) => setPeriod((old) => ({ year: old.year, month, day: null }));
 
-  const newService = (): ServiceForm => ({
-    id: null, serviceName: '', currency: companyCurrency, billingType: 'monthly', agreedAmount: '', openingPaid: '0',
-    serviceStart: `${period.year}-01-01`, serviceEnd: '', notes: '', dueDay: '', dueDate: '',
-  });
-  const editService = (account: CrmClientAccount): ServiceForm => ({
-    id: account.id, serviceName: account.serviceName, currency: currencyOf(account), billingType: account.billingType,
-    agreedAmount: String(account.agreedAmount), openingPaid: String(account.openingPaid),
-    serviceStart: account.serviceStart ?? '', serviceEnd: account.serviceEnd ?? '', notes: account.notes ?? '',
-    dueDay: account.dueDay ? String(account.dueDay) : '', dueDate: account.dueDate ?? '',
-  });
-
   /** Run one change, say how it went, and read the numbers again. */
   const run = async (work: () => Promise<unknown>, done: string, failed: string, close: () => void) => {
     setBusy(true);
@@ -215,31 +187,6 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
     } finally {
       setBusy(false);
     }
-  };
-
-  const serviceReady = Boolean(service && service.serviceName.trim() && service.agreedAmount !== '' && Number(service.agreedAmount) >= 0);
-  const saveService = () => {
-    if (!service || !serviceReady) return;
-    const before = accounts.find((account) => account.id === service.id);
-    // A service that has no currency of its own is in the company's. Choosing that same one changes nothing.
-    const chosen = service.currency.trim().toUpperCase();
-    const had = before?.currency ?? null;
-    const currency = chosen && (had !== null || chosen !== companyCurrency) ? chosen : null;
-    const fields = {
-      // The window does not ask for a project. A service that was tied to one keeps it.
-      projectId: before?.projectId ?? null, serviceName: service.serviceName.trim(), billingType: service.billingType,
-      agreedAmount: Number(service.agreedAmount), openingPaid: Number(service.openingPaid || 0),
-      serviceStart: service.serviceStart || null, serviceEnd: service.serviceEnd || null, notes: service.notes.trim() || null,
-      ...changed('dueDay', service.billingType === 'monthly' && service.dueDay ? Math.min(31, Math.max(1, Math.round(Number(service.dueDay)))) : null, before?.dueDay ?? null),
-      ...changed('dueDate', service.billingType === 'one_time' && service.dueDate ? service.dueDate : null, before?.dueDate ?? null),
-      ...(currency === had ? {} : { currency }),
-    };
-    void (service.id
-      ? run(() => updateClientAccount(service.id as string, fields), 'Service saved', 'Could not save the service', () => setService(null))
-      : run(
-          () => createClientAccount({ organizationId, workspaceId, contactId, ...fields, createdBy: user?.userId }),
-          'Service added', 'Could not add the service', () => setService(null),
-        ));
   };
 
   const paymentReady = Boolean(paying && Number(paying.amount) > 0 && paying.paidOn);
@@ -315,7 +262,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
               </SelectContent>
             </Select>
           )}
-          <Button onClick={() => setService(newService())}><Plus aria-hidden />Add service</Button>
+          <Button onClick={() => setService({ account: null })}><Plus aria-hidden />Add service</Button>
         </div>
       </div>
 
@@ -333,7 +280,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
             <CreditCard className="mb-1 h-5 w-5 text-muted-foreground" aria-hidden />
             <p className="text-sm font-medium">No services or billing records yet.</p>
             <p className="text-xs text-muted-foreground">Add what this lead pays for. Then record each payment as it arrives.</p>
-            <Button variant="outline" className="mt-3" onClick={() => setService(newService())}>Add service</Button>
+            <Button variant="outline" className="mt-3" onClick={() => setService({ account: null })}>Add service</Button>
           </div>
         </div>
       ) : (
@@ -368,7 +315,7 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
                     </Button>
                     <Button
                       size="icon" variant="ghost" aria-label={`Edit ${account.serviceName}`} title="Edit service"
-                      onClick={() => setService(editService(account))}
+                      onClick={() => setService({ account })}
                     >
                       <Pencil />
                     </Button>
@@ -468,81 +415,11 @@ export const ClientAccountsTab: React.FC<Props> = ({ organizationId, workspaceId
         </div>
       )}
 
-      <Dialog open={service !== null} onOpenChange={(open) => { if (!open && !busy) setService(null); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>{service?.id ? 'Edit service' : 'Add service'}</DialogTitle></DialogHeader>
-          {service && (
-            <div className="space-y-3">
-              <Field label="Service">
-                {(id) => <Input id={id} value={service.serviceName} onChange={(e) => setService({ ...service, serviceName: e.target.value })} />}
-              </Field>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Billing">
-                  {(id) => (
-                    <Select value={service.billingType} onValueChange={(v) => setService({ ...service, billingType: v as ClientBillingType })}>
-                      <SelectTrigger id={id}><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="one_time">One-time</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                </Field>
-                <Field label={service.billingType === 'monthly' ? 'Monthly amount' : 'Agreed amount'}>
-                  {(id) => (
-                    <Input
-                      id={id} type="number" min="0" step="0.01" value={service.agreedAmount}
-                      onChange={(e) => setService({ ...service, agreedAmount: e.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field label="Currency">
-                  {(id) => <CurrencySelect id={id} value={service.currency} onValueChange={(currency) => setService({ ...service, currency })} />}
-                </Field>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <Field label="Opening paid">
-                  {(id) => (
-                    <Input
-                      id={id} type="number" min="0" step="0.01" value={service.openingPaid}
-                      onChange={(e) => setService({ ...service, openingPaid: e.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field label="Starts">
-                  {(id) => <Input id={id} type="date" value={service.serviceStart} onChange={(e) => setService({ ...service, serviceStart: e.target.value })} />}
-                </Field>
-                <Field label="Ends">
-                  {(id) => <Input id={id} type="date" value={service.serviceEnd} onChange={(e) => setService({ ...service, serviceEnd: e.target.value })} />}
-                </Field>
-              </div>
-              {service.billingType === 'monthly' ? (
-                <Field label="Due on day of the month">
-                  {(id) => (
-                    <Input
-                      id={id} type="number" min="1" max="31" step="1" placeholder="For example 5" value={service.dueDay}
-                      onChange={(e) => setService({ ...service, dueDay: e.target.value })}
-                    />
-                  )}
-                </Field>
-              ) : (
-                <Field label="Due date">
-                  {(id) => <Input id={id} type="date" value={service.dueDate} onChange={(e) => setService({ ...service, dueDate: e.target.value })} />}
-                </Field>
-              )}
-              <Field label="Notes">
-                {(id) => <Textarea id={id} value={service.notes} onChange={(e) => setService({ ...service, notes: e.target.value })} />}
-              </Field>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setService(null)} disabled={busy}>Cancel</Button>
-            <Button disabled={busy || !serviceReady} onClick={saveService}>
-              {busy && <Loader2 className="animate-spin" aria-hidden />}Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ServiceDialog
+        open={service !== null} onOpenChange={(open) => { if (!open) setService(null); }}
+        organizationId={organizationId} workspaceId={workspaceId} contactId={contactId}
+        account={service?.account ?? null} year={period.year} onSaved={load}
+      />
 
       {invoicing && companyId && (
         <NewInvoiceDialog open companyId={companyId} service={invoicing} onOpenChange={(open) => { if (!open) setInvoicing(null); }} />

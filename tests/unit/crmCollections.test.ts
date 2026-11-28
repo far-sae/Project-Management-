@@ -3,7 +3,7 @@
 // for that month, what is still owed from before, and what to collect.
 import { describe, expect, it } from 'vitest';
 import {
-  collectionRow, collectionsTotals, monthKey, monthLabel, monthsBetween, nextMonth, paysFor, previousMonth, yearRow,
+  collectionRow, collectionsTotals, monthKey, monthLabel, monthsBetween, nextMonth, paysFor, previousMonth, sheetCsv, totalCost, yearRow,
 } from '@/lib/crmCollections';
 import type { CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 
@@ -157,5 +157,42 @@ describe('a service across a year', () => {
     const row = yearRow(website, [paid('2026-09-20', 2000)], 2026, '2026-11');
     expect(row.totalPaid).toBe(6000);
     expect(row.amountDue).toBe(2000);
+  });
+});
+
+describe('what a whole service costs', () => {
+  it('is the fee itself for a one-time service', () => {
+    expect(totalCost(account({ billingType: 'one_time', agreedAmount: 8000, serviceStart: null }))).toBe(8000);
+  });
+
+  it('is the monthly fee for every month from the start to the end, both counted', () => {
+    expect(totalCost(account({ serviceStart: '2026-07-01', serviceEnd: '2026-12-31' }))).toBe(3000);
+    expect(totalCost(account({ serviceStart: '2026-11-15', serviceEnd: '2027-02-01' }))).toBe(2000);
+  });
+
+  it('is not known while a monthly service has no end, or no start', () => {
+    expect(totalCost(account({ serviceEnd: null }))).toBeNull();
+    expect(totalCost(account({ serviceStart: null, serviceEnd: '2026-12-31' }))).toBeNull();
+  });
+
+  it('is on the row of the year sheet', () => {
+    expect(yearRow(account({ serviceEnd: '2026-12-31' }), [], 2026, '2026-11').totalCost).toBe(3000);
+    expect(yearRow(account(), [], 2026, '2026-11').totalCost).toBeNull();
+  });
+});
+
+describe('the year sheet as a file', () => {
+  it('has the columns of a payments sheet, with plain numbers a spreadsheet can add up', () => {
+    const rows = [yearRow(account({ serviceEnd: '2026-12-31', notes: 'Pays by card' }), [paid('2026-07-05', 500), paid('2026-08-05', 500)], 2026, '2026-11')];
+    const csv = sheetCsv(rows, 2026, () => ({ name: 'Elena Rossi', company: 'Harbour Dental' }), () => 'USD');
+    const lines = csv.split('\n');
+    expect(lines[0]).toBe('"Project","Client","Company","Type","Currency","Fee","Total cost","Opening paid","Start","End","Jan 2026","Feb 2026","Mar 2026","Apr 2026","May 2026","Jun 2026","Jul 2026","Aug 2026","Sep 2026","Oct 2026","Nov 2026","Dec 2026","Total paid","Amount due","Notes"');
+    expect(lines[1]).toBe('"Digital marketing","Elena Rossi","Harbour Dental","Monthly","USD","500","3000","0","2026-07","2026-12","0","0","0","0","0","0","500","500","0","0","0","0","1000","1500","Pays by card"');
+  });
+
+  it('leaves the total cost empty for a service that is still running, and cannot be made to run a formula', () => {
+    const rows = [yearRow(account({ serviceName: '=SUM(A1:A9)' }), [], 2026, '2026-11')];
+    const line = sheetCsv(rows, 2026, () => ({ name: 'Tom', company: '' }), () => 'GBP').split('\n')[1];
+    expect(line.startsWith(`"'=SUM(A1:A9)","Tom","","Monthly","GBP","500","",`)).toBe(true);
   });
 });

@@ -4,7 +4,7 @@
 // view shows a whole year, one column for each month.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CreditCard, Download, FileText, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CreditCard, Download, FileText, Loader2, Pencil, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatStrip, type StatItem } from '@/components/common/StatStrip';
@@ -20,13 +20,14 @@ import { useCrmCompanies, useCrmContacts } from '@/hooks/useCrmHub';
 import { useSelectedWorkspace } from '@/hooks/useSelectedWorkspace';
 import {
   COLLECTION_STATUS_LABEL, collectionRow, collectionsTotals, monthKey, monthLabel, nextMonth, previousMonth, yearRow,
-  type CollectionRow, type CollectionStatus,
+  sheetCsv, type CollectionRow, type CollectionStatus,
 } from '@/lib/crmCollections';
 import { leadName } from '@/lib/crmFlow';
 import { accountCurrency, formatByCurrency, formatCurrency } from '@/lib/crmCurrency';
 import { publicMessage } from '@/lib/publicError';
 import { addAccountPayment, listAccountPayments, listClientAccounts } from '@/services/supabase/crmHub/accounts';
 import { PAYMENT_METHODS } from '@/components/crmHub/ClientAccountsTab';
+import { ServiceDialog, type ServiceClient } from '@/components/crmHub/ServiceDialog';
 import { NewInvoiceDialog, type InvoiceService } from '@/components/signroom/billing/NewInvoiceDialog';
 import type { CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 
@@ -77,6 +78,10 @@ export const CrmAccountsPage: React.FC = () => {
   const [type, setType] = useState<'all' | 'monthly' | 'one_time'>('all');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [paying, setPaying] = useState<CollectionRow | null>(null);
+  /** The month a payment is being recorded for, when a month of the sheet was pressed. Null: the month on screen. */
+  const [payingMonth, setPayingMonth] = useState<string | null>(null);
+  /** The service window: open for a new service (null inside) or for the one being changed. */
+  const [service, setService] = useState<{ account: CrmClientAccount | null } | null>(null);
   /** The service an invoice is being made for, and the company it is made out to. */
   const [invoicing, setInvoicing] = useState<{ service: InvoiceService; companyId: string } | null>(null);
 
@@ -136,6 +141,14 @@ export const CrmAccountsPage: React.FC = () => {
     }).sort((a, b) => b.collect - a.collect || clientOf(a.account).name.localeCompare(clientOf(b.account).name));
   }, [rows, search, type, status, clientOf]);
 
+  /** The leads a new service can be for, by name. */
+  const clientChoices = useMemo<ServiceClient[]>(
+    () => contacts
+      .map((contact) => ({ id: contact.id, name: leadName(contact), company: (contact.companyId && companyById.get(contact.companyId)?.name) || '' }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [contacts, companyById],
+  );
+
   const year = Number(month.slice(0, 4));
   const yearRows = useMemo(() => shown.map((row) => yearRow(row.account, payments, year, month)), [shown, payments, year, month]);
 
@@ -148,19 +161,26 @@ export const CrmAccountsPage: React.FC = () => {
     { label: 'To collect', value: sumOf(rows, (row) => row.collect), tone: totals.collect > 0 ? 'danger' : 'success' },
   ];
 
+  const saveFile = (text: string, name: string) => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   const exportCsv = () => {
+    if (view === 'year') {
+      saveFile(sheetCsv(yearRows, year, clientOf, (account) => accountCurrency(account, companyCurrency)), `accounts-${year}.csv`);
+      return;
+    }
     const header = ['Client', 'Company', 'Service', 'Type', 'Currency', 'Due', 'Charges', 'Paid for the month', 'Month unpaid', 'Earlier unpaid', 'To collect', 'Credit', 'Status'];
     const lines = shown.map((row) => {
       const client = clientOf(row.account);
       return [client.name, client.company, row.account.serviceName, row.account.billingType === 'monthly' ? 'Monthly' : 'One-time', accountCurrency(row.account, companyCurrency), row.dueOn ?? '',
         row.charges, row.paid, row.monthUnpaid, row.earlierUnpaid, row.collect, row.credit, row.setup ?? COLLECTION_STATUS_LABEL[row.status]].map(cell).join(',');
     });
-    const blob = new Blob([[header.map(cell).join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `collections-${month}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    saveFile([header.map(cell).join(','), ...lines].join('\n'), `collections-${month}.csv`);
   };
 
   const filtered = search.trim() !== '' || type !== 'all' || status !== 'all';
@@ -170,8 +190,13 @@ export const CrmAccountsPage: React.FC = () => {
       <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6">
         <PageHeader
           title="Accounts"
-          description="What each client is charged, what they paid, and what is still to collect. Add a client's services on the Accounts tab of the lead."
-          actions={<Button variant="outline" onClick={exportCsv} disabled={shown.length === 0}><Download aria-hidden />Export</Button>}
+          description="What each client is charged, what they paid, and what is still to collect. “The year” is the payments sheet: one row for each service, one column for each month."
+          actions={
+            <>
+              <Button variant="outline" onClick={exportCsv} disabled={shown.length === 0}><Download aria-hidden />Export</Button>
+              <Button onClick={() => setService({ account: null })} disabled={!workspaceId}><Plus aria-hidden />Add service</Button>
+            </>
+          }
         />
 
         <div className="flex flex-wrap items-center gap-2">
@@ -208,7 +233,8 @@ export const CrmAccountsPage: React.FC = () => {
           <div className="py-16 text-center text-muted-foreground"><Loader2 className="mx-auto h-7 w-7 animate-spin" aria-hidden /></div>
         ) : rows.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-            No client has a service yet. Open a lead, go to its Accounts tab and press “Add service”.
+            <p>No client has a service yet. A service is what a client pays for: a monthly fee or a one-time fee.</p>
+            <Button className="mt-3" onClick={() => setService({ account: null })}><Plus aria-hidden />Add service</Button>
           </div>
         ) : shown.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-10 text-center text-sm text-muted-foreground">Nothing matches these filters.</div>
@@ -285,32 +311,77 @@ export const CrmAccountsPage: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border bg-card">
-            <table className="w-full text-sm" aria-label={`Payments in ${year}`}>
+            {/* The payments sheet: the same columns, in the same order, as the sheet it replaces. */}
+            <table className="w-full min-w-[112rem] text-sm" aria-label={`Payments in ${year}`}>
               <thead>
                 <tr className={HEAD}>
-                  <th className="px-4 text-left font-medium">Client</th>
-                  <th className="px-3 text-left font-medium">Service</th>
-                  {SHORT.map((name) => <th key={name} className="px-2 text-right font-medium">{name}</th>)}
-                  <th className="px-3 text-right font-medium">Total paid</th>
-                  <th className="px-4 text-right font-medium">Amount due</th>
+                  <th scope="col" className="px-4 text-left font-medium">Project</th>
+                  <th scope="col" className="px-3 text-left font-medium">Client</th>
+                  <th scope="col" className="px-3 text-left font-medium">Type</th>
+                  <th scope="col" className="px-3 text-right font-medium">Fee</th>
+                  <th scope="col" className="px-3 text-right font-medium">Total cost</th>
+                  <th scope="col" className="px-3 text-right font-medium">Opening paid</th>
+                  <th scope="col" className="px-3 text-left font-medium">Start</th>
+                  <th scope="col" className="px-3 text-left font-medium">End</th>
+                  {SHORT.map((name) => <th scope="col" key={name} className="px-1 text-right font-medium">{name}</th>)}
+                  <th scope="col" className="px-3 text-right font-medium">Total paid</th>
+                  <th scope="col" className="px-3 text-right font-medium">Amount due</th>
+                  <th scope="col" className="px-3 text-left font-medium">Notes</th>
+                  <th scope="col" className="px-4 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {yearRows.map((row) => {
-                  const client = clientOf(row.account);
-                  const money = moneyOf(row.account);
+                {yearRows.map((row, index) => {
+                  const { account } = row;
+                  const client = clientOf(account);
+                  const money = moneyOf(account);
+                  const monthRow = shown[index];
+                  const label = `${client.name}, ${account.serviceName}`;
                   return (
-                    <tr key={row.account.id} aria-label={`${client.name}, ${row.account.serviceName}`}>
-                      <td className="px-4 py-2">
-                        <Link to={`/crm/contacts/${row.account.contactId}`} className="font-medium text-foreground hover:underline">{client.name}</Link>
+                    <tr key={account.id} aria-label={label} className="hover:bg-surface-2">
+                      <td className="max-w-[14rem] px-4 py-2 font-medium text-foreground"><span className="block truncate" title={account.serviceName}>{account.serviceName}</span></td>
+                      <td className="px-3 py-2">
+                        <Link to={`/crm/contacts/${account.contactId}`} className="text-foreground hover:underline">{client.name}</Link>
                         {client.company && <p className="text-xs text-muted-foreground">{client.company}</p>}
                       </td>
-                      <td className="px-3 py-2 text-foreground">{row.account.serviceName}</td>
-                      {row.months.map((amount, index) => (
-                        <td key={SHORT[index]} className={`px-2 py-2 text-right tabular-nums ${amount > 0 ? 'text-foreground' : 'text-muted-foreground/50'}`}>{amount > 0 ? money(amount) : '–'}</td>
-                      ))}
+                      <td className="whitespace-nowrap px-3 py-2">{account.billingType === 'monthly' ? 'Monthly' : 'One-time'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{money(account.agreedAmount)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{row.totalCost === null ? <span className="text-muted-foreground">Ongoing</span> : money(row.totalCost)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{money(account.openingPaid)}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{account.serviceStart ? monthLabel(account.serviceStart.slice(0, 7), true) : '–'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{account.serviceEnd ? monthLabel(account.serviceEnd.slice(0, 7), true) : '–'}</td>
+                      {row.months.map((amount, at) => {
+                        const key = `${year}-${String(at + 1).padStart(2, '0')}`;
+                        return (
+                          <td key={SHORT[at]} className="px-0.5 py-1 text-right tabular-nums">
+                            {/* A month is pressed to write down what was paid for it. */}
+                            <button
+                              type="button"
+                              aria-label={`Record a payment for ${label}, ${monthLabel(key)}`}
+                              title={`Record a payment for ${monthLabel(key)}`}
+                              onClick={() => { if (monthRow) { setPayingMonth(key); setPaying(collectionRow(account, payments, key)); } }}
+                              className={`w-full rounded px-1.5 py-1 text-right hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${amount > 0 ? 'text-foreground' : 'text-muted-foreground/60'}`}
+                            >
+                              {amount > 0 ? money(amount) : '–'}
+                            </button>
+                          </td>
+                        );
+                      })}
                       <td className="px-3 py-2 text-right font-medium tabular-nums">{money(row.totalPaid)}</td>
-                      <td className={`px-4 py-2 text-right font-medium tabular-nums ${row.amountDue > 0 ? 'text-destructive' : ''}`}>{money(row.amountDue)}</td>
+                      <td className={`px-3 py-2 text-right font-medium tabular-nums ${row.amountDue > 0 ? 'text-destructive' : ''}`}>{money(row.amountDue)}</td>
+                      <td className="max-w-[16rem] px-3 py-2 text-muted-foreground"><span className="block truncate" title={account.notes ?? undefined}>{account.notes?.trim() || '–'}</span></td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right">
+                        <span className="inline-flex gap-1.5">
+                          {monthRow && (
+                            <Button variant="outline" size="sm" onClick={() => startInvoice(monthRow)} aria-label={`Create an invoice for ${label}`}>
+                              <FileText aria-hidden />Invoice
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="icon" onClick={() => setService({ account })} aria-label={`Edit ${account.serviceName} of ${client.name}`} title="Edit service">
+                            <Pencil aria-hidden />
+                          </Button>
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
@@ -320,13 +391,19 @@ export const CrmAccountsPage: React.FC = () => {
         )}
       </div>
 
+      <ServiceDialog
+        open={service !== null} onOpenChange={(open) => { if (!open) setService(null); }}
+        organizationId={organizationId} workspaceId={workspaceId} clients={clientChoices}
+        account={service?.account ?? null} year={year} onSaved={() => load(true)}
+      />
+
       {invoicing && (
         <NewInvoiceDialog open companyId={invoicing.companyId} service={invoicing.service} onOpenChange={(open) => { if (!open) setInvoicing(null); }} />
       )}
 
       <RecordPayment
-        row={paying} month={month} clientName={paying ? clientOf(paying.account).name : ''} money={paying ? moneyOf(paying.account) : (amount: number) => formatCurrency(amount, companyCurrency)}
-        onOpenChange={(open) => { if (!open) setPaying(null); }}
+        row={paying} month={payingMonth ?? month} clientName={paying ? clientOf(paying.account).name : ''} money={paying ? moneyOf(paying.account) : (amount: number) => formatCurrency(amount, companyCurrency)}
+        onOpenChange={(open) => { if (!open) { setPaying(null); setPayingMonth(null); } }}
         onSave={async (input) => {
           if (!paying) return;
           await addAccountPayment({ accountId: paying.account.id, organizationId, workspaceId, createdBy: user?.userId, ...input });
