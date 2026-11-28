@@ -10,10 +10,14 @@ import type { CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 const h = vi.hoisted(() => ({
   listClientAccounts: vi.fn(), listAccountPayments: vi.fn(), addAccountPayment: vi.fn(),
   createClientAccount: vi.fn(), updateClientAccount: vi.fn(),
+  call: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+// One object for the whole file: the page keeps `client` in effect dependencies.
+const signroom = vi.hoisted(() => ({ client: { call: (...args: unknown[]) => (globalThis as unknown as { __accountsCall: (...a: unknown[]) => unknown }).__accountsCall(...args), pdf: () => Promise.resolve(new Blob()), upload: () => Promise.resolve({}) }, workspaceId: 'ws-1' }));
 vi.mock('sonner', () => ({ toast: h.toast }));
+vi.mock('@/hooks/useSignroom', () => ({ useSignroom: () => signroom }));
 vi.mock('@/context/AuthContext', () => ({ useAuth: () => ({ user: { userId: 'u1' } }) }));
 vi.mock('@/context/OrganizationContext', () => ({ useOrganization: () => ({ organization: { organizationId: 'org-1' } }) }));
 vi.mock('@/context/CrmCurrencyContext', () => ({ useCrmCurrency: () => ({ code: 'USD', format: (n: number) => `$${n.toLocaleString('en-US')}` }) }));
@@ -69,6 +73,9 @@ beforeEach(() => {
   for (const f of [h.listClientAccounts, h.listAccountPayments, h.addAccountPayment, h.createClientAccount, h.updateClientAccount, h.toast.success, h.toast.error]) f.mockReset();
   h.createClientAccount.mockResolvedValue({});
   h.updateClientAccount.mockResolvedValue({});
+  h.call.mockReset();
+  h.call.mockImplementation(async (path: string) => (path === 'billing' ? [] : {}));
+  (globalThis as unknown as { __accountsCall: unknown }).__accountsCall = h.call;
   h.listClientAccounts.mockResolvedValue(ACCOUNTS);
   h.listAccountPayments.mockResolvedValue(PAYMENTS);
   h.addAccountPayment.mockResolvedValue({});
@@ -320,5 +327,59 @@ describe('services in more than one currency', () => {
     expect(screen.getByText('Monthly fees').parentElement?.textContent).toContain('$500 + £200');
     // The foot of the table as well.
     expect(screen.getByText('Total of what is shown').closest('tr')?.textContent).toContain('$500 + £200');
+  });
+});
+
+describe('billing and invoices, joined', () => {
+  const made = (over: Record<string, unknown> = {}) => ({
+    id: 'inv-7', number: 'INV-0007', status: 'Issued', dueDate: '2026-12-01', issueDate: '2026-11-01', accountId: 'a1', billingMonth: '2026-11',
+    clientId: 'c1', currency: 'USD', lines: [], payments: [], totalMinor: 50000, sentAt: null, ...over,
+  });
+  const withInvoices = (list: unknown[]) => h.call.mockImplementation(async (path: string) => (path === 'billing' ? list : {}));
+
+  it('shows the invoice already made for a service and month, with its status, where "Invoice" was', async () => {
+    withInvoices([made()]);
+    await show();
+    const row = rowOf('Elena Rossi, Digital marketing');
+    const link = await within(row).findByRole('link', { name: 'Open invoice INV-0007 for Elena Rossi, Digital marketing' });
+    expect(link.getAttribute('href')).toBe('/crm/invoices/inv-7');
+    expect(within(row).getByText('Issued')).toBeTruthy();
+    // It is not made twice.
+    expect(within(row).queryByRole('button', { name: 'Create an invoice for Elena Rossi, Digital marketing' })).toBeNull();
+    // Another service still offers it.
+    expect(within(rowOf('Tom Okafor, LinkedIn')).getByRole('button', { name: 'Create an invoice for Tom Okafor, LinkedIn' })).toBeTruthy();
+  });
+
+  it('sends an issued invoice to the client from the row', async () => {
+    withInvoices([made()]);
+    await show();
+    fireEvent.click(await within(rowOf('Elena Rossi, Digital marketing')).findByRole('button', { name: 'Send invoice INV-0007 to the client' }));
+    await waitFor(() => expect(h.call).toHaveBeenCalledWith('billing/inv-7/send', {}));
+    await waitFor(() => expect(h.toast.success).toHaveBeenCalledWith('Invoice INV-0007 was sent.'));
+  });
+
+  it('says to finish a draft first: a draft cannot be sent', async () => {
+    withInvoices([made({ status: 'Draft' })]);
+    await show();
+    const row = rowOf('Elena Rossi, Digital marketing');
+    await within(row).findByRole('link', { name: 'Open invoice INV-0007 for Elena Rossi, Digital marketing' });
+    expect(within(row).queryByRole('button', { name: /Send invoice/ })).toBeNull();
+    expect(within(row).getByText('Draft')).toBeTruthy();
+  });
+
+  it('offers a new invoice again when the one made was voided, and for another month', async () => {
+    withInvoices([made({ status: 'Voided' }), made({ id: 'inv-6', number: 'INV-0006', billingMonth: '2026-10' })]);
+    await show();
+    expect(within(rowOf('Elena Rossi, Digital marketing')).getByRole('button', { name: 'Create an invoice for Elena Rossi, Digital marketing' })).toBeTruthy();
+  });
+
+  it('says it in plain words when the invoice could not be sent', async () => {
+    h.call.mockImplementation(async (path: string) => {
+      if (path === 'billing') return [made()];
+      throw new Error('This invoice has no customer email address.');
+    });
+    await show();
+    fireEvent.click(await within(rowOf('Elena Rossi, Digital marketing')).findByRole('button', { name: 'Send invoice INV-0007 to the client' }));
+    await waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('This invoice has no customer email address.'));
   });
 });

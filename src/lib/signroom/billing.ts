@@ -146,6 +146,19 @@ export function invoiceCopy(source: Invoice): InvoiceCopy {
 }
 
 /**
+ * The invoice that was already made for a client service: for a monthly
+ * service the one that bills `month`, for a one-time service (no month) the
+ * newest one. A voided invoice does not count: it was taken back, so another
+ * can be made. Null when the service was not invoiced.
+ */
+export function invoiceForService(invoices: Invoice[], accountId: string, month: string | null): Invoice | null {
+  const made = invoices
+    .filter((i) => i.accountId === accountId && i.status !== 'Voided' && (month === null || i.billingMonth === month))
+    .sort((a, b) => b.issueDate.localeCompare(a.issueDate) || b.number.localeCompare(a.number));
+  return made[0] ?? null;
+}
+
+/**
  * The totals for what is typed, from the shared maths. While something is not
  * valid yet, `totals` is null and `problem` is the server's sentence for it.
  */

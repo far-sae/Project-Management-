@@ -1,6 +1,6 @@
 // A new invoice made from an existing one: what is carried over, and what is not.
 import { describe, expect, it, vi } from 'vitest';
-import { invoiceCopy, monthAfter } from '@/lib/signroom/billing';
+import { invoiceCopy, invoiceForService, monthAfter } from '@/lib/signroom/billing';
 import { copyInvoice } from '@/components/signroom/billing/copyInvoice';
 import { designLine, invoice, issued } from './fixtures';
 
@@ -80,5 +80,33 @@ describe('making the copy', () => {
     });
     const made = await copyInvoice({ call } as never, source);
     expect(made).toMatchObject({ filled: false, invoice: { id: 'new1' } });
+  });
+});
+
+describe('the invoice already made for a service', () => {
+  const list = [
+    issued({ id: 'i1', number: 'INV-0003', accountId: 'acc-1', billingMonth: '2026-10', issueDate: '2026-10-01' }),
+    issued({ id: 'i2', number: 'INV-0004', accountId: 'acc-1', billingMonth: '2026-11', issueDate: '2026-11-01', status: 'Voided' }),
+    invoice({ id: 'i3', number: 'INV-0005', accountId: 'acc-1', billingMonth: '2026-11', issueDate: '2026-11-02' }),
+    issued({ id: 'i4', number: 'INV-0006', accountId: 'acc-2', billingMonth: null, issueDate: '2026-06-01', status: 'Paid' }),
+    issued({ id: 'i5', number: 'INV-0007', accountId: 'acc-2', billingMonth: null, issueDate: '2026-09-01' }),
+    issued({ id: 'i6', number: 'INV-0008' }),
+  ];
+
+  it('is the one for that month of a monthly service', () => {
+    expect(invoiceForService(list, 'acc-1', '2026-10')?.number).toBe('INV-0003');
+    expect(invoiceForService(list, 'acc-1', '2026-09')).toBeNull();
+  });
+
+  it('never counts a voided invoice: the draft made after it is the one', () => {
+    expect(invoiceForService(list, 'acc-1', '2026-11')?.number).toBe('INV-0005');
+  });
+
+  it('is the newest one for a one-time service, whatever the month', () => {
+    expect(invoiceForService(list, 'acc-2', null)?.number).toBe('INV-0007');
+  });
+
+  it('is nothing for a service that was never invoiced', () => {
+    expect(invoiceForService(list, 'acc-9', null)).toBeNull();
   });
 });

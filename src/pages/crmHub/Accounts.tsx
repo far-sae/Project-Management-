@@ -4,7 +4,7 @@
 // view shows a whole year, one column for each month.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CreditCard, Download, FileText, Loader2, Pencil, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CreditCard, Download, FileText, Loader2, Pencil, Plus, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/common/PageHeader';
 import { StatStrip, type StatItem } from '@/components/common/StatStrip';
@@ -29,6 +29,10 @@ import { addAccountPayment, listAccountPayments, listClientAccounts } from '@/se
 import { PAYMENT_METHODS } from '@/components/crmHub/ClientAccountsTab';
 import { ServiceDialog, type ServiceClient } from '@/components/crmHub/ServiceDialog';
 import { NewInvoiceDialog, type InvoiceService } from '@/components/signroom/billing/NewInvoiceDialog';
+import { InvoiceStatus } from '@/components/signroom/billing/shared';
+import { useInvoices } from '@/components/signroom/billing/useBilling';
+import { useSignroom } from '@/hooks/useSignroom';
+import { billingToday, errorSentence, invoiceForService } from '@/lib/signroom/billing';
 import type { CrmAccountPayment, CrmClientAccount } from '@/types/crmHub';
 
 const SELECT = 'h-11 md:h-8 rounded-md border border-input bg-background px-2 text-sm';
@@ -66,6 +70,10 @@ export const CrmAccountsPage: React.FC = () => {
   );
   const { items: contacts } = useCrmContacts();
   const { items: companies } = useCrmCompanies();
+  // The invoices of the workspace: a service that was already invoiced for the month shows that invoice.
+  const { client: documents } = useSignroom();
+  const { invoices, reload: reloadInvoices } = useInvoices();
+  const [sending, setSending] = useState<string | null>(null);
   const workspaceId = selected?.workspaceId ?? '';
   const organizationId = organization?.organizationId ?? '';
 
@@ -125,6 +133,52 @@ export const CrmAccountsPage: React.FC = () => {
         ? { accountId: account.id, name: account.serviceName, amount: account.agreedAmount, billingMonth: month, monthly: true, currency: accountCurrency(account, companyCurrency) }
         : { accountId: account.id, name: account.serviceName, amount: row.collect > 0 ? row.collect : account.agreedAmount, billingMonth: null, monthly: false, currency: accountCurrency(account, companyCurrency) },
     });
+  };
+
+  /** The invoice already made for a service: for the month on screen, or (one-time) its newest. */
+  const invoiceOf = useCallback(
+    (account: CrmClientAccount) => invoiceForService(invoices, account.id, account.billingType === 'monthly' ? month : null),
+    [invoices, month],
+  );
+
+  /** Emails an issued invoice to the client, from the row. */
+  const sendInvoice = async (id: string, number: string) => {
+    setSending(id);
+    try {
+      await documents.call(`billing/${id}/send`, {});
+      toast.success(`Invoice ${number} was sent.`);
+      await reloadInvoices();
+    } catch (error) {
+      toast.error(errorSentence(error, 'The invoice could not be sent. Please try again.'));
+    } finally {
+      setSending(null);
+    }
+  };
+
+  /** The invoice of a row: the one that was made (open it, send it), or the button to make one. */
+  const invoiceCell = (row: CollectionRow, label: string) => {
+    const made = invoiceOf(row.account);
+    if (!made) {
+      return (
+        <Button variant="outline" size="sm" onClick={() => startInvoice(row)} aria-label={`Create an invoice for ${label}`}>
+          <FileText aria-hidden />Invoice
+        </Button>
+      );
+    }
+    const canSend = made.status === 'Issued' || made.status === 'Part paid';
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <Link to={`/crm/invoices/${made.id}`} aria-label={`Open invoice ${made.number} for ${label}`} className="font-medium tabular-nums text-foreground hover:underline">
+          {made.number}
+        </Link>
+        <InvoiceStatus invoice={made} today={billingToday()} />
+        {canSend && (
+          <Button variant="outline" size="sm" disabled={sending !== null} onClick={() => void sendInvoice(made.id, made.number)} aria-label={`Send invoice ${made.number} to the client`}>
+            {sending === made.id ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />}{made.sentAt ? 'Send again' : 'Send'}
+          </Button>
+        )}
+      </span>
+    );
   };
 
   const rows = useMemo(() => accounts.map((account) => collectionRow(account, payments, month)), [accounts, payments, month]);
@@ -287,9 +341,7 @@ export const CrmAccountsPage: React.FC = () => {
                           <Button variant="outline" size="sm" onClick={() => setPaying(row)} aria-label={`Record a payment for ${client.name}, ${row.account.serviceName}`}>
                             <CreditCard aria-hidden />Payment
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => startInvoice(row)} aria-label={`Create an invoice for ${client.name}, ${row.account.serviceName}`}>
-                            <FileText aria-hidden />Invoice
-                          </Button>
+                          {invoiceCell(row, `${client.name}, ${row.account.serviceName}`)}
                         </span>
                       </td>
                     </tr>
@@ -372,11 +424,7 @@ export const CrmAccountsPage: React.FC = () => {
                       <td className="max-w-[16rem] px-3 py-2 text-muted-foreground"><span className="block truncate" title={account.notes ?? undefined}>{account.notes?.trim() || '–'}</span></td>
                       <td className="whitespace-nowrap px-4 py-2 text-right">
                         <span className="inline-flex gap-1.5">
-                          {monthRow && (
-                            <Button variant="outline" size="sm" onClick={() => startInvoice(monthRow)} aria-label={`Create an invoice for ${label}`}>
-                              <FileText aria-hidden />Invoice
-                            </Button>
-                          )}
+                          {monthRow && invoiceCell(monthRow, label)}
                           <Button variant="ghost" size="icon" onClick={() => setService({ account })} aria-label={`Edit ${account.serviceName} of ${client.name}`} title="Edit service">
                             <Pencil aria-hidden />
                           </Button>
