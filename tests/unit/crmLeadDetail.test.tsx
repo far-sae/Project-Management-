@@ -77,6 +77,13 @@ vi.mock('@/hooks/useCrmHub', () => ({
 vi.mock('@/hooks/useProjects', () => ({ useProjects: () => ({ projects: state.projects }) }));
 vi.mock('@/components/crmHub/ContactTagPicker', () => ({ ContactTagPicker: () => <div>tag picker</div> }));
 vi.mock('@/components/crmHub/ClientAccountsTab', () => ({ ClientAccountsTab: () => <div>accounts</div> }));
+// The meetings card has its own tests; here only what the page hands it is looked at.
+vi.mock('@/components/crmHub/LeadMeetings', () => ({
+  LeadMeetings: (props: { lead: { name: string; email: string | null }; planning: boolean }) => (
+    <div data-testid="lead-meetings">{JSON.stringify({ lead: props.lead.name, email: props.lead.email, planning: props.planning })}</div>
+  ),
+}));
+
 vi.mock('@/components/crmHub/ConvertLeadDialog', () => ({
   ConvertLeadDialog: ({ open, lead }: { open: boolean; lead: { firstName: string } }) =>
     (open ? <div data-testid="convert-dialog">Converting {lead.firstName}</div> : null),
@@ -241,6 +248,23 @@ describe('lead page', () => {
     const [saved] = state.logActivity.mock.calls[0] as unknown as [{ occurredAt: Date; description: string }];
     expect(saved.description).toBe('Spoke to them. Met at the trade show');
     expect(saved.occurredAt.getTime()).toBe(new Date(2026, 10, 10, 15, 45).getTime());
+  });
+
+  it('offers to plan a meeting with a link from the Log window, for a meeting that has not happened yet', async () => {
+    await renderPage();
+    const card = () => JSON.parse(screen.getByTestId('lead-meetings').textContent ?? '{}') as { planning: boolean };
+    expect(card().planning).toBe(false);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Log activity' })[0]);
+    const form = await screen.findByRole('dialog');
+    // A call is not a meeting: the offer is not there.
+    expect(within(form).queryByRole('button', { name: 'Plan a meeting with a link' })).toBeNull();
+    fireEvent.keyDown(within(form).getByRole('combobox', { name: 'Type' }), { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Meeting' }), { key: 'Enter' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Plan a meeting with a link' }));
+    // The Log window closes and the planner opens: nothing is logged.
+    await waitFor(() => expect(card().planning).toBe(true));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(state.logActivity).not.toHaveBeenCalled();
   });
 
   it('lists the lead’s deals with their status and project', async () => {

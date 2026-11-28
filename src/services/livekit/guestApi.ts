@@ -56,6 +56,28 @@ export async function createGuestInvite(
   return { url: r.url, expiresAt: r.expiresAt ?? '' };
 }
 
+/**
+ * A link for a meeting with a lead or a client. The call server makes a room
+ * for it in the workspace and signs a link that works until a day after the
+ * meeting starts, however far ahead that is.
+ */
+export async function createMeetingInvite(input: {
+  workspaceId: string;
+  /** ISO time the meeting starts. */
+  startsAt: string;
+  /** What the guest reads on the join page. */
+  label: string;
+}): Promise<{ url: string; expiresAt: string; roomName: string }> {
+  const r = await call<{ url?: string; expiresAt?: string; roomName?: string }>({
+    action: 'create-meeting-invite',
+    workspaceId: input.workspaceId,
+    startsAt: input.startsAt,
+    label: input.label,
+  });
+  if (!r?.url || !r?.roomName) throw new GuestApiError('Malformed call-guest response');
+  return { url: r.url, expiresAt: r.expiresAt ?? '', roomName: r.roomName };
+}
+
 export async function joinAsGuest(
   invite: string,
   name: string,

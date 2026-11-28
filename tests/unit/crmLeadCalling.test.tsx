@@ -62,6 +62,13 @@ vi.mock('@/services/supabase/crmHub/contacts', () => ({
 }));
 vi.mock('@/services/supabase/crmHub/activities', () => ({ listActivities: async () => state.activities, logActivity: vi.fn() }));
 vi.mock('@/services/supabase/crmHub/notes', () => ({ listNotes: async () => [], createNote: vi.fn() }));
+// The meetings card has its own tests; here only what the page hands it is looked at.
+vi.mock('@/components/crmHub/LeadMeetings', () => ({
+  LeadMeetings: (props: { lead: { name: string; email: string | null }; planning: boolean }) => (
+    <div data-testid="lead-meetings">{JSON.stringify({ lead: props.lead.name, email: props.lead.email, planning: props.planning })}</div>
+  ),
+}));
+
 vi.mock('@/services/supabase/crmHub/tasks', () => ({ listTasks: async () => [], createTask: vi.fn() }));
 vi.mock('@/services/supabase/crmHub/deals', () => ({ listDeals: async () => [] }));
 vi.mock('@/services/supabase/crmHub/dealStages', () => ({ listDealStages: async () => [], seedDefaultDealStages: vi.fn() }));

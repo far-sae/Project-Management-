@@ -140,6 +140,29 @@ describe('CallProvider — meetings and guests', () => {
     expect(h.sent.filter((s) => s.payload.type === 'ring')).toHaveLength(0);
   });
 
+  it('startMeeting joins the room of a meeting with a lead, by the name the call server gave it', async () => {
+    renderProvider();
+    const room = 'crm:0a000000-0000-4000-8000-000000000001:0b000000-0000-4000-8000-000000000002';
+    await act(async () => {
+      await ctx.actions.startMeeting({ type: 'meeting', targetId: 'm1', label: 'Website review', roomName: room }, 'video');
+    });
+    expect(h.svc.connect).toHaveBeenCalledWith(expect.objectContaining({ roomName: room, mediaType: 'video' }));
+    expect(ctx.state.status).toBe('connected');
+    expect(ctx.state.isOpenMeeting).toBe(true);
+    expect(ctx.state.roomName).toBe(room);
+    expect(h.sent.filter((s) => s.payload.type === 'ring')).toHaveLength(0);
+  });
+
+  it('startMeeting does nothing for a meeting with no room, or a room that is not a meeting room', async () => {
+    renderProvider();
+    await act(async () => {
+      await ctx.actions.startMeeting({ type: 'meeting', targetId: 'm1', label: 'x' }, 'video');
+      await ctx.actions.startMeeting({ type: 'meeting', targetId: 'm1', label: 'x', roomName: 'project:p9' }, 'video');
+    });
+    expect(h.svc.connect).not.toHaveBeenCalled();
+    expect(ctx.state.status).toBe('idle');
+  });
+
   it('hanging up during the dynamic import never connects (startMeeting)', async () => {
     renderProvider();
     let pending: Promise<void> = Promise.resolve();

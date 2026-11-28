@@ -19,13 +19,19 @@ export interface CallParticipant {
 }
 
 export interface CallContext {
-  type: 'project' | 'dm';
-  /** projectId for project calls, recipientUserId for DM calls. */
+  /**
+   * 'meeting' is a meeting with a lead or a client (CRM): it has a room of its
+   * own, `roomName`, and is only ever joined (startMeeting), never rung.
+   */
+  type: 'project' | 'dm' | 'meeting';
+  /** projectId for project calls, recipientUserId for DM calls, the meeting's id for a meeting. */
   targetId: string;
   /** Human-readable label for the call UI header. */
   label: string;
   /** Project calls only: join this task's own meeting room instead of the project room. */
   taskId?: string;
+  /** Meetings only: the room the call server made for it (crm:<workspace>:<meeting>). */
+  roomName?: string;
 }
 
 /**

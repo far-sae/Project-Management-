@@ -967,8 +967,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
   const startMeeting = useCallback(
     async (context: CallContext, mediaType: CallMediaType) => {
       if (!localParticipant || !isMediaSupported()) return;
-      // Guest links and the "sit and wait" flow are project-room only.
-      if (context.type !== 'project') return;
+      // Guest links and the "sit and wait" flow are for a project's room, and for
+      // the room of a meeting with a lead. A DM is rung, never waited in.
+      if (context.type === 'dm') return;
+      if (context.type === 'meeting' && !/^crm:[A-Za-z0-9-]{1,64}:[A-Za-z0-9-]{1,64}$/.test(context.roomName ?? '')) return;
       if (latestCallStateRef.current.status !== 'idle') return;
 
       clearTimers();
@@ -978,9 +980,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const callId = generateCallId();
       activeCallIdRef.current = callId;
-      const roomName = context.taskId
-        ? taskMeetingRoomName(context.targetId, context.taskId)
-        : projectRoomName(context.targetId);
+      const roomName = context.type === 'meeting'
+        ? (context.roomName as string)
+        : context.taskId
+          ? taskMeetingRoomName(context.targetId, context.taskId)
+          : projectRoomName(context.targetId);
       setState({
         ...IDLE_STATE,
         status: 'connecting',

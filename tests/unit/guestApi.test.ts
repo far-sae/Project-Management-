@@ -80,4 +80,18 @@ describe('guestApi', () => {
     });
     await expect(admitGuest('r', 'guest:a')).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
+
+  it('createMeetingInvite asks for a link for a meeting, and hands back the link and its room', async () => {
+    const { createMeetingInvite } = await import('@/services/livekit/guestApi');
+    invoke.mockResolvedValue({ data: { url: 'https://taskcalendar.co.uk/join/tok', expiresAt: '2026-12-03T15:00:00.000Z', roomName: 'crm:w:m' }, error: null });
+    const out = await createMeetingInvite({ workspaceId: 'w', startsAt: '2026-12-02T15:00:00.000Z', label: 'Website review' });
+    expect(invoke).toHaveBeenCalledWith('call-guest', { body: { action: 'create-meeting-invite', workspaceId: 'w', startsAt: '2026-12-02T15:00:00.000Z', label: 'Website review' } });
+    expect(out).toEqual({ url: 'https://taskcalendar.co.uk/join/tok', expiresAt: '2026-12-03T15:00:00.000Z', roomName: 'crm:w:m' });
+  });
+
+  it('createMeetingInvite refuses an answer without a link or a room', async () => {
+    const { createMeetingInvite } = await import('@/services/livekit/guestApi');
+    invoke.mockResolvedValue({ data: { url: 'https://taskcalendar.co.uk/join/tok' }, error: null });
+    await expect(createMeetingInvite({ workspaceId: 'w', startsAt: 'x', label: 'y' })).rejects.toThrow();
+  });
 });

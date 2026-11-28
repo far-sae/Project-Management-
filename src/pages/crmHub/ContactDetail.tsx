@@ -55,6 +55,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ContactTagPicker } from '@/components/crmHub/ContactTagPicker';
 import { ClientAccountsTab } from '@/components/crmHub/ClientAccountsTab';
+import { LeadMeetings } from '@/components/crmHub/LeadMeetings';
 import { ConvertLeadDialog } from '@/components/crmHub/ConvertLeadDialog';
 import { CustomFieldsEditor } from '@/components/crmHub/CustomFieldsEditor';
 import { rowsProblem } from '@/lib/crmFieldTypes';
@@ -303,6 +304,8 @@ export const CrmContactDetailPage: React.FC = () => {
   const [askUnqualified, setAskUnqualified] = useState(false);
   const unqualifiedReason = useRef('');
   const [logType, setLogType] = useState<ActivityType>('call');
+  /** The window that plans a video meeting with this lead (a link, emailed to them). */
+  const [planningMeeting, setPlanningMeeting] = useState(false);
   const [logBody, setLogBody] = useState('');
   /** When it happened (it is often logged afterwards), how a call went, and the deal it was about. */
   const [logWhen, setLogWhen] = useState('');
@@ -729,6 +732,18 @@ export const CrmContactDetailPage: React.FC = () => {
               </TabsContent>
             </Tabs>
 
+            {/* Video meetings with this lead: plan one, email its link, join it as the host. */}
+            {contact.workspaceId && orgId && (
+              <LeadMeetings
+                organizationId={orgId}
+                workspaceId={contact.workspaceId}
+                lead={{ id: contact.id, name: fullName, email: contact.email || null }}
+                planning={planningMeeting}
+                onPlanning={setPlanningMeeting}
+                onChanged={refresh}
+              />
+            )}
+
             <Section
               title="Follow-ups"
               meta={tasks.length}
@@ -1029,6 +1044,19 @@ export const CrmContactDetailPage: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+            {logType === 'meeting' && contact.workspaceId && (
+              <p className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-muted-foreground">
+                This writes down a meeting that already happened.{' '}
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline underline-offset-4"
+                  onClick={() => { setShowLog(false); setPlanningMeeting(true); }}
+                >
+                  Plan a meeting with a link
+                </button>
+                {' '}to hold one in TaskCalendar and email the link to {fullName}.
+              </p>
+            )}
             <div className={logType === 'call' ? FIELD_ROW : 'grid grid-cols-1 gap-3'}>
               <div className={FIELD}>
                 <Label htmlFor={`${logFieldId}-when`}>When</Label>
