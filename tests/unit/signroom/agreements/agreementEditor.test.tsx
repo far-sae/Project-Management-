@@ -111,6 +111,14 @@ describe('opening the editor', () => {
 });
 
 describe('the document step', () => {
+  it('is written in a formal reading font, with the document shown beside it as it will look', async () => {
+    renderEditor();
+    const text = await screen.findByLabelText('Agreement content');
+    expect(text.className).toContain('font-serif');
+    expect(text.className).not.toContain('font-mono');
+    expect(screen.getByRole('region', { name: 'How the document will look' })).toBeTruthy();
+  });
+
   it('saves a changed title by itself, with the revision and only what the server stores', async () => {
     renderEditor();
     fireEvent.change(await screen.findByLabelText('Agreement title'), { target: { value: 'Mutual NDA' } });

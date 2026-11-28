@@ -363,6 +363,7 @@ const DraftEditor: React.FC<{
         {step === 0 ? (
           <EditorDocumentStep
             draft={draft}
+            workspaceId={draft.workspaceId}
             busy={busy}
             uploaded={draft.sourceKind === 'upload' && !writeInstead}
             onTitle={(title) => update({ title })}

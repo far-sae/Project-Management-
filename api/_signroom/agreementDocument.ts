@@ -8,7 +8,7 @@ import type { Store, StoredAgreement } from "./store.js";
 import type { Agreement } from "./shared/types.js";
 import { checkPdf, looksLikePdf } from "./upload.js";
 import { scanPdf } from "./virusScan.js";
-import { refuseVerdict, spend as realSpend } from "./host/rateLimit.js";
+import { minutes, refuseVerdict, spend as realSpend, userLimitKey } from "./host/rateLimit.js";
 
 type Body = Record<string, unknown>;
 
@@ -36,6 +36,34 @@ export async function prepareAgreement(store: Store, user: SignedInUser, id: str
     "The draft changed during PDF generation. Try again.",
   );
   return publicAgreement(out);
+}
+
+/** The sr_attempts tool for the preview's limit, keyed by the signed-in account. */
+export const PREVIEW_TOOL = "signroom-agreement-preview";
+/** 120 previews in 10 minutes per account: one every five seconds, more than typing asks for. */
+export const PREVIEW_LIMIT = 120;
+
+/**
+ * The draft as the PDF it would become, with the workspace's letterhead, logo
+ * and font as they are now: what the editor shows beside the text while it is
+ * written. The text comes from the request when it is sent (what is on screen,
+ * saved or not), else from the draft.
+ *
+ * Nothing is stored and the draft is not changed: no hash, no revision, no
+ * event. The PDF signers get is still the one "prepare" makes and freezes.
+ */
+export async function previewAgreement(d: MailDeps, user: SignedInUser, id: string, b: Body): Promise<Uint8Array> {
+  const { ctx, a } = await openAgreement(d.store, user, id, "prepare");
+  if (a.status !== "Draft") throw new AppError("The document is frozen.", 409);
+  const content = typeof b.content === "string" ? b.content : a.content;
+  const title = typeof b.title === "string" && b.title.trim() ? b.title.trim().slice(0, 150) : a.title;
+  // Refused before anything is spent or drawn.
+  if (content.length > 200000) throw new AppError("The document is too long.");
+  refuseVerdict(
+    await (d.spend ?? realSpend)(d.sb, PREVIEW_TOOL, userLimitKey(user.id), PREVIEW_LIMIT, 10),
+    (m) => `The preview is taking a short rest. Try again in ${minutes(m)}.`,
+  );
+  return (await authoredPdf(title, content, brandingOf(ctx.workspace), (w, h) => d.store.getBlob(w, h))).bytes;
 }
 
 export const DOCUMENT_TOOL = "signroom-document";

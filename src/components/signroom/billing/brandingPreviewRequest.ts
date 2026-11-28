@@ -1,5 +1,7 @@
 /**
- * The sample PDF for the look being edited (POST workspaces/branding-preview).
+ * PDFs that are made from what is on screen and only looked at: the sample for
+ * the look being edited (POST workspaces/branding-preview) and a draft
+ * agreement as it is being written (POST agreements/:id/preview).
  *
  * The shared documents client can fetch a PDF only with GET, and reads every
  * POST reply as JSON. This one call posts JSON and gets a PDF back, so it is
@@ -10,14 +12,25 @@ import { REQUEST_FAILED_MESSAGE, SIGNED_OUT_MESSAGE, SignroomError } from '@/ser
 
 const PREVIEW_FAILED = 'The PDF preview could not be generated.';
 
-export async function brandingPreviewPdf(workspaceId: string, body: Record<string, unknown>): Promise<Blob> {
+/** The sample PDF for the look being edited. */
+export const brandingPreviewPdf = (workspaceId: string, body: Record<string, unknown>): Promise<Blob> =>
+  pdfFromPost(workspaceId, 'workspaces/branding-preview', body);
+
+/**
+ * A draft agreement as the PDF it would become, from the text on screen
+ * (POST agreements/:id/preview). Nothing is stored by it.
+ */
+export const agreementPreviewPdf = (workspaceId: string, agreementId: string, body: { title: string; content: string }): Promise<Blob> =>
+  pdfFromPost(workspaceId, `agreements/${encodeURIComponent(agreementId)}/preview`, body);
+
+async function pdfFromPost(workspaceId: string, path: string, body: Record<string, unknown>): Promise<Blob> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new SignroomError(SIGNED_OUT_MESSAGE, 401);
 
   let response: Response;
   try {
-    response = await fetch('/api/signroom/workspaces/branding-preview', {
+    response = await fetch(`/api/signroom/${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

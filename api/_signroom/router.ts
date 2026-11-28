@@ -1,7 +1,7 @@
 import { AppError, StoreError } from "./errors.js";
 import type { SignedInUser } from "./context.js";
 import { agreementAction, agreementArtifactUrl, createAgreement, getAgreement, listAgreements, listTemplates } from "./agreements.js";
-import { finishUpload, prepareAgreement, uploadUrl } from "./agreementDocument.js";
+import { finishUpload, prepareAgreement, previewAgreement, uploadUrl } from "./agreementDocument.js";
 import { deleteTemplate, getTemplate, renameTemplate } from "./agreementTemplates.js";
 import { draftAgreement, type DraftDeps } from "./aiDraft.js";
 import { readReceipt, RECEIPT_SIZE_MESSAGE } from "./receiptReader.js";
@@ -202,6 +202,10 @@ async function userRoute(deps: RouteDeps, r: RouteRequest, user: NonNullable<Rou
     }
     if (n === 3 && method === "GET" && third === "deliveries") return ok(await agreementDeliveries(store, user, second));
     if (n === 3 && method === "POST" && third === "prepare") return ok(await prepareAgreement(store, user, second, body));
+    // The text on screen as the PDF it would become. Nothing is stored.
+    if (n === 3 && method === "POST" && third === "preview") {
+      return { status: 200, pdf: { bytes: await previewAgreement(deps.mail, user, second, body), filename: "agreement-preview.pdf", inline: true } };
+    }
     if (n === 3 && method === "POST" && third === "upload-url") return ok(await uploadUrl(deps.mail, user, second, body));
     if (n === 3 && method === "POST" && third === "upload") return ok(await finishUpload(deps.mail, user, second, body));
     if (n === 3 && method === "POST" && third === "send") return ok(await sendAgreement(deps.mail, user, second, body, r.origin));

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import PdfViewer from '@/components/signroom/PdfViewer';
 import type { Agreement } from '../../../../api/_signroom/shared/types';
+import { AgreementLivePreview } from './AgreementLivePreview';
 import { Card, Notice } from './Card';
 
 const INSERTS: { label: string; icon: React.ReactNode; text: string }[] = [
@@ -20,6 +21,8 @@ const INSERTS: { label: string; icon: React.ReactNode; text: string }[] = [
 
 interface EditorDocumentStepProps {
   draft: Agreement;
+  /** The workspace the draft belongs to: with it the document is shown beside the text as it is written. */
+  workspaceId?: string | null;
   busy: boolean;
   /** Show the uploaded PDF's summary instead of the text editor. */
   uploaded: boolean;
@@ -38,7 +41,7 @@ interface EditorDocumentStepProps {
 
 /** Step 1: the document itself, written here or uploaded as a PDF, and the exact PDF signers will see. */
 export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
-  draft, busy, uploaded, onTitle, onText, onUpload, onWriteInstead, onPrepare, onDownloadSource, onDraftWithAi, aiWritten = false,
+  draft, workspaceId, busy, uploaded, onTitle, onText, onUpload, onWriteInstead, onPrepare, onDownloadSource, onDraftWithAi, aiWritten = false,
 }) => {
   const id = useId();
   const file = useRef<HTMLInputElement>(null);
@@ -102,7 +105,8 @@ export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
             <Button type="button" variant="outline" disabled={busy} onClick={onWriteInstead}>Write instead</Button>
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className={workspaceId ? 'grid gap-4 xl:grid-cols-2' : undefined}>
+          <div className="flex min-w-0 flex-col gap-2">
             {aiWritten && (
               <Notice icon={<TriangleAlert />} className="text-foreground">
                 <span className="font-medium">This text was written by AI.</span>{' '}
@@ -122,7 +126,8 @@ export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
               ref={editor}
               value={draft.content}
               onChange={(e) => onText(e.target.value)}
-              className="min-h-[24rem] resize-y font-mono leading-relaxed"
+              // A formal reading font: an agreement is read, not coded. The exact font of the PDF is the one chosen in Document settings.
+              className="min-h-[24rem] resize-y font-serif text-base leading-7 xl:min-h-[70vh]"
               placeholder="Write the agreement terms here. Use the toolbar for headings, lists, tables and page breaks. The sender is responsible for the terms."
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -135,6 +140,10 @@ export const EditorDocumentStep: React.FC<EditorDocumentStepProps> = ({
                 {!busy && <ArrowRight aria-hidden />}
               </Button>
             </div>
+          </div>
+          {workspaceId && (
+            <AgreementLivePreview workspaceId={workspaceId} agreementId={draft.id} title={draft.title} content={draft.content} className="min-w-0" />
+          )}
           </div>
         )}
 
